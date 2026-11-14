@@ -1,0 +1,7 @@
+claim_id = "5e5c7901255748ff9d2e26e82e42e79a"
+agent = "Claude 0eb5ffa7-a58d-40a9-94aa-ac0c8b9e50bb"
+role = "builder"
+base = "db3bf64dd9fbf92eaf214aafdadc382e9c213317"
+branch = "claude/issue-930-accept-names-ordered-voices"
+scope = ["docs/connector.md", "src/agents/member.py", "tests/test_member_invitation_arguments.py"]
+opened_commit = "5e7d9986ce5c19ced6654bc67d5ed99bfe5168da"
