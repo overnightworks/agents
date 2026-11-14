@@ -21,20 +21,31 @@ import tarfile
 import tomllib
 import urllib.request
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, cast
+from typing import IO, Final, Protocol, cast
 
 ROOT: Final = Path(__file__).resolve().parent.parent
 PIN_PATH: Final = Path("scripts/figure_vocabulary_pin.toml")
 MODULE_PATH: Final = Path("src/agents/figure_vocabulary.py")
 VOCABULARY_MEMBER: Final = "package/dist/figure-vocabulary.json"
 SUPPORTED_VERSION: Final = 1
+_URL: Final = re.compile(r"^https://[^\s\"\\]+$")
+_INTEGRITY: Final = re.compile(r"^sha512-[A-Za-z0-9+/]{86}==$")
 _INTEGRITY_PREFIX: Final = "sha512-"
+_PIN_COMMENT: Final = (
+    "# The figure release whose vocabulary agents generates its enums from. Raise it with\n"
+    "# `uv run python scripts/generate_figure_vocabulary.py --pin <url> <integrity>`.\n"
+)
 _TOKEN: Final = re.compile(r"^[a-z][a-z0-9_]*$")
 _FETCH_SECONDS: Final = 60
 
 type Fetch = Callable[[str], bytes]
+
+
+class UrlOpener(Protocol):
+    def __call__(self, url: str, *, timeout: float) -> AbstractContextManager[IO[bytes]]: ...
 
 
 class VocabularyError(Exception):
@@ -53,10 +64,8 @@ class Vocabulary:
     moods: tuple[str, ...]
 
 
-def fetch(url: str) -> bytes:
-    if not url.startswith("https://"):
-        raise VocabularyError(f"the release url must be an https address, not {url!r}")
-    with urllib.request.urlopen(url, timeout=_FETCH_SECONDS) as response:  # noqa: S310 - https only
+def fetch(url: str, *, open_url: UrlOpener = urllib.request.urlopen) -> bytes:
+    with open_url(url, timeout=_FETCH_SECONDS) as response:
         return response.read()
 
 
@@ -72,19 +81,19 @@ def read_pin(path: Path) -> Pin:
     return Pin(url, integrity)
 
 
+def validate_pin(pin: Pin) -> None:
+    if not _URL.fullmatch(pin.url):
+        raise VocabularyError(f"the release url must be an https address, not {pin.url!r}")
+    if not _INTEGRITY.fullmatch(pin.integrity):
+        raise VocabularyError("the integrity must be an npm sha512 integrity")
+
+
 def write_pin(path: Path, pin: Pin) -> None:
-    kept_comments = [
-        line for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("#")
-    ]
-    path.write_text(
-        "\n".join([*kept_comments, f'url = "{pin.url}"', f'integrity = "{pin.integrity}"', ""]),
-        encoding="utf-8",
-    )
+    pin_text = f"url = {json.dumps(pin.url)}\nintegrity = {json.dumps(pin.integrity)}\n"
+    path.write_text(_PIN_COMMENT + pin_text, encoding="utf-8")
 
 
 def check_integrity(tarball: bytes, integrity: str) -> None:
-    if not integrity.startswith(_INTEGRITY_PREFIX):
-        raise VocabularyError("the integrity must be an npm sha512 integrity")
     digest = base64.b64encode(hashlib.sha512(tarball).digest()).decode("ascii")
     if f"{_INTEGRITY_PREFIX}{digest}" != integrity:
         raise VocabularyError("the tarball does not match the pinned integrity")
@@ -167,6 +176,7 @@ def main(argv: Sequence[str], *, root: Path = ROOT, download: Fetch = fetch) -> 
     arguments = parser.parse_args(argv)
     try:
         pin = Pin(*arguments.pin) if arguments.pin else read_pin(root / PIN_PATH)
+        validate_pin(pin)
         generate(root, pin, download(pin.url))
     except VocabularyError as error:
         print(f"error: {error}")

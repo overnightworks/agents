@@ -60,7 +60,6 @@ def pin_for(content: bytes) -> Pin:
 def repository(root: Path, pin: Pin) -> Path:
     """A tree holding the pin file and the directory the generated module goes into."""
     (root / PIN_PATH).parent.mkdir(parents=True)
-    (root / PIN_PATH).write_text("# the pin\n", encoding="utf-8")
     write_pin(root / PIN_PATH, pin)
     (root / MODULE_PATH).parent.mkdir(parents=True)
     return root

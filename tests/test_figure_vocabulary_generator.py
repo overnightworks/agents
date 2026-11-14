@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
-import urllib.request
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
@@ -125,7 +125,7 @@ def test_a_missing_or_incomplete_pin_file_fails_loud(tmp_path: Path, pin_text: s
     assert run(root, tarball()) == 1
 
 
-def test_raising_the_pin_rewrites_the_pin_file_and_keeps_its_comment(tmp_path: Path) -> None:
+def test_raising_the_pin_rewrites_the_pin_file_under_its_comment(tmp_path: Path) -> None:
     older = tarball()
     newer = tarball(vocabulary_document(gestures=["wave", "bow"]))
     root = repository(tmp_path, pin_for(older))
@@ -135,8 +135,31 @@ def test_raising_the_pin_rewrites_the_pin_file_and_keeps_its_comment(tmp_path: P
     assert generator.read_pin(root / generator.PIN_PATH) == generator.Pin(
         RELEASE_URL, integrity_of(newer)
     )
-    assert (root / generator.PIN_PATH).read_text(encoding="utf-8").startswith("# the pin\n")
+    assert (root / generator.PIN_PATH).read_text(encoding="utf-8").startswith("#")
     assert "BOW" in (root / generator.MODULE_PATH).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("url", "integrity_suffix"),
+    [
+        pytest.param("http://releases.example/a.tgz", "", id="not-https"),
+        pytest.param("file:///etc/passwd", "", id="not-a-web-address"),
+        pytest.param('https://releases.example/a"\nb = 1', "", id="quote-in-url"),
+        pytest.param(RELEASE_URL, '"\nb = 1', id="text-after-the-integrity"),
+    ],
+)
+def test_raising_the_pin_to_a_malformed_url_or_integrity_is_refused_and_leaves_the_pin(
+    tmp_path: Path, url: str, integrity_suffix: str
+) -> None:
+    release = tarball()
+    root = repository(tmp_path, pin_for(release))
+    pin_file = root / generator.PIN_PATH
+    before = pin_file.read_text(encoding="utf-8")
+
+    assert run(root, release, "--pin", url, integrity_of(release) + integrity_suffix) == 1
+
+    assert pin_file.read_text(encoding="utf-8") == before
+    assert not (root / generator.MODULE_PATH).exists()
 
 
 def test_raising_the_pin_to_a_tarball_that_does_not_match_leaves_the_pin(tmp_path: Path) -> None:
@@ -150,13 +173,13 @@ def test_raising_the_pin_to_a_tarball_that_does_not_match_leaves_the_pin(tmp_pat
     assert pin_file.read_text(encoding="utf-8") == before
 
 
-def test_fetch_refuses_an_address_that_is_not_https() -> None:
-    with pytest.raises(generator.VocabularyError):
-        generator.fetch("http://releases.example/figure.tgz")
-
-
-def test_fetch_returns_the_bytes_the_address_serves(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_returns_the_bytes_the_address_serves() -> None:
     served = tarball()
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *_args, **_kwargs: io.BytesIO(served))
+    asked: list[str] = []
 
-    assert generator.fetch(RELEASE_URL) == served
+    def open_url(url: str, *, timeout: float) -> AbstractContextManager[io.BytesIO]:
+        asked.append(url)
+        return io.BytesIO(served)
+
+    assert generator.fetch(RELEASE_URL, open_url=open_url) == served
+    assert asked == [RELEASE_URL]
