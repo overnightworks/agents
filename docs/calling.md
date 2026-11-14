@@ -142,7 +142,8 @@ place lies inside another app's page. No app fetches an agent into another app's
   turn is running is left to that turn's end.
 - A runner that has stated nothing at a seat since it started states after its first turn end
   there. So a restarted runner states none after its first answered turn at each seat. A value
-  stated before the restart stays until that first turn end.
+  stated before the restart stays until the runner's first statement at that seat, or until the
+  seat ends.
 - A `busy` stop is stated like any other.
 - Once it has stopped taking turns in an app where it holds seats (suspend or backoff), it states
   `unavailable` at each of them where the app still answers; it may wait before doing so (for

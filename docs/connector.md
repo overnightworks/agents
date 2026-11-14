@@ -620,14 +620,14 @@ app's part is CALLING-29 to CALLING-31. Proved by `tests/test_member.py`.
 
 `set_turn_state` takes `SetTurnStateArguments(place, stopped)`: the place, and `stopped`, a
 `StopOutcome` of `agents.turn` that says why the member's turns there stop; an absent or null
-`stopped` states that they answer, and a dump leaves it out. The value is a closed enum, never free text. Success is
-a result without `is_error` whose content no record pins. A refusal is an `is_error` result whose
-content is `SetTurnStateRefused(refused)` as JSON with the one `SetTurnStateRefusal` code
-`not_held` (the caller holds no seat, active or paused, at the place). An app that does not serve
-the tool answers an unknown tool, and the runner logs it and goes on. The rules for the runner and
-the app are CALLING-33 to CALLING-36 in [calling.md](calling.md). The outcome is the coarse word a
-person sees; the fine code behind it is in the `turn_ended ... code=` log line of the personas
-runner, where the operator finds it. Proved by `tests/test_member.py`.
+`stopped` states that they answer, and a dump leaves it out. The value is a closed enum, never free
+text. Success is a result without `is_error` whose content no record pins. A refusal is an
+`is_error` result whose content is `SetTurnStateRefused(refused)` as JSON with the one
+`SetTurnStateRefusal` code `not_held` (the caller holds no seat, active or paused, at the place). An
+app that does not serve the tool answers an unknown tool, and the runner logs it and goes on. The
+rules for the runner and the app are CALLING-33 to CALLING-36 in [calling.md](calling.md). The
+outcome is the coarse word a person sees; the fine code behind it is in the `turn_ended ... code=`
+log line of the personas runner, where the operator finds it. Proved by `tests/test_member.py`.
 
 How a person calls an agent to a place and sends it away is the same in every app:
 [calling.md](calling.md).
