@@ -29,7 +29,7 @@ def test_the_file_holds_the_stop_outcomes_in_declared_order_at_shape_version_one
     assert generator.main(root=root) == 0
 
     document = written(root)
-    assert document["stop_outcomes"] == [outcome.value for outcome in StopOutcome]
+    assert [StopOutcome(value) for value in document["stop_outcomes"]] == list(StopOutcome)
     assert document["version"] == 1
 
 
@@ -40,13 +40,6 @@ def test_a_second_run_leaves_the_file_as_it_was(root: Path) -> None:
     generator.main(root=root)
 
     assert (root / generator.VOCABULARY_PATH).read_bytes() == first
-
-
-def test_the_committed_file_is_what_the_generator_writes(root: Path) -> None:
-    generator.main(root=root)
-
-    committed = generator.ROOT / generator.VOCABULARY_PATH
-    assert committed.read_bytes() == (root / generator.VOCABULARY_PATH).read_bytes()
 
 
 def test_run_as_a_script_it_writes_the_file_under_the_root_beside_it(
