@@ -516,7 +516,7 @@ the tool and the exception's class
 `STANDING_URI`, `member://standing`, answers with), `PlaceWindow(generation, starts_at, entries, talked_over, voice_state)`
 of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act)`, `LEASE_SECONDS` (120),
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
-`LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, figure, voice)` for the tool
+`LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, figure, voices)` for the tool
 `ACCEPT_INVITATION_TOOL`, `DeclineInvitationArguments(place, invitation, epoch, reason)` for
 `DECLINE_INVITATION_TOOL`, `SetTurnStateArguments(place, stopped)` for `SET_TURN_STATE_TOOL`,
 and the records of the tools `SPEAK_TOOL` and `STOP_SPEAKING_TOOL`
@@ -571,14 +571,17 @@ holds. No app writes act lines at a place until its runner has the field. Proved
 `tests/test_mcp_server_resources.py`, `tests/test_mcp_server_listen_view.py` and
 `tests/test_voice_loop.py`.
 
-An accept may name the agent's 3D figure, `figure` as `FigureRef(url, sha256)`, and the `voice` it
-speaks with; both are optional, and an accept without them dumps without their keys. The record
-checks only their form: `url` is an absolute `https` address with a host and no user part, query or
-fragment, `sha256` is 64 lowercase hexadecimal characters, and `voice` is 1 to 64 ASCII letters
-of either case, digits, `.`, `_` or `-`. The app decides the rest:
+An accept may name the agent's 3D figure, `figure` as `FigureRef(url, sha256)`, and the voices it
+would speak with, `voices` as a list of voice names, the persona's order of preference with the
+first choice first; both are optional, and an accept without them dumps without their keys. The
+record checks only their form: `url` is an absolute `https` address with a host and no user part,
+query or fragment, `sha256` is 64 lowercase hexadecimal characters, and `voices` holds 1 to 8
+names, none twice, each 1 to 64 ASCII letters of either case, digits, `.`, `_` or `-`. The app
+decides the rest:
 
 - It fetches a figure only from sources it allows, and serves only bytes whose sha256 matches.
-- It passes the voice to its speech service unchanged; the library folds no case. A voice that
+- It passes the voices to its speech service unchanged and in order; the library folds no case and
+  picks no voice, and the speech service picks the voice that speaks each sentence. A name that
   service does not offer is refused there, and the app answers with the refusal it already has; the
   library adds no refusal member for it.
 - An absent field means the app's own default.
