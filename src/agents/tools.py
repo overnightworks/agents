@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from agents.turn import JsonObject, Principal, ToolImage
 
 __all__ = [
+    "SCHEMA_ANNOTATIONS",
     "HandTool",
     "HandToolHandler",
     "JsonObject",
