@@ -1,0 +1,8 @@
+claim_id = "f5ddbf3af8b34a089c3ca4dfd15bc9f5"
+agent = "Claude 0eb5ffa7-a58d-40a9-94aa-ac0c8b9e50bb"
+role = "builder"
+base = "6000ad086d9d77dbcc3d10e7a4ea261f5136ebe5"
+branch = "claude/issue-935-vocabulary-file-in-wheel"
+scope = [".github/workflows/ci.yml", ".github/workflows/release.yml", "docs/connector.md", "pyproject.toml", "scripts", "src/agents/agents-vocabulary.json", "tests"]
+opened_commit = "5ab5c02de0600c838ff049728a6bf597e944a4e0"
+whole_reason = "The vocabulary file, its generator and the release check on the wheel are one published contract; any one alone publishes nothing design can pin."
