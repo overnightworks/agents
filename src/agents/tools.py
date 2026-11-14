@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -27,10 +27,32 @@ __all__ = [
     "ToolImage",
     "ToolOutcome",
     "agent_tool",
+    "inlined_schema",
     "not_an_agent_tool",
+    "tool_parameters",
+    "untitled_schema",
 ]
 
 AGENT_TOOL_EXTENSION: Final = "x-agent-tool"
+SCHEMA_ANNOTATIONS: Final = frozenset({"title", "description", "default", "examples", "deprecated"})
+_SCHEMA_VALUED: Final = frozenset(
+    {
+        "items",
+        "additionalProperties",
+        "unevaluatedProperties",
+        "unevaluatedItems",
+        "propertyNames",
+        "not",
+        "contains",
+        "if",
+        "then",
+        "else",
+        "contentSchema",
+    }
+)
+_SCHEMA_MAPPED: Final = frozenset({"properties", "patternProperties", "dependentSchemas"})
+_SCHEMA_LISTED: Final = frozenset({"anyOf", "allOf", "oneOf", "prefixItems"})
+_RECORD_DEFINITIONS: Final = "#/$defs/"
 
 
 class ToolEffect(StrEnum):
@@ -138,3 +160,67 @@ def read_decision(extension: JsonValue) -> ToolMark | ToolExclusion | None:
         if isinstance(name, str) and isinstance(effect, str) and effect in ToolEffect:
             return ToolMark(name, ToolEffect(effect))
     return None
+
+
+def inlined_schema(
+    node: JsonValue, definitions: JsonObject, prefix: str, seen: tuple[str, ...] = ()
+) -> JsonValue:
+    """The schema with every ``$ref`` that starts with ``prefix`` replaced by its definition.
+
+    An annotation beside a reference wins over the definition's own. Raises ``ValueError`` for a
+    recursive or unresolved reference (a non-local one included), a reference that is no string, a
+    definition that is no object, or a keyword beside a reference that is no annotation.
+    """
+    if isinstance(node, list):
+        return [inlined_schema(item, definitions, prefix, seen) for item in node]
+    if not isinstance(node, dict):
+        return node
+    if "$ref" not in node:
+        return {
+            key: inlined_schema(value, definitions, prefix, seen) for key, value in node.items()
+        }
+    reference = node["$ref"]
+    if not isinstance(reference, str):
+        raise ValueError("a $ref must be a string")
+    name = reference.removeprefix(prefix)
+    if name in seen or name not in definitions:
+        raise ValueError("a schema is recursive or unresolved")
+    resolved = inlined_schema(definitions[name], definitions, prefix, (*seen, name))
+    if not isinstance(resolved, dict):
+        raise ValueError("a referenced schema must be an object")
+    siblings = {key: value for key, value in node.items() if key != "$ref"}
+    if siblings.keys() - SCHEMA_ANNOTATIONS:
+        raise ValueError("a reference may carry only an annotation beside it")
+    return {**resolved, **siblings}
+
+
+def untitled_schema(node: JsonValue) -> JsonValue:
+    """The schema without ``title`` at any depth; a property named ``title`` and data stay."""
+    if isinstance(node, list):
+        return [untitled_schema(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    kept: JsonObject = {}
+    for key, value in node.items():
+        if key == "title":
+            continue
+        if key in _SCHEMA_MAPPED and isinstance(value, dict):
+            kept[key] = {name: untitled_schema(schema) for name, schema in value.items()}
+        elif key in _SCHEMA_VALUED or key in _SCHEMA_LISTED:
+            kept[key] = untitled_schema(value)
+        else:
+            kept[key] = value
+    return kept
+
+
+def tool_parameters(record: type[BaseModel]) -> JsonObject:
+    """The record as a tool's input schema: every local reference inlined, no ``$defs``, no title.
+
+    A tool declared from a record takes its parameters from here, so the schema a model reads is
+    the record's own. Raises ``ValueError`` for a recursive or non-local reference.
+    """
+    schema = cast("JsonObject", record.model_json_schema())
+    definitions = cast("JsonObject", schema.pop("$defs", {}))
+    return cast(
+        "JsonObject", untitled_schema(inlined_schema(schema, definitions, _RECORD_DEFINITIONS))
+    )
