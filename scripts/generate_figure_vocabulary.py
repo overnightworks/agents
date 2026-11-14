@@ -135,7 +135,8 @@ def parse_vocabulary(raw: bytes) -> Vocabulary:
     if not isinstance(document, dict):
         raise VocabularyError("the vocabulary must be a JSON object")
     fields = cast("dict[str, object]", document)
-    if fields.get("version") != SUPPORTED_VERSION:
+    version = fields.get("version")
+    if isinstance(version, bool) or version != SUPPORTED_VERSION:
         raise VocabularyError(f"the vocabulary version must be {SUPPORTED_VERSION}")
     return Vocabulary(_tokens(fields, "gestures"), _tokens(fields, "moods"))
 

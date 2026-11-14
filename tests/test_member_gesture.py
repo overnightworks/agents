@@ -43,14 +43,17 @@ def test_gesture_arguments_read_each_gesture_of_figures_set_back_from_their_json
         {"gesture": ""},
         {"gesture": 1},
         {"gesture": None},
-        {"extra": 1},
     ],
-    ids=["unknown-token", "other-case", "empty", "number", "null", "unknown-member"],
+    ids=["unknown-token", "other-case", "empty", "number", "null"],
 )
 def test_gesture_arguments_with_a_gesture_outside_figures_set_are_refused(
     fields: dict[str, Any],
 ) -> None:
     assert is_refused(GestureArguments, gesture_wire(**fields))
+
+
+def test_gesture_arguments_with_a_member_of_their_own_making_are_refused() -> None:
+    assert is_refused(GestureArguments, gesture_wire(extra=1))
 
 
 def test_gesture_arguments_without_a_gesture_are_refused() -> None:

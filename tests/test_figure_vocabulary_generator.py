@@ -67,6 +67,7 @@ def test_a_second_run_leaves_the_module_as_it_was(tmp_path: Path) -> None:
     "content",
     [
         pytest.param(tarball(vocabulary_document(version=2)), id="another-version"),
+        pytest.param(tarball(vocabulary_document(version=True)), id="boolean-version"),
         pytest.param(tarball({"gestures": ["wave"], "moods": ["happy"]}), id="no-version"),
         pytest.param(tarball({"version": 1, "moods": ["happy"]}), id="no-gestures"),
         pytest.param(tarball({"version": 1, "gestures": ["wave"]}), id="no-moods"),
