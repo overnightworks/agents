@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 
 import pytest
 from pydantic import BaseModel, Field
 
 from agents.tools import tool_parameters
+from tests.support.member_wire import keys_at_any_depth
 
 
 class Colour(StrEnum):
@@ -32,14 +32,6 @@ class Brush(BaseModel):
 
 class Tree(BaseModel):
     branches: list[Tree]
-
-
-def keys_at_any_depth(node: Any) -> set[str]:
-    if isinstance(node, list):
-        return {key for item in node for key in keys_at_any_depth(item)}
-    if not isinstance(node, dict):
-        return set()
-    return set(node) | {key for value in node.values() for key in keys_at_any_depth(value)}
 
 
 def test_references_are_inlined_and_no_definitions_or_reference_is_left() -> None:
