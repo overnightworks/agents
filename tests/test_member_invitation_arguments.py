@@ -142,6 +142,7 @@ def test_accept_invitation_arguments_take_a_figure_and_voices_in_order_or_neithe
     dumped = json.loads(arguments.model_dump_json())
     assert dumped.get("voices") == fields.get("voices")
     assert ("voices" in dumped) == ("voices" in fields)
+    assert dumped.get("figure") == fields.get("figure")
     assert ("figure" in dumped) == ("figure" in fields)
     assert AcceptInvitationArguments.model_validate_json(arguments.model_dump_json()) == arguments
 
