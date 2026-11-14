@@ -31,7 +31,7 @@ PIN_PATH: Final = Path("scripts/figure_vocabulary_pin.toml")
 MODULE_PATH: Final = Path("src/agents/figure_vocabulary.py")
 VOCABULARY_MEMBER: Final = "package/dist/figure-vocabulary.json"
 SUPPORTED_VERSION: Final = 1
-_URL: Final = re.compile(r"^https://[^\s\"\\]+$")
+_URL: Final = re.compile(r"^https://[\x21\x23-\x5b\x5d-\x7e]+$")
 _INTEGRITY: Final = re.compile(r"^sha512-[A-Za-z0-9+/]{86}==$")
 _INTEGRITY_PREFIX: Final = "sha512-"
 _PIN_COMMENT: Final = (
@@ -101,7 +101,11 @@ def check_integrity(tarball: bytes, integrity: str) -> None:
 
 def vocabulary_bytes(tarball: bytes) -> bytes:
     """The vocabulary file, read in memory from the tarball without extracting it."""
-    with tarfile.open(fileobj=io.BytesIO(tarball), mode="r:gz") as archive:
+    try:
+        archive = tarfile.open(fileobj=io.BytesIO(tarball), mode="r:gz")
+    except tarfile.ReadError as error:
+        raise VocabularyError("the tarball is no gzip tar archive") from error
+    with archive:
         try:
             member = archive.getmember(VOCABULARY_MEMBER)
         except KeyError as error:
@@ -136,7 +140,7 @@ def parse_vocabulary(raw: bytes) -> Vocabulary:
         raise VocabularyError("the vocabulary must be a JSON object")
     fields = cast("dict[str, object]", document)
     version = fields.get("version")
-    if isinstance(version, bool) or version != SUPPORTED_VERSION:
+    if type(version) is not int or version != SUPPORTED_VERSION:
         raise VocabularyError(f"the vocabulary version must be {SUPPORTED_VERSION}")
     return Vocabulary(_tokens(fields, "gestures"), _tokens(fields, "moods"))
 

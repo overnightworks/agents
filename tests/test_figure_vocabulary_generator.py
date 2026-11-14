@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import runpy
+import sys
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
@@ -68,6 +70,8 @@ def test_a_second_run_leaves_the_module_as_it_was(tmp_path: Path) -> None:
     [
         pytest.param(tarball(vocabulary_document(version=2)), id="another-version"),
         pytest.param(tarball(vocabulary_document(version=True)), id="boolean-version"),
+        pytest.param(tarball(vocabulary_document(version=1.0)), id="float-version"),
+        pytest.param(b"not a tarball", id="not-a-tarball"),
         pytest.param(tarball({"gestures": ["wave"], "moods": ["happy"]}), id="no-version"),
         pytest.param(tarball({"version": 1, "moods": ["happy"]}), id="no-gestures"),
         pytest.param(tarball({"version": 1, "gestures": ["wave"]}), id="no-moods"),
@@ -146,6 +150,7 @@ def test_raising_the_pin_rewrites_the_pin_file_under_its_comment(tmp_path: Path)
         pytest.param("http://releases.example/a.tgz", "", id="not-https"),
         pytest.param("file:///etc/passwd", "", id="not-a-web-address"),
         pytest.param('https://releases.example/a"\nb = 1', "", id="quote-in-url"),
+        pytest.param("https://releases.example/a\U0001f600.tgz", "", id="astral-character-in-url"),
         pytest.param(RELEASE_URL, '"\nb = 1', id="text-after-the-integrity"),
     ],
 )
@@ -172,6 +177,19 @@ def test_raising_the_pin_to_a_tarball_that_does_not_match_leaves_the_pin(tmp_pat
     assert run(root, tarball(), "--pin", RELEASE_URL, integrity_of(b"other")) == 1
 
     assert pin_file.read_text(encoding="utf-8") == before
+
+
+def test_run_as_a_program_a_bad_pin_exits_one_with_the_error_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = Path(generator.__file__)
+    monkeypatch.setattr(sys, "argv", [str(script), "--pin", "http://releases.example/a.tgz", "x"])
+
+    with pytest.raises(SystemExit) as raised:
+        runpy.run_path(str(script), run_name="__main__")
+
+    assert raised.value.code == 1
+    assert capsys.readouterr().out.startswith("error: ")
 
 
 def test_fetch_returns_the_bytes_the_address_serves() -> None:
