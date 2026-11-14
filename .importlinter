@@ -47,6 +47,7 @@ source_modules =
     agents.backend.tool_result
     agents.config
     agents.errors
+    agents.figure_vocabulary
     agents.member
     agents.mcp_wire
     agents.tools
@@ -75,6 +76,7 @@ source_modules =
     agents.backend.tool_result
     agents.config
     agents.errors
+    agents.figure_vocabulary
     agents.member
     agents.mcp_wire
     agents.tools
@@ -97,6 +99,7 @@ source_modules =
     agents.backend
     agents.config
     agents.errors
+    agents.figure_vocabulary
     agents.member
     agents.mcp_wire
     agents.tools

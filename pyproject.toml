@@ -57,7 +57,7 @@ line-length = 100
 select = ["E", "F", "W", "I"]
 
 [tool.pyright]
-include = ["src"]
+include = ["src", "scripts"]
 typeCheckingMode = "strict"
 pythonVersion = "3.14"
 
