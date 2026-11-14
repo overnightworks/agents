@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
+from agents.figure_vocabulary import FigureMood
 from agents.member import (
     STOP_SPEAKING_TOOL,
     PlaceRef,
@@ -36,8 +37,11 @@ PLACE = PlaceRef(kind="room", id="r-1")
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("language", "en"), ("style", "louder and angrier")],
-    ids=["language", "style"],
+    [
+        pytest.param("language", "en", id="language"),
+        pytest.param("style", "louder and angrier", id="style"),
+        *[pytest.param("mood", mood.value, id=f"mood-{mood.value}") for mood in FigureMood],
+    ],
 )
 def test_speak_arguments_name_the_optional_field_of_the_sentence_when_given(
     field: str, value: str
@@ -48,7 +52,7 @@ def test_speak_arguments_name_the_optional_field_of_the_sentence_when_given(
     assert SpeakArguments.model_validate_json(arguments.model_dump_json()) == arguments
 
 
-@pytest.mark.parametrize("field", ["language", "style"])
+@pytest.mark.parametrize("field", ["language", "style", "mood"])
 def test_speak_arguments_without_an_optional_field_dump_without_its_key(field: str) -> None:
     arguments = SpeakArguments.model_validate_json(json.dumps(speak_wire()))
 
@@ -59,6 +63,18 @@ def test_speak_arguments_without_an_optional_field_dump_without_its_key(field: s
 @pytest.mark.parametrize("style", ["", 1, ["calm"]], ids=["empty", "number", "list"])
 def test_speak_arguments_with_a_malformed_style_are_refused(style: object) -> None:
     wire_text = json.dumps(speak_wire(style=style))
+
+    with pytest.raises(ValidationError):
+        SpeakArguments.model_validate_json(wire_text)
+
+
+@pytest.mark.parametrize(
+    "mood",
+    ["joyful", "", "HAPPY", 1, ["happy"]],
+    ids=["unknown", "empty", "other-case", "number", "list"],
+)
+def test_speak_arguments_with_a_mood_outside_figures_set_are_refused(mood: object) -> None:
+    wire_text = json.dumps(speak_wire(mood=mood))
 
     with pytest.raises(ValidationError):
         SpeakArguments.model_validate_json(wire_text)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from agents.figure_vocabulary import FigureGesture
 from agents.member import PlaceWindow
 
 
@@ -47,3 +48,8 @@ def speak_wire(**fields: Any) -> dict[str, Any]:
 
 def turn_state_wire(**fields: object) -> dict[str, object]:
     return {"place": {"kind": "room", "id": "r-1"}} | fields
+
+
+def gesture_wire(**fields: object) -> dict[str, object]:
+    first_gesture = next(iter(FigureGesture)).value
+    return {"place": {"kind": "room", "id": "r-1"}, "gesture": first_gesture} | fields

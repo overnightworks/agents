@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
+from agents.figure_vocabulary import FigureGesture
 from agents.member import (
     AcceptInvitationArguments,
     DeclineInvitationArguments,
@@ -105,6 +107,7 @@ def test_decline_invitation_arguments_with_a_malformed_field_are_refused(
 
 
 FIGURE_WIRE = {"url": "https://figures.example/a.glb", "sha256": "ab12" * 16}
+CLIP_WIRE = {"url": "https://figures.example/wave.vrma", "sha256": "cd34" * 16}
 
 
 @pytest.mark.parametrize(
@@ -145,6 +148,20 @@ def test_accept_invitation_arguments_take_a_figure_and_voices_in_order_or_neithe
     assert dumped.get("figure") == fields.get("figure")
     assert ("figure" in dumped) == ("figure" in fields)
     assert AcceptInvitationArguments.model_validate_json(arguments.model_dump_json()) == arguments
+
+
+def figure_with(**fields: Any) -> dict[str, Any]:
+    return {"figure": FIGURE_WIRE | fields}
+
+
+def clip_with(**fields: Any) -> dict[str, Any]:
+    clips = {gesture.value: CLIP_WIRE | fields for gesture in FigureGesture}
+    return {"figure": FIGURE_WIRE | {"gestures": clips}}
+
+
+@pytest.fixture(params=[figure_with, clip_with], ids=["figure", "clip"])
+def ref_with(request: pytest.FixtureRequest) -> Callable[..., dict[str, Any]]:
+    return request.param
 
 
 @pytest.mark.parametrize(
@@ -206,10 +223,10 @@ def test_accept_invitation_arguments_take_a_figure_and_voices_in_order_or_neithe
         "close-brace-in-host",
     ],
 )
-def test_accept_invitation_arguments_refuse_a_figure_url_that_is_not_a_plain_https_address(
-    url: str,
+def test_accept_invitation_arguments_refuse_a_url_that_is_not_a_plain_https_address(
+    url: str, ref_with: Callable[..., dict[str, Any]]
 ) -> None:
-    wire_text = json.dumps(ACCEPT_WIRE | {"figure": FIGURE_WIRE | {"url": url}})
+    wire_text = json.dumps(ACCEPT_WIRE | ref_with(url=url))
 
     with pytest.raises(ValidationError):
         AcceptInvitationArguments.model_validate_json(wire_text)
@@ -220,10 +237,10 @@ def test_accept_invitation_arguments_refuse_a_figure_url_that_is_not_a_plain_htt
     ["a" * 63, "a" * 65, "A" * 64, "g" * 64, "", " " + "a" * 63],
     ids=["short", "long", "uppercase", "non-hex", "empty", "space"],
 )
-def test_accept_invitation_arguments_refuse_a_figure_digest_that_is_not_64_lowercase_hex(
-    digest: str,
+def test_accept_invitation_arguments_refuse_a_digest_that_is_not_64_lowercase_hex(
+    digest: str, ref_with: Callable[..., dict[str, Any]]
 ) -> None:
-    wire_text = json.dumps(ACCEPT_WIRE | {"figure": FIGURE_WIRE | {"sha256": digest}})
+    wire_text = json.dumps(ACCEPT_WIRE | ref_with(sha256=digest))
 
     with pytest.raises(ValidationError):
         AcceptInvitationArguments.model_validate_json(wire_text)
@@ -268,6 +285,55 @@ def test_accept_invitation_arguments_refuse_voices_outside_the_form(
     fields: dict[str, Any],
 ) -> None:
     wire_text = json.dumps(ACCEPT_WIRE | fields)
+
+    with pytest.raises(ValidationError):
+        AcceptInvitationArguments.model_validate_json(wire_text)
+
+
+def test_a_figure_takes_a_clip_for_each_base_gesture_and_reads_them_back() -> None:
+    wire = ACCEPT_WIRE | clip_with()
+
+    arguments = AcceptInvitationArguments.model_validate_json(json.dumps(wire))
+
+    assert arguments.figure is not None
+    assert set(arguments.figure.gestures) == set(FigureGesture)
+    assert json.loads(arguments.model_dump_json()) == wire
+
+
+@pytest.mark.parametrize("gestures", [{}, None], ids=["empty", "absent"])
+def test_a_figure_without_clips_dumps_without_the_key(gestures: dict[str, Any] | None) -> None:
+    figure = FIGURE_WIRE if gestures is None else FIGURE_WIRE | {"gestures": gestures}
+
+    arguments = AcceptInvitationArguments.model_validate_json(
+        json.dumps(ACCEPT_WIRE | {"figure": figure})
+    )
+
+    assert json.loads(arguments.model_dump_json())["figure"] == FIGURE_WIRE
+
+
+@pytest.mark.parametrize(
+    "gestures",
+    [
+        {"somersault": CLIP_WIRE},
+        {"Wave": CLIP_WIRE},
+        [CLIP_WIRE],
+        {"wave": "https://figures.example/wave.vrma"},
+        {"wave": CLIP_WIRE | {"extra": 1}},
+        {"wave": {"url": CLIP_WIRE["url"]}},
+    ],
+    ids=["unknown-gesture", "other-case", "list", "bare-url", "unknown-member", "no-digest"],
+)
+def test_a_figure_refuses_clips_that_name_no_base_gesture_or_are_no_file_reference(
+    gestures: object,
+) -> None:
+    wire_text = json.dumps(ACCEPT_WIRE | {"figure": FIGURE_WIRE | {"gestures": gestures}})
+
+    with pytest.raises(ValidationError):
+        AcceptInvitationArguments.model_validate_json(wire_text)
+
+
+def test_clips_cannot_be_given_without_a_figure() -> None:
+    wire_text = json.dumps(ACCEPT_WIRE | {"gestures": {"wave": CLIP_WIRE}})
 
     with pytest.raises(ValidationError):
         AcceptInvitationArguments.model_validate_json(wire_text)

@@ -29,11 +29,14 @@ from pydantic import (
     model_validator,
 )
 
+from agents.figure_vocabulary import FigureGesture, FigureMood
+from agents.tools import ToolDeclaration, ToolEffect, tool_parameters
 from agents.turn import JsonObject, NonEmptyUnicodeText, StopOutcome, StrictModel, UnicodeText
 
 __all__ = [
     "ACCEPT_INVITATION_TOOL",
     "DECLINE_INVITATION_TOOL",
+    "GESTURE_TOOL",
     "INVITATION_SECONDS",
     "LEASE_SECONDS",
     "LISTEN_ALLOWANCE_SECONDS",
@@ -50,6 +53,10 @@ __all__ = [
     "DeclineInvitationRefusal",
     "DeclineInvitationRefused",
     "FigureRef",
+    "GestureArguments",
+    "GestureRefusal",
+    "GestureRefused",
+    "HttpsFileRef",
     "Invitation",
     "MemberStanding",
     "ParentPlace",
@@ -58,6 +65,7 @@ __all__ = [
     "PlaceRef",
     "PlaceView",
     "PlaceWindow",
+    "Relayed",
     "SetTurnStateArguments",
     "SetTurnStateRefusal",
     "SetTurnStateRefused",
@@ -78,6 +86,7 @@ __all__ = [
     "VoiceState",
     "VoiceStyle",
     "Written",
+    "gesture_tool",
     "place_ref_from_view_uri",
     "place_ref_from_window_uri",
     "place_view_uri",
@@ -102,6 +111,8 @@ SPEAK_TOOL: Final = "speak"
 """The name of the tool that says one sentence aloud in a place."""
 STOP_SPEAKING_TOOL: Final = "stop_speaking"
 """The name of the tool that cuts the member's current sentence and its queue."""
+GESTURE_TOOL: Final = "gesture"
+"""The name of the tool that makes a gesture with the member's figure at a place."""
 SET_TURN_STATE_TOOL: Final = "set_turn_state"
 """The name of the tool that states whether the member's turns at a place answer."""
 STANDING_URI: Final = "member://standing"
@@ -178,11 +189,11 @@ class MemberStanding(StrictModel):
 _FORBIDDEN_HOST_CHARACTERS: Final = frozenset('%"<>^`{|}')
 
 
-class FigureRef(StrictModel):
-    """Where an agent's 3D figure is and the digest its bytes must have: ``url`` is an absolute
-    ``https`` address with a host and no user part, query or fragment, and ``sha256`` is 64
-    lowercase hexadecimal characters. The record checks the form only; whether to fetch the
-    figure is the app's decision."""
+class HttpsFileRef(StrictModel):
+    """Where a file is and the digest its bytes must have: ``url`` is an absolute ``https``
+    address with a host and no user part, query or fragment, and ``sha256`` is 64 lowercase
+    hexadecimal characters. The record checks the form only; whether to fetch the file is the
+    app's decision."""
 
     url: str
     sha256: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
@@ -190,7 +201,7 @@ class FigureRef(StrictModel):
     @field_validator("url")
     @classmethod
     def _url_is_a_plain_https_address(cls, url: str) -> str:
-        message = "a figure url is an absolute https address without user part, query or fragment"
+        message = "a url is an absolute https address without user part, query or fragment"
         if (
             not url.isprintable()
             or any(character.isspace() or character == "\\" for character in url)
@@ -211,6 +222,20 @@ class FigureRef(StrictModel):
         ):
             raise ValueError(message)
         return url
+
+
+def _is_empty(value: dict[FigureGesture, HttpsFileRef]) -> bool:
+    return not value
+
+
+class FigureRef(HttpsFileRef):
+    """Where an agent's 3D figure is (see ``HttpsFileRef``) and, optionally, its own clips: for a
+    gesture of figure's base set, the file that replaces figure's neutral clip on this figure
+    only. A gesture has at most one clip, and ``gestures`` is left out of the JSON when empty."""
+
+    gestures: dict[Annotated[FigureGesture, Field(strict=False)], HttpsFileRef] = Field(
+        default_factory=dict[FigureGesture, HttpsFileRef], exclude_if=_is_empty
+    )
 
 
 VoiceName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,64}$")]
@@ -306,13 +331,17 @@ decision."""
 
 class SpeakArguments(StrictModel):
     """The arguments of ``speak``: the place and one sentence, whose length the app bounds, and
-    optionally the ``language`` of that sentence and the ``style`` it should sound in, which the app
-    passes on unchanged; an absent one means the app's own default."""
+    optionally the ``language`` of that sentence, the ``style`` it should sound in, which the app
+    passes on unchanged, and the ``mood`` the agent's figure shows while it speaks; an absent one
+    means the app's own default, and an app that draws no figure ignores the ``mood``."""
 
     place: PlaceRef
     text: NonEmptyUnicodeText
     language: SpokenLanguage | None = Field(default=None, exclude_if=_is_none)
     style: VoiceStyle | None = Field(default=None, exclude_if=_is_none)
+    mood: Annotated[FigureMood, Field(strict=False)] | None = Field(
+        default=None, exclude_if=_is_none
+    )
 
 
 def _refuse_false(value: bool) -> bool:
@@ -416,6 +445,46 @@ class SetTurnStateRefused(StrictModel):
     """What ``set_turn_state`` answers on a refusal, as JSON in an ``is_error`` result."""
 
     refused: Annotated[SetTurnStateRefusal, Field(strict=False)]
+
+
+# The docstring is the schema's description, so it is written for the model.
+class GestureArguments(StrictModel):
+    """The place and the gesture your figure makes there."""
+
+    place: PlaceRef
+    gesture: Annotated[FigureGesture, Field(strict=False)]
+
+
+class Relayed(StrictModel):
+    """What ``gesture`` answers, as JSON and without ``is_error``, when the app has handed the
+    gesture to the people at the place; the field is exactly the JSON ``true``. It does not say
+    that a page played it."""
+
+    relayed: MarkerTrue
+
+
+class GestureRefusal(StrEnum):
+    """Why the app does not relay a gesture: ``not_active`` when the member left, was removed or
+    is paused."""
+
+    NOT_ACTIVE = "not_active"
+
+
+class GestureRefused(StrictModel):
+    """What ``gesture`` answers on a refusal, as JSON in an ``is_error`` result."""
+
+    refused: Annotated[GestureRefusal, Field(strict=False)]
+
+
+def gesture_tool() -> ToolDeclaration:
+    """The declaration of ``GESTURE_TOOL`` as an agent sees it. An app offers it only while the
+    seat's accept carried a figure; its schema's enum is the gestures the agent can make."""
+    return ToolDeclaration(
+        name=GESTURE_TOOL,
+        description="Make a gesture with your figure at a place, as a person waves.",
+        parameters=tool_parameters(GestureArguments),
+        effect=ToolEffect.SIDE_EFFECTING,
+    )
 
 
 class PartialSpeech(StrictModel):
