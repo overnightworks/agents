@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import runpy
+import shutil
 from pathlib import Path
 
 import pytest
@@ -48,13 +49,15 @@ def test_the_committed_file_is_what_the_generator_writes(root: Path) -> None:
     assert committed.read_bytes() == (root / generator.VOCABULARY_PATH).read_bytes()
 
 
-def test_run_as_a_script_it_writes_the_committed_file() -> None:
-    committed = generator.ROOT / generator.VOCABULARY_PATH
-    before = committed.read_bytes()
-    script = generator.ROOT / "scripts" / "generate_agents_vocabulary.py"
+def test_run_as_a_script_it_writes_the_file_under_the_root_beside_it(
+    root: Path,
+) -> None:
+    script = root / "scripts" / "generate_agents_vocabulary.py"
+    script.parent.mkdir()
+    shutil.copy(generator.ROOT / "scripts" / "generate_agents_vocabulary.py", script)
 
     with pytest.raises(SystemExit) as raised:
         runpy.run_path(str(script), run_name="__main__")
 
     assert raised.value.code == 0
-    assert committed.read_bytes() == before
+    assert (root / generator.VOCABULARY_PATH).read_text(encoding="utf-8") == generator.render()
