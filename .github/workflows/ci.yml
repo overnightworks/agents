@@ -49,6 +49,11 @@ jobs:
           uv run --locked --no-sync python scripts/generate_figure_vocabulary.py
           git diff --exit-code -- src/agents/figure_vocabulary.py scripts/figure_vocabulary_pin.toml
 
+      - name: The agents vocabulary is what StopOutcome says
+        run: |
+          uv run --locked --no-sync python scripts/generate_agents_vocabulary.py
+          git diff --exit-code -- src/agents/agents-vocabulary.json
+
       - name: Ruff
         run: uv run --locked --no-sync ruff check src tests scripts
 

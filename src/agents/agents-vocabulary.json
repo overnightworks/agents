@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "stop_outcomes": [
+    "not_enabled",
+    "busy",
+    "budget_spent",
+    "unavailable"
+  ]
+}

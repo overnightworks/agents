@@ -59,6 +59,13 @@ by `tests/test_backend_port.py`: `test_every_stop_code_has_exactly_its_outcome`,
 `test_a_busy_refusal_is_busy_with_or_without_a_wait` and
 `test_an_outcome_is_never_given_apart_from_its_code`.
 
+Every release's wheel carries `agents/agents-vocabulary.json`, the values of `StopOutcome` in
+declared order, which `scripts/generate_agents_vocabulary.py` writes from the enum. A kit that shows
+outcomes pins the wheel by its release url and the sha256 digest GitHub records for the asset, and
+reads that one member. Its `version` is the file's shape version: a changed token is a release, a
+new set key keeps the version, only a changed shape raises it. CI fails when the file and the code
+differ, and the release refuses a wheel whose member differs from the committed file.
+
 `AssistantTextEvent` is a piece of the assistant's text, yielded as the gateway streams it, before
 its round is judged. Pieces come from every round, including a round that ends in tool calls: its
 pieces come before its `ToolCallEvent`s. `FinalEvent.text` is the last round's judged text only, so
