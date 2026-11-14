@@ -518,7 +518,8 @@ of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act)`, `LEASE_SECONDS` (
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
 `LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, figure, voice)` for the tool
 `ACCEPT_INVITATION_TOOL`, `DeclineInvitationArguments(place, invitation, epoch, reason)` for
-`DECLINE_INVITATION_TOOL`, and the records of the tools `SPEAK_TOOL` and `STOP_SPEAKING_TOOL`
+`DECLINE_INVITATION_TOOL`, `SetTurnStateArguments(place, stopped)` for `SET_TURN_STATE_TOOL`,
+and the records of the tools `SPEAK_TOOL` and `STOP_SPEAKING_TOOL`
 and of being talked over ([hearing and speaking](#hearing-and-speaking)). `spoken` is true for a line said aloud and
 heard, false for a written one; every dumped entry carries it, and an entry without it reads as
 written. `cut` is true only on a spoken line whose sentence was cut before its end, and a line that
@@ -617,6 +618,17 @@ is at its limit, the second that the place is full. An app that does not serve t
 unknown tool, and the runner lets the invitation run out ([calling.md](calling.md), CALLING-8); the
 app's part is CALLING-29 to CALLING-31. Proved by `tests/test_member.py`.
 
+`set_turn_state` takes `SetTurnStateArguments(place, stopped)`: the place, and `stopped`, a
+`StopOutcome` of `agents.turn` that says why the member's turns there stop; an absent or null
+`stopped` states that they answer, and a dump leaves it out. The value is a closed enum, never free
+text. Success is a result without `is_error` whose content no record pins. A refusal is an
+`is_error` result whose content is `SetTurnStateRefused(refused)` as JSON with the one
+`SetTurnStateRefusal` code `not_held` (the caller holds no seat, active or paused, at the place). An
+app that does not serve the tool answers an unknown tool, and the runner logs it and goes on. The
+rules for the runner and the app are CALLING-33 to CALLING-36 in [calling.md](calling.md). The
+outcome is the coarse word a person sees; the fine code behind it is in the `turn_ended ... code=`
+log line of the personas runner, where the operator finds it. Proved by `tests/test_member.py`.
+
 How a person calls an agent to a place and sends it away is the same in every app:
 [calling.md](calling.md).
 
@@ -650,14 +662,17 @@ answers `-32603` with one fixed text and logs only the exception's type. Both ca
 `tests/test_mcp_server_resources.py`.
 
 **The runner** listens with `resourceSubscriptions`, waits for the acknowledgement, which is the
-first frame and holds the requested URIs in `current(principal)`, retains what arrives and only
-then reads, so a change in a gap between streams is never lost. A notification says only that
-something changed: `MemberStanding` is the whole standing, so after a lost, repeated or late one
-the next read shows today's truth. A subscriber of `member://standing` also receives the URI of a
-place window or view `current` holds; a subscriber of one place gets that place alone. The stream ends
-after `LISTEN_BOUND_SECONDS` with a completion result carrying the subscription id; a stream cut
-without one is `SubscriptionLost` at the SDK's client. After either the runner listens again, and
-reads again once acknowledged. A listen needs an SSE `Accept`, else it is `406`. The SDK's
+first frame and holds the requested URIs in `current(principal)`, retains what arrives and only then
+reads, so a change in a gap between streams is never lost. A requested URI that `current` does not
+hold when the listen opens is not honoured on that stream, and the acknowledgement leaves it out: a
+runner that listens on one place before its seat appears listens again once it does, while a listen
+on `member://standing` also covers a window or view that appears later. A notification says only
+that something changed: `MemberStanding` is the whole standing, so after a lost, repeated or late
+one the next read shows today's truth. A subscriber of `member://standing` also receives the URI of
+a place window or view `current` holds; a subscriber of one place gets that place alone. The stream
+ends after `LISTEN_BOUND_SECONDS` with a completion result carrying the subscription id; a stream
+cut without one is `SubscriptionLost` at the SDK's client. After either the runner listens again,
+and reads again once acknowledged. A listen needs an SSE `Accept`, else it is `406`. The SDK's
 `Client.listen` holds no task group, so whatever the runner's own loop body raises arrives bare at
 its `yield`: a runner that maps the stream's failures maps only the stream's own, which are the
 opening, `SubscriptionLost` during iteration and its deadline.
@@ -853,7 +868,8 @@ without asking. Parameters are string path parameters and scalar query parameter
 integer, number or boolean, with or without `enum`, inline or by `$ref`, nullable through `anyOf
 [x, null]`); the one body is a required `application/json` object whose fields are flattened
 beside the parameters; `$ref` is inlined from `components`, and an annotation beside a reference
-is kept and wins over the component's own; every success response is JSON, and an error status may
+is kept and wins over the component's own; no `title` is left in the tool's input schema at any
+depth; every success response is JSON, and an error status may
 also declare RFC 9457 problem details (`application/problem+json`), beside or instead of JSON. A
 success without JSON content, such as a `204`, is refused: such a route is excluded or answers
 JSON. The tool's description is the operation's `description` (the route's docstring) and is
