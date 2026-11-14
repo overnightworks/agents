@@ -1,0 +1,60 @@
+"""The generator writes the closed set of stop outcomes that the wheel carries."""
+
+from __future__ import annotations
+
+import json
+import runpy
+from pathlib import Path
+
+import pytest
+
+import scripts.generate_agents_vocabulary as generator
+from agents.turn import StopOutcome
+
+
+def written(root: Path) -> dict[str, object]:
+    return json.loads((root / generator.VOCABULARY_PATH).read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def root(tmp_path: Path) -> Path:
+    (tmp_path / generator.VOCABULARY_PATH.parent).mkdir(parents=True)
+    return tmp_path
+
+
+def test_the_file_holds_the_stop_outcomes_in_declared_order_at_shape_version_one(
+    root: Path,
+) -> None:
+    assert generator.main(root=root) == 0
+
+    document = written(root)
+    assert document["stop_outcomes"] == [outcome.value for outcome in StopOutcome]
+    assert document["version"] == 1
+
+
+def test_a_second_run_leaves_the_file_as_it_was(root: Path) -> None:
+    generator.main(root=root)
+    first = (root / generator.VOCABULARY_PATH).read_bytes()
+
+    generator.main(root=root)
+
+    assert (root / generator.VOCABULARY_PATH).read_bytes() == first
+
+
+def test_the_committed_file_is_what_the_generator_writes(root: Path) -> None:
+    generator.main(root=root)
+
+    committed = generator.ROOT / generator.VOCABULARY_PATH
+    assert committed.read_bytes() == (root / generator.VOCABULARY_PATH).read_bytes()
+
+
+def test_run_as_a_script_it_writes_the_committed_file() -> None:
+    committed = generator.ROOT / generator.VOCABULARY_PATH
+    before = committed.read_bytes()
+    script = generator.ROOT / "scripts" / "generate_agents_vocabulary.py"
+
+    with pytest.raises(SystemExit) as raised:
+        runpy.run_path(str(script), run_name="__main__")
+
+    assert raised.value.code == 0
+    assert committed.read_bytes() == before

@@ -46,7 +46,7 @@ where = ["src"]
 include = ["agents*"]
 
 [tool.setuptools.package-data]
-agents = ["py.typed"]
+agents = ["py.typed", "agents-vocabulary.json"]
 
 [tool.ruff]
 target-version = "py314"

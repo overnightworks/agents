@@ -70,6 +70,15 @@ jobs:
             exit 1
           fi
 
+      - name: Refuse unless the wheel carries the committed agents vocabulary
+        run: |
+          wheel="dist/overnightworks_agents-${VERSION}-py3-none-any.whl"
+          if ! unzip -p "$wheel" agents/agents-vocabulary.json | cmp - src/agents/agents-vocabulary.json; then
+            echo "Refused: the wheel's agents/agents-vocabulary.json must be byte-identical to" >&2
+            echo "src/agents/agents-vocabulary.json, which scripts/generate_agents_vocabulary.py writes." >&2
+            exit 1
+          fi
+
       - name: Write the release note naming the git tag
         id: install
         run: |
