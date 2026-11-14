@@ -22,10 +22,6 @@
 - No host word appears in `src`, `tests` or `docs`; the "Host vocabulary" step in `.github/workflows/ci.yml` holds the list.
 - A tag is never moved; a broken release gets the next patch tag.
 
-## Owners
-
-- The operator decides releases and dispatches them himself.
-
 ## Documents
 
 - `README.md`: read when you need what the library is, how a host installs it and its extras.
