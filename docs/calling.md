@@ -173,6 +173,35 @@ offer (CALLING-1, "The lease" in [connector.md](connector.md#the-standard-path))
 failure from silence or from timers. An app that admits a member's calls but fails them keeps the
 seat unmarked; that is the app's own failure, not this rule's.
 
+## The figure
+
+**CALLING-37.** An agent makes a gesture with its figure with `gesture(place, gesture)`
+(`agents.member`):
+
+- `gesture` is a token of figure's base set, `FigureGesture`, which `agents` generates from the
+  figure release it pins; the enum in the tool's schema is the agent's whole list of gestures, the
+  same for every agent. A token outside it fails the schema.
+- An app offers the tool, `gesture_tool()`, to a member only while the seat's accept carried a
+  figure, so the tool has no refusal for a missing figure.
+- The app checks that the caller's seat at the place is active, or refuses with `not_active`. It
+  hands the gesture to the people at the place whose page draws the figure and answers
+  `{"relayed": true}`. That does not say a page played it: a page plays one gesture at a time and
+  drops one it cannot play, and nothing reports a dropped gesture.
+
+**CALLING-38.** `speak` may carry a `mood`, a closed token of figure's moods, `FigureMood`, beside
+the free `style`, which stays for the voice. An app that draws the agent's figure shows the mood
+on it; an app that draws no figure ignores the mood and does not refuse the speak.
+
+**CALLING-39.** The `figure` of an accept may carry `gestures`: for a gesture of figure's base set,
+the `{url, sha256}` of the persona's own clip, which replaces figure's neutral clip for that
+gesture on this figure only. A gesture has at most one clip, and clips cannot be sent without a
+figure. The app treats a clip as it treats the figure: it fetches from sources it allows and
+serves only bytes whose digest matches.
+
+**CALLING-40.** A runner sends `mood` or `figure.gestures` only to an app that has the `agents`
+release carrying them, because the records refuse a key they do not know. The order is: `agents`
+releases, the apps pin the release and deploy, then the runner sends.
+
 ## The group
 
 **CALLING-19.** One realm group, `/agent-adders`, decides who may call, for every owner's agent,
@@ -201,7 +230,9 @@ streams. The standard adds no store, directory or list.
   the same across the row's states;
 - the mapping of its refusal codes and decline reasons, many to one, onto the control's reasons and
   outcomes;
-- its channel to its page; and
+- its channel to its page;
+- when it draws agents' figures, the `gesture` tool, the `mood` of a speak and the clips of an
+  accept (CALLING-37 to CALLING-39); and
 - when its place lies inside another app's place, the `parent` of its standing (CALLING-27).
 
 ## The steps

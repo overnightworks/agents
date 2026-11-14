@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from pydantic import BaseModel, ValidationError
+
+from agents.figure_vocabulary import FigureGesture
 from agents.member import PlaceWindow
 
 
@@ -47,3 +50,26 @@ def speak_wire(**fields: Any) -> dict[str, Any]:
 
 def turn_state_wire(**fields: object) -> dict[str, object]:
     return {"place": {"kind": "room", "id": "r-1"}} | fields
+
+
+def gesture_wire(**fields: object) -> dict[str, object]:
+    first_gesture = next(iter(FigureGesture)).value
+    return {"place": {"kind": "room", "id": "r-1"}, "gesture": first_gesture} | fields
+
+
+def is_refused(record: type[BaseModel], wire: dict[str, Any]) -> bool:
+    """Whether the record refuses the wire as JSON."""
+    try:
+        record.model_validate_json(json.dumps(wire))
+    except ValidationError:
+        return True
+    return False
+
+
+def keys_at_any_depth(node: Any) -> set[str]:
+    """Every object key found at any depth of a JSON value."""
+    if isinstance(node, list):
+        return {key for item in node for key in keys_at_any_depth(item)}
+    if not isinstance(node, dict):
+        return set()
+    return set(node) | {key for value in node.values() for key in keys_at_any_depth(value)}

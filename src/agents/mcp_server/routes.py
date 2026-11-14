@@ -17,13 +17,16 @@ from agents.mcp_server.person import PersonRequest, PersonTool, PersonToolHandle
 from agents.mcp_server.route_call import RouteTarget, call_route, placeholder_names
 from agents.tools import (
     AGENT_TOOL_EXTENSION,
+    SCHEMA_ANNOTATIONS,
     JsonObject,
     ToolDeclaration,
     ToolEffect,
     ToolExclusion,
     ToolMark,
     ToolOutcome,
+    inlined_schema,
     read_decision,
+    untitled_schema,
 )
 
 _SUPPORTED_METHODS: Final = frozenset({"get", "post", "put", "patch", "delete"})
@@ -35,25 +38,12 @@ _SCALAR_TYPES: Final = frozenset({"string", "integer", "number", "boolean"})
 _JSON: Final = "application/json"
 _PROBLEM_JSON: Final = "application/problem+json"
 _SCHEMA_REFERENCE: Final = "#/components/schemas/"
-_ANNOTATIONS: Final = frozenset({"title", "description", "default", "examples", "deprecated"})
-_SCHEMA_VALUED: Final = frozenset(
-    {
-        "items",
-        "additionalProperties",
-        "unevaluatedProperties",
-        "unevaluatedItems",
-        "propertyNames",
-        "not",
-        "contains",
-        "if",
-        "then",
-        "else",
-        "contentSchema",
-    }
-)
-_SCHEMA_MAPPED: Final = frozenset({"properties", "patternProperties", "dependentSchemas"})
-_SCHEMA_LISTED: Final = frozenset({"anyOf", "allOf", "oneOf", "prefixItems"})
-_BODY_KEYWORDS: Final = _ANNOTATIONS | {"type", "properties", "required", "additionalProperties"}
+_BODY_KEYWORDS: Final = SCHEMA_ANNOTATIONS | {
+    "type",
+    "properties",
+    "required",
+    "additionalProperties",
+}
 
 
 class RouteProfileError(ValueError):
@@ -117,54 +107,9 @@ def _overlap(first: str, second: str) -> bool:
     )
 
 
-def _inlined(node: JsonValue, components: JsonObject, seen: tuple[str, ...] = ()) -> JsonValue:
-    """The schema with every ``$ref`` replaced by its component.
-
-    An annotation beside a reference wins over the component's own; a recursive reference, a
-    reference that is no string, a component that is no object, or a keyword beside it that is
-    no annotation, is a breach.
-    """
-    if isinstance(node, list):
-        return [_inlined(item, components, seen) for item in node]
-    if not isinstance(node, dict):
-        return node
-    if "$ref" not in node:
-        return {key: _inlined(value, components, seen) for key, value in node.items()}
-    reference = node["$ref"]
-    if not isinstance(reference, str):
-        raise _Breach("a $ref must be a string")
-    name = reference.removeprefix(_SCHEMA_REFERENCE)
-    if name in seen or name not in components:
-        raise _Breach("a schema is recursive or unresolved")
-    resolved = _object(_inlined(components[name], components, (*seen, name)), "a referenced schema")
-    siblings = {key: value for key, value in node.items() if key != "$ref"}
-    if siblings.keys() - _ANNOTATIONS:
-        raise _Breach("a reference may carry only an annotation beside it")
-    return {**resolved, **siblings}
-
-
-def _untitled(node: JsonValue) -> JsonValue:
-    """The schema without ``title`` at any depth; a property named ``title`` and data stay."""
-    if isinstance(node, list):
-        return [_untitled(item) for item in node]
-    if not isinstance(node, dict):
-        return node
-    kept: JsonObject = {}
-    for key, value in node.items():
-        if key == "title":
-            continue
-        if key in _SCHEMA_MAPPED and isinstance(value, dict):
-            kept[key] = {name: _untitled(schema) for name, schema in value.items()}
-        elif key in _SCHEMA_VALUED or key in _SCHEMA_LISTED:
-            kept[key] = _untitled(value)
-        else:
-            kept[key] = value
-    return kept
-
-
 def _schema(node: JsonValue, components: JsonObject, where: str) -> JsonObject:
     """The node as a schema object with every reference inlined and no title; else a breach."""
-    return _object(_untitled(_inlined(node, components)), where)
+    return _object(untitled_schema(inlined_schema(node, components, _SCHEMA_REFERENCE)), where)
 
 
 def _scalar(schema: JsonObject) -> bool:

@@ -519,6 +519,9 @@ of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act)`, `LEASE_SECONDS` (
 `LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, figure, voices)` for the tool
 `ACCEPT_INVITATION_TOOL`, `DeclineInvitationArguments(place, invitation, epoch, reason)` for
 `DECLINE_INVITATION_TOOL`, `SetTurnStateArguments(place, stopped)` for `SET_TURN_STATE_TOOL`,
+`GestureArguments(place, gesture)` for `GESTURE_TOOL` with its answer `Relayed` and its refusal
+`GestureRefused`, `gesture_tool()` (the finished declaration an app offers, whose schema's enum is
+figure's gestures), `SpeakArguments(place, text, language, style, mood)`,
 and the records of the tools `SPEAK_TOOL` and `STOP_SPEAKING_TOOL`
 and of being talked over ([hearing and speaking](#hearing-and-speaking)). `spoken` is true for a line said aloud and
 heard, false for a written one; every dumped entry carries it, and an entry without it reads as
@@ -571,7 +574,7 @@ holds. No app writes act lines at a place until its runner has the field. Proved
 `tests/test_mcp_server_resources.py`, `tests/test_mcp_server_listen_view.py` and
 `tests/test_voice_loop.py`.
 
-An accept may name the agent's 3D figure, `figure` as `FigureRef(url, sha256)`, and the voices it
+An accept may name the agent's 3D figure, `figure` as `FigureRef(url, sha256, gestures)`, and the voices it
 would speak with, `voices` as a list of voice names, the persona's order of preference with the
 first choice first; both are optional, and an accept without them dumps without their keys. The
 record checks only their form: `url` is an absolute `https` address with a host and no user part,
@@ -580,6 +583,11 @@ names, none twice, each 1 to 64 ASCII letters of either case, digits, `.`, `_` o
 decides the rest:
 
 - It fetches a figure only from sources it allows, and serves only bytes whose sha256 matches.
+- `gestures` maps a token of figure's base set (`FigureGesture`) to an `HttpsFileRef(url, sha256)`,
+  the persona's own clip for that gesture on this figure only; it is left out of the JSON when
+  empty, a gesture has at most one clip and a clip cannot be sent without a figure. `HttpsFileRef`
+  owns the url and digest check that `FigureRef` shares, and the app treats a clip as it treats the
+  figure.
 - It passes the voices to its speech service unchanged and in order; the library folds no case and
   picks no voice, and the speech service picks the voice that speaks each sentence. A name that
   service does not offer is refused there, and the app answers with the refusal it already has; the
@@ -756,11 +764,12 @@ utterance and its `name` the speaker's shown name. Which member hears which spea
 line a heard utterance becomes, is `MemberHearing`; the rules are in [hearing.md](hearing.md).
 
 **Speaking** is the side-effecting tool `SPEAK_TOOL`, `speak`. Its arguments are
-`SpeakArguments(place, text, language, style)`: the `PlaceRef`, as for `accept_invitation`, one
-sentence and optionally its `language`, a lowercase ISO 639-1 code of two letters such as `de` or
-`en`, and its `style`, free text such as `louder and angrier` that the app passes on unchanged and
-neither bounds nor checks; a speak without either dumps without the key. The record checks only
-their form; the app decides the rest ([HEARING-20](hearing.md)), and the speech service owns the
+`SpeakArguments(place, text, language, style, mood)`: the `PlaceRef`, as for `accept_invitation`,
+one sentence and optionally its `language`, a lowercase ISO 639-1 code of two letters such as `de`
+or `en`, its `style`, free text such as `louder and angrier` that the app passes on unchanged and
+neither bounds nor checks, and its `mood`, a `FigureMood`, one of figure's moods and no free text;
+a speak without one dumps without the key, and an app that draws no figure ignores the `mood`
+([CALLING-38](calling.md)). The record checks only their form; the app decides the rest ([HEARING-20](hearing.md)), and the speech service owns the
 style's bound and check ([HEARING-23](hearing.md)). On success it answers `Spoken(spoken)`,
 `{"spoken": true}`, when the sentence starts to play, with no length, or `Written(written)`,
 `{"written": true}`, when the app could not voice the sentence and posted it as the member's written
