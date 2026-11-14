@@ -13,7 +13,6 @@ from agents.member import (
     AcceptInvitationArguments,
     DeclineInvitationArguments,
     DeclineInvitationReason,
-    FigureRef,
     Invitation,
     PlaceRef,
     Standing,
@@ -113,19 +112,37 @@ FIGURE_WIRE = {"url": "https://figures.example/a.glb", "sha256": "ab12" * 16}
     [
         {},
         {"figure": FIGURE_WIRE},
-        {"voice": "nova-2.hd_x"},
-        {"voice": "en_US-example-medium"},
-        {"figure": FIGURE_WIRE, "voice": "nova"},
+        {"voices": ["nova-2.hd_x"]},
+        {"voices": ["en_US-example-medium"]},
+        {"voices": ["nova", "alloy", "echo"]},
+        {"voices": ["b", "a", "c"]},
+        {"voices": ["Nova", "nova"]},
+        {"voices": [f"v{number}" for number in range(8)]},
+        {"voices": ["a" * 64]},
+        {"figure": FIGURE_WIRE, "voices": ["nova"]},
     ],
-    ids=["neither", "figure-only", "voice-only", "voice-with-capitals", "both"],
+    ids=[
+        "neither",
+        "figure-only",
+        "one-voice",
+        "voice-with-capitals",
+        "voices-in-order",
+        "order-not-sorted",
+        "names-differing-in-case-only",
+        "eight-voices",
+        "voice-of-64-characters",
+        "both",
+    ],
 )
-def test_accept_invitation_arguments_take_a_figure_and_a_voice_or_neither(
+def test_accept_invitation_arguments_take_a_figure_and_voices_in_order_or_neither(
     fields: dict[str, Any],
 ) -> None:
     arguments = AcceptInvitationArguments.model_validate_json(json.dumps(ACCEPT_WIRE | fields))
 
-    assert arguments.figure == (FigureRef(**fields["figure"]) if "figure" in fields else None)
-    assert arguments.voice == fields.get("voice")
+    dumped = json.loads(arguments.model_dump_json())
+    assert dumped.get("voices") == fields.get("voices")
+    assert ("voices" in dumped) == ("voices" in fields)
+    assert ("figure" in dumped) == ("figure" in fields)
     assert AcceptInvitationArguments.model_validate_json(arguments.model_dump_json()) == arguments
 
 
@@ -212,20 +229,44 @@ def test_accept_invitation_arguments_refuse_a_figure_digest_that_is_not_64_lower
 
 
 @pytest.mark.parametrize(
-    "voice",
-    ["no va", "no/va", "", "a" * 65, "n\u00f6va", "nova\n"],
-    ids=["space", "slash", "empty", "65-characters", "non-ascii-letter", "trailing-newline"],
+    "fields",
+    [
+        {"voices": []},
+        {"voices": [f"v{number}" for number in range(9)]},
+        {"voices": ["nova", "nova"]},
+        {"voices": ["nova", "alloy", "nova"]},
+        {"voices": "nova"},
+        {"voices": ["no va"]},
+        {"voices": ["no/va"]},
+        {"voices": [""]},
+        {"voices": ["a" * 65]},
+        {"voices": ["n\u00f6va"]},
+        {"voices": ["nova\n"]},
+        {"voices": ["nova", 1]},
+        {"voice": "nova"},
+        {"voice": "nova", "voices": ["nova"]},
+    ],
+    ids=[
+        "empty-list",
+        "nine-voices",
+        "duplicate-voice",
+        "duplicate-voice-apart",
+        "bare-name",
+        "space",
+        "slash",
+        "empty-name",
+        "65-characters",
+        "non-ascii-letter",
+        "trailing-newline",
+        "non-string-name",
+        "old-voice-key",
+        "old-voice-key-beside-voices",
+    ],
 )
-def test_accept_invitation_arguments_refuse_a_voice_outside_the_grammar(voice: str) -> None:
-    wire_text = json.dumps(ACCEPT_WIRE | {"voice": voice})
+def test_accept_invitation_arguments_refuse_voices_outside_the_form(
+    fields: dict[str, Any],
+) -> None:
+    wire_text = json.dumps(ACCEPT_WIRE | fields)
 
     with pytest.raises(ValidationError):
         AcceptInvitationArguments.model_validate_json(wire_text)
-
-
-def test_accept_invitation_arguments_take_a_voice_of_64_characters() -> None:
-    arguments = AcceptInvitationArguments.model_validate_json(
-        json.dumps(ACCEPT_WIRE | {"voice": "a" * 64})
-    )
-
-    assert arguments.voice == "a" * 64

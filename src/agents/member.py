@@ -214,21 +214,33 @@ class FigureRef(StrictModel):
 
 
 VoiceName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,64}$")]
-"""The name of the voice an agent speaks with: 1 to 64 ASCII letters of either case, digits, ``.``,
-``_`` or ``-``. The name is passed through unchanged; the app's speech service decides whether it
-offers that voice."""
+"""The name of a voice an agent would speak with: 1 to 64 ASCII letters of either case, digits,
+``.``, ``_`` or ``-``. The name is passed through unchanged; the app's speech service decides
+whether it offers that voice."""
+
+_MAX_VOICES: Final = 8
 
 
 class AcceptInvitationArguments(StrictModel):
     """The arguments of ``accept_invitation``: the place and the invitation's id and epoch, and
-    optionally the agent's ``figure`` and the ``voice`` it speaks with; an absent one means the
-    app's own default."""
+    optionally the agent's ``figure`` and its ``voices``, the names of the voices it would speak
+    with, first choice first; an absent one means the app's own default. The app passes the
+    ``voices`` unchanged and in order to its speech service, which picks the voice."""
 
     place: PlaceRef
     invitation: NonEmptyUnicodeText
     epoch: int = Field(ge=0)
     figure: FigureRef | None = Field(default=None, exclude_if=_is_none)
-    voice: VoiceName | None = Field(default=None, exclude_if=_is_none)
+    voices: tuple[VoiceName, ...] | None = Field(
+        default=None, min_length=1, max_length=_MAX_VOICES, exclude_if=_is_none
+    )
+
+    @field_validator("voices")
+    @classmethod
+    def _name_no_voice_twice(cls, voices: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if voices is not None and len(set(voices)) != len(voices):
+            raise ValueError("a voice is named at most once")
+        return voices
 
 
 class AcceptInvitationRefusal(StrEnum):
