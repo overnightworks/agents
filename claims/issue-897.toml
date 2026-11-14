@@ -1,0 +1,8 @@
+claim_id = "3140ff1a26d9443c966b5c0fa23601e1"
+agent = "Claude 0eb5ffa7-a58d-40a9-94aa-ac0c8b9e50bb"
+role = "builder"
+base = "6981987757901070c29497cd246460425080f4ee"
+branch = "claude/issue-897-gesture-and-mood-during-a-call"
+scope = [".github/workflows/ci.yml", ".importlinter", "AGENTS.md", "docs/ARCHITECTURE.md", "docs/calling.md", "docs/connector.md", "pyproject.toml", "scripts", "sonar-project.properties", "src/agents/figure_vocabulary.py", "src/agents/mcp_server/routes.py", "src/agents/member.py", "src/agents/tools.py", "tests"]
+opened_commit = "a925d2d6c0a96c66b2cecc1a3cc996ee3123151b"
+whole_reason = "One figure-control contract on figure's generated vocabulary: the gesture tool, the mood on speak and the clips at accept, served and read together by every app and runner."
