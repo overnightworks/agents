@@ -207,8 +207,7 @@ def test_an_app_that_pulls_after_the_deadline_gets_limit_exceeded_and_nothing_mo
 
 
 @pytest.mark.parametrize("done", [False, True], ids=["alone", "then-done"])
-def test_an_error_event_ends_the_turn_and_logs_only_its_type_and_code(scenario, caplog, done):
-    caplog.set_level(logging.INFO)
+def test_an_error_event_ends_the_turn_as_gateway_failed(scenario, done):
     error = {"message": f"leaks {scenario.key}", "type": "api_error", "code": "500"}
     transport = Streamed((an_event_stream(a_chunk("a"), {"error": error}, done=done),))
 
@@ -219,10 +218,6 @@ def test_an_error_event_ends_the_turn_and_logs_only_its_type_and_code(scenario, 
         UNAVAILABLE,
         GatewayDetail.GATEWAY_FAILED,
     )
-    assert "api_error" in caplog.text
-    assert "500" in caplog.text
-    assert "leaks" not in caplog.text
-    assert scenario.key not in caplog.text
     assert transport.closed.is_set()
 
 

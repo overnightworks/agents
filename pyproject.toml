@@ -14,12 +14,12 @@ dependencies = [
 [project.optional-dependencies]
 backend = [
     "httpx2>=2.12,<3",
-    "overnightworks-logline>=0.3,<0.5",
+    "overnightworks-logline>=0.4,<0.5",
 ]
 mcp-server = [
     "anyio>=4.12,<5",
     "mcp>=2.3,<3",
-    "overnightworks-logline>=0.3,<0.5",
+    "overnightworks-logline>=0.4,<0.5",
 ]
 redis = [
     "overnightworks-agents[mcp-server]",
