@@ -29,6 +29,7 @@ from tests.support.gateway_turn_support import (
     Streamed,
     _turn,
     a_chunk,
+    a_fragment,
     a_picture_request,
     a_request,
     an_event_stream,
@@ -235,6 +236,26 @@ def test_a_reply_that_is_no_round_is_a_malformed_reply_line(scenario, log_lines)
     line = log_lines.one(MODEL_REQUEST)
     assert (line["outcome"], line["reason"]) == ("failed", "malformed_reply")
     assert "marker-in-the-wire" not in log_lines.everything()
+
+
+@pytest.mark.parametrize(
+    "stream",
+    [
+        an_event_stream(a_chunk("cut", finish_reason="length")),
+        an_event_stream(
+            a_chunk(tool_calls=[a_fragment(0, call_id="c0", name="not_offered", arguments="{}")]),
+            a_chunk(finish_reason="tool_calls"),
+        ),
+    ],
+    ids=["cut-short", "call-to-a-tool-not-offered"],
+)
+def test_a_reply_read_whole_that_is_no_valid_round_is_a_malformed_reply_line(
+    scenario, log_lines, stream
+):
+    _send_completion(scenario, Streamed((stream,)))
+
+    line = log_lines.one(MODEL_REQUEST)
+    assert (line["outcome"], line["reason"]) == ("failed", "malformed_reply")
 
 
 def test_the_hosts_close_during_a_round_is_a_cancelled_line(scenario, log_lines):

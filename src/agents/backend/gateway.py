@@ -577,8 +577,8 @@ async def _streamed_round(
     """Each text piece of a round as it streams, then the round, judged whole.
 
     Opening the request and each read run under the deadline, and no timeout spans a yield. The
-    round's one line is written when the request ends, and a failure is raised after its handler
-    ends.
+    round's one line is written when the request ends, and a failure, the round's judgement
+    included, is raised after its handler ends.
     """
     failure: TurnStopped | None = None
     completed: list[StreamedRound] = []
@@ -600,7 +600,8 @@ async def _streamed_round(
             raise failure
         _add_usage(step, completed[0].usage)
         await _read_to_the_end(chunks)
-    yield _judged(completed[0], offered)
+        judged = _judged(completed[0], offered)
+    yield judged
 
 
 async def _chunks(response: httpx2.Response, deadline: float) -> AsyncGenerator[bytes, None]:
