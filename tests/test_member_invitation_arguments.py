@@ -300,9 +300,10 @@ def test_a_host_side_voices_type_refuses_what_the_accept_arguments_refuse(
     voices: list[str],
 ) -> None:
     wire_text = json.dumps(ACCEPT_WIRE | {"voices": voices})
+    voices_adapter = TypeAdapter(Voices)
 
     with pytest.raises(ValidationError):
-        TypeAdapter(Voices).validate_python(voices)
+        voices_adapter.validate_python(voices)
     with pytest.raises(ValidationError):
         AcceptInvitationArguments.model_validate_json(wire_text)
 
