@@ -10,22 +10,31 @@ from pydantic import TypeAdapter, ValidationError
 
 from agents.figure_vocabulary import FigureMood
 from agents.member import (
+    CONTINUE_SPEAKING_TOOL,
     STOP_SPEAKING_TOOL,
+    ContinuedSpeaking,
+    ContinueSpeakingArguments,
+    DroppedSpeaking,
+    Interrupted,
     PlaceRef,
     PlaceWindow,
     SpeakAnswer,
     SpeakArguments,
     Spoken,
     StoppedSpeaking,
+    StopSpeakingAnswer,
     StopSpeakingArguments,
     TalkedOver,
     VoiceState,
     Written,
 )
 from tests.support.member_wire import (
+    continue_wire,
     entry,
+    interrupted_wire,
     speak_wire,
     spoken_wire,
+    stop_wire,
     talked_over_wire,
     talked_window_wire,
     window_from,
@@ -40,6 +49,7 @@ PLACE = PlaceRef(kind="room", id="r-1")
     [
         pytest.param("language", "en", id="language"),
         pytest.param("style", "louder and angrier", id="style"),
+        pytest.param("interrupted", "h-1", id="interrupted"),
         *[pytest.param("mood", mood.value, id=f"mood-{mood.value}") for mood in FigureMood],
     ],
 )
@@ -52,7 +62,7 @@ def test_speak_arguments_name_the_optional_field_of_the_sentence_when_given(
     assert SpeakArguments.model_validate_json(arguments.model_dump_json()) == arguments
 
 
-@pytest.mark.parametrize("field", ["language", "style", "mood"])
+@pytest.mark.parametrize("field", ["language", "style", "mood", "interrupted"])
 def test_speak_arguments_without_an_optional_field_dump_without_its_key(field: str) -> None:
     arguments = SpeakArguments.model_validate_json(json.dumps(speak_wire()))
 
@@ -60,9 +70,10 @@ def test_speak_arguments_without_an_optional_field_dump_without_its_key(field: s
     assert field not in json.loads(arguments.model_dump_json())
 
 
-@pytest.mark.parametrize("style", ["", 1, ["calm"]], ids=["empty", "number", "list"])
-def test_speak_arguments_with_a_malformed_style_are_refused(style: object) -> None:
-    wire_text = json.dumps(speak_wire(style=style))
+@pytest.mark.parametrize("field", ["style", "interrupted"])
+@pytest.mark.parametrize("value", ["", 1, ["calm"]], ids=["empty", "number", "list"])
+def test_speak_arguments_with_a_malformed_text_field_are_refused(field: str, value: object) -> None:
+    wire_text = json.dumps(speak_wire(**{field: value}))
 
     with pytest.raises(ValidationError):
         SpeakArguments.model_validate_json(wire_text)
@@ -117,6 +128,131 @@ def test_stopped_speaking_names_the_sentence_it_cut() -> None:
 def test_stopped_speaking_with_a_malformed_field_is_refused(wire: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         StoppedSpeaking.model_validate_json(json.dumps(wire))
+
+
+def test_stop_speaking_arguments_name_the_hold_when_given() -> None:
+    arguments = StopSpeakingArguments.model_validate_json(json.dumps(stop_wire(interrupted="h-1")))
+
+    assert arguments.interrupted == "h-1"
+    assert json.loads(arguments.model_dump_json()) == stop_wire(interrupted="h-1")
+    assert StopSpeakingArguments.model_validate_json(arguments.model_dump_json()) == arguments
+
+
+@pytest.mark.parametrize("interrupted", ["", 1, ["h-1"]], ids=["empty", "number", "list"])
+def test_stop_speaking_arguments_with_a_malformed_hold_are_refused(interrupted: object) -> None:
+    with pytest.raises(ValidationError):
+        StopSpeakingArguments.model_validate_json(json.dumps(stop_wire(interrupted=interrupted)))
+
+
+def test_continue_speaking_arguments_name_the_hold_on_the_wire() -> None:
+    arguments = ContinueSpeakingArguments.model_validate_json(json.dumps(continue_wire()))
+
+    assert json.loads(arguments.model_dump_json()) == continue_wire()
+    assert CONTINUE_SPEAKING_TOOL == "continue_speaking"
+
+
+@pytest.mark.parametrize(
+    "wire",
+    [
+        {"place": {"kind": "room", "id": "r-1"}},
+        continue_wire(interrupted=""),
+        continue_wire(interrupted=1),
+        continue_wire(extra=1),
+        {"interrupted": "h-1"},
+    ],
+    ids=["no-id", "empty-id", "number-id", "unknown-member", "no-place"],
+)
+def test_continue_speaking_arguments_with_a_malformed_field_are_refused(
+    wire: dict[str, Any],
+) -> None:
+    with pytest.raises(ValidationError):
+        ContinueSpeakingArguments.model_validate_json(json.dumps(wire))
+
+
+@pytest.mark.parametrize(
+    ("wire", "record", "field"),
+    [
+        ({"continued": True}, ContinuedSpeaking, "continued"),
+        ({"dropped": True}, DroppedSpeaking, "dropped"),
+    ],
+    ids=["continued", "dropped"],
+)
+def test_a_hold_answer_reads_back_from_its_json_as_the_marker_alone(
+    wire: dict[str, Any], record: type[ContinuedSpeaking | DroppedSpeaking], field: str
+) -> None:
+    answer = record.model_validate_json(json.dumps(wire))
+
+    assert json.loads(answer.model_dump_json()) == {field: True}
+
+
+@pytest.mark.parametrize("record", [ContinuedSpeaking, DroppedSpeaking])
+@pytest.mark.parametrize(
+    "marker",
+    [False, "yes", 1, None, {}, []],
+    ids=["false", "text", "number", "null", "obj", "list"],
+)
+def test_a_hold_answer_whose_marker_is_not_exactly_true_is_refused(
+    record: type[ContinuedSpeaking | DroppedSpeaking], marker: object
+) -> None:
+    field = "continued" if record is ContinuedSpeaking else "dropped"
+
+    with pytest.raises(ValidationError):
+        record.model_validate_json(json.dumps({field: marker}))
+
+
+@pytest.mark.parametrize(
+    ("wire", "record"),
+    [({"cut": "Shall we"}, StoppedSpeaking), ({"dropped": True}, DroppedSpeaking)],
+    ids=["stopped", "dropped"],
+)
+def test_a_stop_answer_reads_stopped_and_dropped_each_as_its_own_record(
+    wire: dict[str, Any], record: type[StoppedSpeaking | DroppedSpeaking]
+) -> None:
+    answer = TypeAdapter(StopSpeakingAnswer).validate_json(json.dumps(wire))
+
+    assert type(answer) is record
+
+
+@pytest.mark.parametrize(
+    "wire",
+    [{"cut": "Shall we", "dropped": True}, {}],
+    ids=["both", "neither"],
+)
+def test_a_stop_answer_that_is_both_or_neither_is_refused(wire: dict[str, Any]) -> None:
+    answer_adapter = TypeAdapter(StopSpeakingAnswer)
+    payload = json.dumps(wire)
+
+    with pytest.raises(ValidationError):
+        answer_adapter.validate_json(payload)
+
+
+def test_a_window_reads_its_hold_back_from_its_json_unchanged() -> None:
+    window = window_from(
+        talked_window_wire(
+            talked_over=talked_over_wire(playing=False), interrupted=interrupted_wire()
+        )
+    )
+
+    assert window.interrupted == Interrupted(id="h-1")
+    assert json.loads(window.model_dump_json())["interrupted"] == interrupted_wire()
+    assert PlaceWindow.model_validate_json(window.model_dump_json()) == window
+
+
+def test_a_window_without_a_hold_dumps_without_the_key() -> None:
+    window = PlaceWindow(generation="g", starts_at=1, entries=())
+
+    assert window.interrupted is None
+    assert "interrupted" not in json.loads(window.model_dump_json())
+
+
+@pytest.mark.parametrize(
+    "interrupted",
+    [{}, {"id": ""}, {"id": 1}, {"id": "h", "extra": 1}, "h-1"],
+    ids=["no-id", "empty-id", "number-id", "unknown-member", "bare-id"],
+)
+def test_a_window_with_a_malformed_hold_is_refused(interrupted: object) -> None:
+    with pytest.raises(ValidationError):
+        window_from(talked_window_wire(interrupted=interrupted))
 
 
 def test_a_window_without_talked_over_dumps_without_the_key() -> None:
