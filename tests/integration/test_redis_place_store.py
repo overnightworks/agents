@@ -46,6 +46,8 @@ from tests.support.redis_listen_support import (
     RedisClock,
     arrived,
     delivered_up_to,
+    namespace_of,
+    snapshots_around_evalsha,
     subscribed,
 )
 
@@ -59,6 +61,8 @@ _OPEN = timedelta(seconds=LISTEN_BOUND_SECONDS + LISTEN_ALLOWANCE_SECONDS)
 _YES = ListeningTurn(_ALICE, STANDING_URI, listens=True)
 _NO = ListeningTurn(_ALICE, STANDING_URI, listens=False)
 _AFTER_EVERYTHING = ResourceChange(_BOB, STANDING_URI, "test")
+_BEFORE_THE_LAPSE = ResourceChange(_BOB, STANDING_URI, "before the lapse")
+_AFTER_THE_LAPSE = ResourceChange(_BOB, STANDING_URI, "after the lapse")
 
 
 @pytest.fixture
@@ -594,21 +598,6 @@ async def replace_with_a_string(raw: FakeAsyncRedis, key: str) -> None:
     await raw.set(key, "not a collection")
 
 
-async def dump_of(raw: FakeAsyncRedis, *roles: str) -> dict[str, object]:
-    """What the keys of ``roles`` hold, whatever their type."""
-    state: dict[str, object] = {}
-    for role in roles:
-        key = key_names(raw)[role]
-        match (await raw.type(key)).decode():
-            case "hash":
-                state[role] = await raw.hgetall(key)
-            case "zset":
-                state[role] = await raw.zrange(key, 0, -1, withscores=True)
-            case other:
-                state[role] = (other, await raw.get(key) if other == "string" else None)
-    return state
-
-
 _RECORD_KEYS = ("due", "claimed", "claim", "listens", "streams")
 
 
@@ -645,12 +634,12 @@ def test_acknowledged_and_ended_refuse_a_key_of_the_wrong_type_before_they_write
         store = a_pod(server)
         await seed_a_stream_in_every_key(raw, recorded=recorded)
         await replace_with_a_string(raw, key_names(raw)[wrong_key])
-        before = await dump_of(raw, *_RECORD_KEYS)
+        before = await namespace_of(raw, _PREFIX)
         async with subscribed(store) as events:
             with pytest.raises(PlaceStoreError):
                 await call(store)
             seen = await delivered_up_to(store, events, _AFTER_EVERYTHING)
-        return before, await dump_of(raw, *_RECORD_KEYS), seen
+        return before, await namespace_of(raw, _PREFIX), seen
 
     before, after, seen = asyncio.run(scenario())
 
@@ -682,24 +671,25 @@ def test_a_lapse_that_cannot_read_the_record_writes_nothing_logs_and_keeps_its_c
 ) -> None:
     caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
 
-    async def scenario() -> tuple[dict[str, object], dict[str, object], list[Event], object]:
+    async def scenario() -> tuple[tuple[object, object], list[Event], object]:
         raw = FakeAsyncRedis(server=server)
-        store = a_pod(server)
+        client = FakeAsyncRedis(server=server)
+        store = RedisPlaceStore(client, key_prefix=_PREFIX)
+        around_scripts = snapshots_around_evalsha(client, lambda: namespace_of(raw, _PREFIX))
         async with subscribed(store) as events:
             await store.acknowledged("held", _ALICE, [STANDING_URI], _ALLOWANCE)
-            await delivered_up_to(store, events, _AFTER_EVERYTHING)
+            await delivered_up_to(store, events, _BEFORE_THE_LAPSE)
             await damage(raw)
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            before = await dump_of(raw, "listens", "streams")
             await store.lapse_due("pod")
-            seen = await delivered_up_to(store, events, _AFTER_EVERYTHING)
+            seen = await delivered_up_to(store, events, _AFTER_THE_LAPSE)
             claimed = await raw.zrange(key_names(raw)["claimed"], 0, -1)
-            return before, await dump_of(raw, "listens", "streams"), seen, claimed
+            return around_scripts[-1], seen, claimed
 
-    before, after, seen, claimed = asyncio.run(scenario())
+    (before, after), seen, claimed = asyncio.run(scenario())
 
     assert after == before
-    assert seen == [Resubscribed(), _YES, _AFTER_EVERYTHING]
+    assert seen == [Resubscribed(), _YES, _BEFORE_THE_LAPSE, _AFTER_THE_LAPSE]
     assert claimed == [b"held"]
     (warning,) = caplog.records
     assert warning.levelno == logging.WARNING
