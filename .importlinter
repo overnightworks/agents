@@ -43,6 +43,7 @@ source_modules =
     agents.backend
     agents.backend.fake_gateway
     agents.backend.gateway
+    agents.backend.gateway_request
     agents.backend.streamed_round
     agents.backend.tool_result
     agents.config
@@ -74,6 +75,7 @@ source_modules =
     agents.backend
     agents.backend.fake_gateway
     agents.backend.gateway
+    agents.backend.gateway_request
     agents.backend.streamed_round
     agents.backend.tool_result
     agents.config
@@ -121,13 +123,14 @@ source_modules =
 forbidden_modules =
     agents.mcp_wire
 
-# The streamed-round reader is pure: it frames bytes and assembles a round, so it imports no HTTP
-# library, and gateway.py calls it, never the reverse.
+# The streamed-round reader and the request builder are pure: they frame bytes and assemble a round,
+# or build a body, so they import no HTTP library, and gateway.py calls them, never the reverse.
 [importlinter:contract:streamed-round-stays-pure]
-name = backend.streamed_round imports no HTTP library and not backend.gateway
+name = backend.streamed_round and backend.gateway_request import no HTTP library and not backend.gateway
 type = forbidden
 source_modules =
     agents.backend.streamed_round
+    agents.backend.gateway_request
 forbidden_modules =
     httpx2
     httpx
