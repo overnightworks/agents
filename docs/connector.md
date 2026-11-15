@@ -709,8 +709,10 @@ honored that, and the front logs one line, because a change sent while the subsc
 is lost. When a publish fails, `changed` raises `PlaceStoreError` (a host never imports tandem or
 redis to catch it) and retries nothing: delivery is uncertain, and a member sees the change by its
 next listen's read within `LISTEN_BOUND_SECONDS`. A payload on agents' channel that is no address
-is logged by its length and skipped. If the subscription fails for good after startup, the front
-logs the cause, ends its open listens and answers every request with 503 until the pod restarts.
+is logged by its length and skipped; one that is no UTF-8 also resubscribes, so every open stream
+gets the resync pulse and the front logs its resync line. If the subscription fails for good after
+startup, the front logs the cause, ends its open listens and answers every request with 503 until
+the pod restarts.
 Proved by `tests/test_mcp_server_place_wake.py`, `tests/integration/test_redis_place_store.py` and
 the two-process tests of `tests/integration/real_redis`, which `scripts/run_redis_tests.sh` runs.
 

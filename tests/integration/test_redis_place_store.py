@@ -34,6 +34,7 @@ from tests.support.mcp_server_support import (
 
 _PREFIX = "notes"
 _ALICE = a_member("alice")
+_NO_UTF8_PAYLOAD = b"\xff\xfe\xfd"
 
 
 @pytest.fixture
@@ -141,16 +142,19 @@ def test_a_payload_that_is_no_utf8_is_skipped_and_the_subscription_goes_on(
 
     async def scenario() -> list[PlaceSignal | Resubscribed]:
         async with subscribed(a_pod(server)) as events:
-            await FakeAsyncRedis(server=server).publish("notes-agents:tandem:v1:wake", b"\xff")
+            await FakeAsyncRedis(server=server).publish(
+                "notes-agents:tandem:v1:wake", _NO_UTF8_PAYLOAD
+            )
             await arrived(events, 2)
             await a_pod(server).publish(wake)
             await arrived(events, 3)
             return list(events)
 
     assert asyncio.run(scenario()) == [Resubscribed(), Resubscribed(), wake]
-    assert [record.getMessage() for record in caplog.records] == [
-        "a payload of 1 bytes is no UTF-8: skipped"
-    ]
+    (warning,) = caplog.records
+    assert warning.levelno == logging.WARNING
+    assert str(len(_NO_UTF8_PAYLOAD)) in warning.getMessage()
+    assert not any(part in warning.getMessage() for part in ("xff", "xfe", "xfd", "\xff"))
 
 
 @pytest.mark.parametrize(
