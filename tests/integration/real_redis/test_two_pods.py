@@ -14,15 +14,10 @@ import asyncio
 import json
 import logging
 import signal
-import socket
-import subprocess
-import sys
 import time
-from collections.abc import Callable, Iterator
-from contextlib import ExitStack, contextmanager, suppress
-from dataclasses import dataclass
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import timedelta
-from pathlib import Path
 from typing import Any
 
 import httpx2
@@ -47,6 +42,7 @@ from tests.support.real_redis_pod import (
     WRITES_KEY,
     WRITTEN_MEMBER,
 )
+from tests.support.real_redis_pods import POD_A_USER, PREFIX, WAIT_SECONDS, Pod, wait_until
 from tests.support.redis_listen_support import (
     UNUSUAL_PRINCIPALS,
     UNUSUAL_URIS,
@@ -57,104 +53,14 @@ from tests.support.redis_listen_support import (
     subscribed,
 )
 
-_REPOSITORY = Path(__file__).resolve().parents[3]
-_PREFIX = "notes"
-_POD_A_USER = "pod-a"
-_POD_A_PASSWORD = "pod-a-secret"
 _ACKNOWLEDGED = "notifications/subscriptions/acknowledged"
 _UPDATED = "notifications/resources/updated"
-_WAIT_SECONDS = 20
 _YES = [WRITTEN_MEMBER.iss, WRITTEN_MEMBER.sub, STANDING_URI, True]
 _NO = [WRITTEN_MEMBER.iss, WRITTEN_MEMBER.sub, STANDING_URI, False]
 _OPEN = timedelta(seconds=LISTEN_BOUND_SECONDS + LISTEN_ALLOWANCE_SECONDS)
 _FIRST_BARRIER = ResourceChange(a_member("bob"), STANDING_URI, "first")
 _SECOND_BARRIER = ResourceChange(a_member("bob"), STANDING_URI, "second")
 _SECONDS_PAST_THE_CLAIM = 10
-
-
-@dataclass
-class Pod:
-    process: subprocess.Popen[bytes]
-    url: str
-    log: Path
-
-    def kill(self) -> None:
-        if self.process.poll() is None:
-            self.process.kill()
-        self.process.wait()
-
-    def stop(self) -> int:
-        """SIGTERM and the exit status, which is the signal itself once uvicorn shut down in order;
-        a pod that does not leave is killed and fails the test."""
-        self.process.send_signal(signal.SIGTERM)
-        try:
-            return self.process.wait(timeout=_WAIT_SECONDS)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait()
-            raise
-
-
-def as_user(redis_url: str, user: str, password: str) -> str:
-    scheme, address = redis_url.split("://", 1)
-    return f"{scheme}://{user}:{password}@{address}"
-
-
-def started(tmp_path: Path, redis_url: str) -> Pod:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    log = tmp_path / f"pod-{port}.log"
-    with log.open("wb") as output:
-        process = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "tests.support.real_redis_pod",
-                str(port),
-                redis_url,
-                _PREFIX,
-            ],
-            cwd=_REPOSITORY,
-            stdout=output,
-            stderr=subprocess.STDOUT,
-        )
-    pod = Pod(process, f"http://127.0.0.1:{port}", log)
-    with ExitStack() as killed_unless_ready:
-        killed_unless_ready.callback(pod.kill)
-        deadline = time.monotonic() + _WAIT_SECONDS
-        while time.monotonic() < deadline:
-            assert process.poll() is None, log.read_text()
-            with suppress(OSError), socket.create_connection(("127.0.0.1", port), timeout=1):
-                killed_unless_ready.pop_all()
-                return pod
-            time.sleep(0.1)
-        pytest.fail(f"the pod on port {port} was not ready: {log.read_text()}")
-
-
-@pytest.fixture
-def pods(tmp_path: Path, redis_url: str, admin: Redis) -> Iterator[tuple[Pod, Pod]]:
-    """Pod A as its own Redis user, pod B as the default one."""
-    admin.acl_setuser(
-        _POD_A_USER,
-        enabled=True,
-        passwords=[f"+{_POD_A_PASSWORD}"],
-        keys=["*"],
-        channels=["*"],
-        commands=["+@all"],
-    )
-    try:
-        pod_a = started(tmp_path, as_user(redis_url, _POD_A_USER, _POD_A_PASSWORD))
-        try:
-            pod_b = started(tmp_path, redis_url)
-            try:
-                yield pod_a, pod_b
-            finally:
-                pod_b.kill()
-        finally:
-            pod_a.kill()
-    finally:
-        admin.acl_deluser(_POD_A_USER)
 
 
 def request_of(body: bytes) -> tuple[bytes, dict[str, str]]:
@@ -169,7 +75,7 @@ class Frames:
         self._lines = response.iter_lines()
 
     def next(self) -> dict[str, Any]:
-        deadline = time.monotonic() + _WAIT_SECONDS
+        deadline = time.monotonic() + WAIT_SECONDS
         for line in self._lines:
             if line.startswith("data: "):
                 return json.loads(line.removeprefix("data: "))
@@ -188,38 +94,29 @@ def listening_on(pod: Pod) -> Iterator[Frames]:
         )
     )
     with (
-        httpx2.Client(timeout=httpx2.Timeout(_WAIT_SECONDS, read=None), trust_env=False) as http,
+        httpx2.Client(timeout=httpx2.Timeout(WAIT_SECONDS, read=None), trust_env=False) as http,
         http.stream("POST", pod.url + MCP_ENDPOINT_PATH, content=body, headers=headers) as response,
     ):
         yield Frames(response)
 
 
 def write_on(pod: Pod) -> int:
-    return httpx2.post(pod.url + WRITE_PATH, timeout=_WAIT_SECONDS, trust_env=False).json()[
-        "writes"
-    ]
+    return httpx2.post(pod.url + WRITE_PATH, timeout=WAIT_SECONDS, trust_env=False).json()["writes"]
 
 
 def listeners_of(pod: Pod) -> list[list[str]]:
-    return httpx2.get(pod.url + LISTENERS_PATH, timeout=_WAIT_SECONDS, trust_env=False).json()
+    return httpx2.get(pod.url + LISTENERS_PATH, timeout=WAIT_SECONDS, trust_env=False).json()
 
 
 def listening_changes_heard_by(pod: Pod) -> list[list[str | bool]]:
     return httpx2.get(
-        pod.url + LISTENING_CHANGES_PATH, timeout=_WAIT_SECONDS, trust_env=False
+        pod.url + LISTENING_CHANGES_PATH, timeout=WAIT_SECONDS, trust_env=False
     ).json()
-
-
-def wait_until(check: Callable[[], bool], *, seconds: float) -> None:
-    deadline = time.monotonic() + seconds
-    while not check():
-        assert time.monotonic() < deadline, "the awaited state never came"
-        time.sleep(0.1)
 
 
 def stream_shortened_to_the_allowance(admin: Redis) -> bool:
     """Whether the one stream on record comes due within the allowance, which ``ended`` arms."""
-    due = deadline_keys(f"{_PREFIX}-agents", "listen").due
+    due = deadline_keys(f"{PREFIX}-agents", "listen").due
     seconds, microseconds = admin.time()
     now_ms = seconds * 1000 + microseconds // 1000
     waiting = admin.zrange(due, 0, 0, withscores=True)
@@ -232,7 +129,7 @@ def status_of_a_request_to(pod: Pod) -> int:
         pod.url + MCP_ENDPOINT_PATH,
         content=body,
         headers=headers,
-        timeout=_WAIT_SECONDS,
+        timeout=WAIT_SECONDS,
         trust_env=False,
     )
     return answer.status_code
@@ -253,7 +150,7 @@ def test_the_pods_wake_each_other_on_agents_own_channel_and_not_the_hosts(
 ) -> None:
     channels = admin.pubsub_channels()
 
-    assert channels == [f"{_PREFIX}-agents:tandem:v1:wake"]
+    assert channels == [f"{PREFIX}-agents:tandem:v1:wake"]
 
 
 def test_a_subscription_that_is_cut_resyncs_the_open_listen(
@@ -263,7 +160,7 @@ def test_a_subscription_that_is_cut_resyncs_the_open_listen(
 
     with listening_on(pod_a) as frames:
         assert frames.next_method() == _ACKNOWLEDGED
-        admin.client_kill_filter(user=_POD_A_USER, _type="pubsub")
+        admin.client_kill_filter(user=POD_A_USER, _type="pubsub")
 
         assert frames.next_method() == _UPDATED
 
@@ -287,8 +184,8 @@ def test_a_subscription_redis_refuses_ends_the_listen_and_answers_503_while_the_
 
     with listening_on(pod_a) as frames:
         assert frames.next_method() == _ACKNOWLEDGED
-        admin.acl_setuser(_POD_A_USER, reset_channels=True)
-        admin.client_kill_filter(user=_POD_A_USER, _type="pubsub")
+        admin.acl_setuser(POD_A_USER, reset_channels=True)
+        admin.client_kill_filter(user=POD_A_USER, _type="pubsub")
 
         assert "result" in frames.next()
 
@@ -306,7 +203,7 @@ def test_a_listen_on_one_pod_is_listed_by_the_other_and_its_host_hears_the_yes(
         assert frames.next_method() == _ACKNOWLEDGED
 
         assert listeners_of(pod_b) == [[WRITTEN_MEMBER.iss, WRITTEN_MEMBER.sub]]
-        wait_until(lambda: listening_changes_heard_by(pod_b) == [_YES], seconds=_WAIT_SECONDS)
+        wait_until(lambda: listening_changes_heard_by(pod_b) == [_YES], seconds=WAIT_SECONDS)
 
 
 def test_after_the_runner_closed_its_stream_and_its_pod_was_killed_the_other_pod_hears_one_no(
@@ -316,8 +213,8 @@ def test_after_the_runner_closed_its_stream_and_its_pod_was_killed_the_other_pod
 
     with listening_on(pod_a) as frames:
         assert frames.next_method() == _ACKNOWLEDGED
-        wait_until(lambda: listening_changes_heard_by(pod_b) == [_YES], seconds=_WAIT_SECONDS)
-    wait_until(lambda: stream_shortened_to_the_allowance(admin), seconds=_WAIT_SECONDS)
+        wait_until(lambda: listening_changes_heard_by(pod_b) == [_YES], seconds=WAIT_SECONDS)
+    wait_until(lambda: stream_shortened_to_the_allowance(admin), seconds=WAIT_SECONDS)
     pod_a.kill()
 
     wait_until(
@@ -330,7 +227,7 @@ def test_after_the_runner_closed_its_stream_and_its_pod_was_killed_the_other_pod
 
 
 def a_store(redis_url: str) -> RedisPlaceStore:
-    return RedisPlaceStore(AsyncRedis.from_url(redis_url), key_prefix=_PREFIX)
+    return RedisPlaceStore(AsyncRedis.from_url(redis_url), key_prefix=PREFIX)
 
 
 def test_a_claim_its_pod_cannot_finish_is_lapsed_by_another_pod_once_the_claim_ran_out(
@@ -339,7 +236,7 @@ def test_a_claim_its_pod_cannot_finish_is_lapsed_by_another_pod_once_the_claim_r
     async def scenario() -> tuple[object, ...]:
         store_b = a_store(redis_url)
         store_a = RedisPlaceStore(
-            EvalshaStopsAfter(redis_url, evalshas_that_return=1), key_prefix=_PREFIX
+            EvalshaStopsAfter(redis_url, evalshas_that_return=1), key_prefix=PREFIX
         )
         async with subscribed(store_b) as events:
             await store_b.acknowledged("stream", WRITTEN_MEMBER, [STANDING_URI], _OPEN)
@@ -418,20 +315,20 @@ def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_logs(
     async def scenario() -> tuple[tuple[object, object], list[object]]:
         client = AsyncRedis.from_url(redis_url)
         watcher = AsyncRedis.from_url(redis_url)
-        around_scripts = snapshots_around_evalsha(client, lambda: namespace_of(watcher, _PREFIX))
-        store = RedisPlaceStore(client, key_prefix=_PREFIX)
+        around_scripts = snapshots_around_evalsha(client, lambda: namespace_of(watcher, PREFIX))
+        store = RedisPlaceStore(client, key_prefix=PREFIX)
         async with subscribed(store) as events:
             await store.acknowledged("held", alice, [STANDING_URI], timedelta(milliseconds=1))
             await delivered_up_to(store, events, _FIRST_BARRIER)
-            admin.hset(f"{_PREFIX}-agents:v1:streams", "held", record)
+            admin.hset(f"{PREFIX}-agents:v1:streams", "held", record)
 
             async def claimed() -> bool:
                 await store.lapse_due("pod")
                 return bool(
-                    admin.zscore(deadline_keys(f"{_PREFIX}-agents", "listen").claimed, "held")
+                    admin.zscore(deadline_keys(f"{PREFIX}-agents", "listen").claimed, "held")
                 )
 
-            await eventually(claimed, seconds=_WAIT_SECONDS)
+            await eventually(claimed, seconds=WAIT_SECONDS)
             return around_scripts[-1], await delivered_up_to(store, events, _SECOND_BARRIER)
 
     (before, after), seen = asyncio.run(scenario())

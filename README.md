@@ -22,7 +22,7 @@ The base depends on `pydantic` and `ruamel.yaml` only. Four extras are optional:
 |---|---|---|
 | `backend` | `httpx2` | `GatewayBackend`, the one backend, and `FakeGateway`, its scripted transport for tests |
 | `mcp-server` | `anyio`, the official MCP SDK (`mcp`) | `agents.mcp_server`, an app's MCP endpoint on revision 2026-07-28 |
-| `redis` | `mcp-server`, `overnightworks-tandem` (which brings `redis`) | `RedisPlaceStore`, the place store of an app that runs more than one pod |
+| `redis` | `mcp-server`, `overnightworks-tandem` (which brings `redis`) | `RedisPlaceStore`, the place store and the member leases of an app that runs more than one pod |
 | `voice` | `syntok` | `agents.voice`, the voice loop: an agent hears a place's lines and answers sentence by sentence, as text |
 
 ## Use

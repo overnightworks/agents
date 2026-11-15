@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from redis import Redis
+
+from tests.support.real_redis_pods import POD_A_PASSWORD, POD_A_USER, Pod, as_user, started
 
 
 @pytest.fixture(scope="session")
@@ -26,3 +29,28 @@ def admin(redis_url: str) -> Iterator[Redis]:
     yield client
     client.flushall()
     client.close()
+
+
+@pytest.fixture
+def pods(tmp_path: Path, redis_url: str, admin: Redis) -> Iterator[tuple[Pod, Pod]]:
+    """Pod A as its own Redis user, pod B as the default one."""
+    admin.acl_setuser(
+        POD_A_USER,
+        enabled=True,
+        passwords=[f"+{POD_A_PASSWORD}"],
+        keys=["*"],
+        channels=["*"],
+        commands=["+@all"],
+    )
+    try:
+        pod_a = started(tmp_path, as_user(redis_url, POD_A_USER, POD_A_PASSWORD))
+        try:
+            pod_b = started(tmp_path, redis_url)
+            try:
+                yield pod_a, pod_b
+            finally:
+                pod_b.kill()
+        finally:
+            pod_a.kill()
+    finally:
+        admin.acl_deluser(POD_A_USER)

@@ -89,9 +89,19 @@ rule = "test-layout"
 reason = "an adapter-bound suite: it needs the redis extra, so it lives apart from the core suites"
 
 [[layout.allow]]
+path = "tests/integration/test_redis_leases.py"
+rule = "test-layout"
+reason = "an adapter-bound suite: it needs the redis extra, so it lives apart from the core suites"
+
+[[layout.allow]]
 path = "tests/integration/real_redis/test_two_pods.py"
 rule = "test-layout"
 reason = "the two-process tests on a real Redis, run by scripts/run_redis_tests.sh and skipped by default collection"
+
+[[layout.allow]]
+path = "tests/integration/real_redis/test_member_leases.py"
+rule = "test-layout"
+reason = "the two-process lease tests on a real Redis, run by scripts/run_redis_tests.sh and skipped by default collection"
 
 [[gate.loosened]]
 what = 'import contract "only agents.mcp_server.redis_place_store imports tandem and redis" removed'

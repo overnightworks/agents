@@ -4,12 +4,16 @@ Run as ``python -m tests.support.real_redis_pod <port> <redis url> <key prefix>`
 serves the standing of one member; ``POST /write`` counts a write in Redis and announces it
 through ``ResourceChanges``, the way a host's own handler does. ``GET /listeners`` answers who
 listens to the standing and ``GET /listening-changes`` every call of ``listening_changed`` the pod
-received, in order.
+received, in order. ``POST /renew`` renews the written member's lease and answers its renewal,
+``GET /lease`` its standing, ``GET /leases`` the members whose lease runs and ``GET /lapses`` every
+call of ``lease_ended`` the pod received, in order.
 """
 
 from __future__ import annotations
 
 import sys
+from collections.abc import AsyncGenerator
+from contextlib import AsyncExitStack, asynccontextmanager
 from http import HTTPStatus
 
 import uvicorn
@@ -21,7 +25,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from agents.mcp_server import McpPersonFront, ResourceChanges
+from agents.mcp_server import McpPersonFront, MemberLeases, ResourceChanges
 from agents.mcp_server.redis_place_store import RedisPlaceStore
 from agents.mcp_wire import MCP_ENDPOINT_PATH
 from agents.member import STANDING_URI
@@ -31,8 +35,46 @@ from tests.support.mcp_server_support import MemberApp, a_member, readable_uris,
 WRITE_PATH = "/write"
 LISTENERS_PATH = "/listeners"
 LISTENING_CHANGES_PATH = "/listening-changes"
+RENEW_PATH = "/renew"
+LEASE_PATH = "/lease"
+LEASES_PATH = "/leases"
+LAPSES_PATH = "/lapses"
 WRITES_KEY = "writes"
 WRITTEN_MEMBER = a_member("alice")
+
+
+def _lease_routes(store: RedisPlaceStore) -> tuple[MemberLeases, list[Route]]:
+    """The host's leases on the store, and the routes that renew, read and list them and report the
+    lapses its ``lease_ended`` received."""
+    lapses: list[tuple[str, str, str]] = []
+
+    async def lease_ended(principal: Principal, generation: str) -> None:
+        lapses.append((principal.iss, principal.sub, generation))
+
+    leases = MemberLeases(store, lease_ended=lease_ended)
+
+    async def renew(_request: Request) -> JSONResponse:
+        renewal = await leases.renew(WRITTEN_MEMBER)
+        return JSONResponse({"started": renewal.started, "generation": renewal.generation})
+
+    async def lease(_request: Request) -> JSONResponse:
+        standing = await leases.state(WRITTEN_MEMBER)
+        return JSONResponse({"holds": standing.holds, "generation": standing.generation})
+
+    async def live_leases(_request: Request) -> JSONResponse:
+        roster = await leases.live()
+        return JSONResponse(sorted([principal.iss, principal.sub] for principal in roster.holders))
+
+    async def lapses_received(_request: Request) -> JSONResponse:
+        return JSONResponse(lapses)
+
+    routes = [
+        Route(RENEW_PATH, renew, methods=["POST"]),
+        Route(LEASE_PATH, lease),
+        Route(LEASES_PATH, live_leases),
+        Route(LAPSES_PATH, lapses_received),
+    ]
+    return leases, routes
 
 
 def a_pod(redis_url: str, key_prefix: str) -> Starlette:
@@ -54,6 +96,14 @@ def a_pod(redis_url: str, key_prefix: str) -> Starlette:
     )
     resources = MemberApp(readable={WRITTEN_MEMBER: readable_uris(STANDING_URI)})
     front = McpPersonFront([], resolve_person=resolve_member, resources=resources, changes=changes)
+    leases, lease_routes = _lease_routes(store)
+
+    @asynccontextmanager
+    async def serving(_app: Starlette) -> AsyncGenerator[None, None]:
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(front.running())
+            await stack.enter_async_context(leases.running())
+            yield
 
     async def write(_request: Request) -> JSONResponse:
         writes = await redis.incr(WRITES_KEY)
@@ -73,8 +123,9 @@ def a_pod(redis_url: str, key_prefix: str) -> Starlette:
             Route(WRITE_PATH, write, methods=["POST"]),
             Route(LISTENERS_PATH, listeners),
             Route(LISTENING_CHANGES_PATH, changes_received),
+            *lease_routes,
         ],
-        lifespan=lambda _app: front.running(),
+        lifespan=serving,
     )
 
 

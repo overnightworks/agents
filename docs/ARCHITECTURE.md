@@ -74,8 +74,12 @@ flowchart TB
   because Redis does not roll a script back, record it, shorten it and lapse it, so every pod
   answers who listens and a pod that dies loses its claim after `claim_for`. A listening turn
   carries its direction as well as its address, because the answer is the store's and a pod that
-  missed a turn resyncs. `agents.mcp_server` does not re-export `RedisPlaceStore`, so an app without
-  `ResourceChanges` never loads tandem.
+  missed a turn resyncs. The `LeaseRecord` port keeps a member's lease on tandem's `Leases`, so a
+  lease survives the pod that renewed it and its lapse reaches the host's `lease_ended` on one live
+  pod, at least once; `MemberLeases` (`mcp_server.leases`) supervises the lapse service and
+  restarts it after a failure, and the app's own store fences the action by generation.
+  `agents.mcp_server` does not re-export `RedisPlaceStore`, so an app without `ResourceChanges` or
+  `MemberLeases` never loads tandem.
 - The **`voice` extra** adds `syntok` for `agents.voice`: the voice loop
   (`voice.loop.run_voice_loop`) on the `AgentBackend` port, its ports `VoiceOut` and `WakeRule`
   and its events. `voice.reply` owns the reply markers, the protocol text composed from them and
@@ -184,8 +188,8 @@ malformed value fails loud.
 against `FakeGateway`'s scripted transport, `load_agent` against files, and the person front
 as an ASGI app driven with real scopes and the SDK's own `Client`. Pure rules (`mcp_wire`, the
 turn vocabulary, the streamed-round reader) are called directly. The suite needs no live
-provider. Two processes of a minimal host on one real Redis prove the wake and the listen record across pods,
-and one process proves a claim that runs out (`scripts/run_redis_tests.sh`); every other test runs in
+provider. Two processes of a minimal host on one real Redis prove the wake, the listen record and a member's
+lease across pods, and one process proves a claim that runs out (`scripts/run_redis_tests.sh`); every other test runs in
 process. `quality / verdict` holds the import contracts, size and clone ratchets, and coverage
 over the whole suite.
 
