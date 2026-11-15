@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
 import pytest
@@ -557,3 +558,152 @@ def test_a_failing_store_raises_place_store_error_from_every_call_of_the_record(
 
     with pytest.raises(PlaceStoreError):
         asyncio.run(call(store))  # type: ignore[operator]
+
+
+_RECORD = json.dumps([json.dumps([_ALICE.iss, _ALICE.sub]), [STANDING_URI]])
+_FAR_FUTURE_MS = 10**15
+
+
+def key_names(raw: FakeAsyncRedis) -> dict[str, str]:
+    """The keys of the record by role: tandem's three, then the record's own two."""
+    deadlines = Deadlines(raw, key_prefix=f"{_PREFIX}-agents", kind="listen", claim_for=CLAIM_FOR)
+    return {
+        "due": deadlines.keys.due,
+        "claimed": deadlines.keys.claimed,
+        "claim": deadlines.keys.claim,
+        "listens": f"{_PREFIX}-agents:v1:listens",
+        "streams": f"{_PREFIX}-agents:v1:streams",
+    }
+
+
+async def seed_a_stream_in_every_key(raw: FakeAsyncRedis, *, recorded: bool) -> None:
+    """``held`` waits, is claimed and keeps a claim token at once, so a write a script makes before
+    it fails shows as a change."""
+    names = key_names(raw)
+    await raw.zadd(names["due"], {"held": _FAR_FUTURE_MS, "other": _FAR_FUTURE_MS})
+    await raw.zadd(names["claimed"], {"held": _FAR_FUTURE_MS})
+    await raw.hset(names["claim"], "held", "claimer")
+    await raw.zadd(names["listens"], {f"{STANDING_URI}\n[]\nother": 0})
+    await raw.hset(names["streams"], "other", _RECORD)
+    if recorded:
+        await raw.hset(names["streams"], "held", _RECORD)
+
+
+async def replace_with_a_string(raw: FakeAsyncRedis, key: str) -> None:
+    await raw.delete(key)
+    await raw.set(key, "not a collection")
+
+
+async def dump_of(raw: FakeAsyncRedis, *roles: str) -> dict[str, object]:
+    """What the keys of ``roles`` hold, whatever their type."""
+    state: dict[str, object] = {}
+    for role in roles:
+        key = key_names(raw)[role]
+        match (await raw.type(key)).decode():
+            case "hash":
+                state[role] = await raw.hgetall(key)
+            case "zset":
+                state[role] = await raw.zrange(key, 0, -1, withscores=True)
+            case other:
+                state[role] = (other, await raw.get(key) if other == "string" else None)
+    return state
+
+
+_RECORD_KEYS = ("due", "claimed", "claim", "listens", "streams")
+
+
+@pytest.mark.parametrize(
+    ("call", "recorded", "wrong_key"),
+    [
+        pytest.param(call, recorded, key, id=f"{name} with a wrong {key}")
+        for name, call, recorded, keys in [
+            (
+                "acknowledged",
+                lambda store: store.acknowledged("held", _ALICE, [STANDING_URI], _OPEN),
+                False,
+                _RECORD_KEYS,
+            ),
+            (
+                "ended",
+                lambda store: store.ended("held", _ALLOWANCE),
+                True,
+                _RECORD_KEYS[:3] + ("streams",),
+            ),
+        ]
+        for key in keys
+    ],
+)
+def test_acknowledged_and_ended_refuse_a_key_of_the_wrong_type_before_they_write_anything(
+    server: FakeServer,
+    redis_clock: RedisClock,
+    call: Callable[[RedisPlaceStore], Awaitable[object]],
+    recorded: bool,
+    wrong_key: str,
+) -> None:
+    async def scenario() -> tuple[dict[str, object], dict[str, object], list[Event]]:
+        raw = FakeAsyncRedis(server=server)
+        store = a_pod(server)
+        await seed_a_stream_in_every_key(raw, recorded=recorded)
+        await replace_with_a_string(raw, key_names(raw)[wrong_key])
+        before = await dump_of(raw, *_RECORD_KEYS)
+        async with subscribed(store) as events:
+            with pytest.raises(PlaceStoreError):
+                await call(store)
+            seen = await delivered_up_to(store, events, _AFTER_EVERYTHING)
+        return before, await dump_of(raw, *_RECORD_KEYS), seen
+
+    before, after, seen = asyncio.run(scenario())
+
+    assert after == before
+    assert seen == [Resubscribed(), _AFTER_EVERYTHING]
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        pytest.param(
+            lambda raw: replace_with_a_string(raw, key_names(raw)["listens"]), id="listens"
+        ),
+        pytest.param(
+            lambda raw: replace_with_a_string(raw, key_names(raw)["streams"]), id="streams"
+        ),
+        pytest.param(lambda raw: record_held(raw, "5"), id="a record that is a number"),
+        pytest.param(
+            lambda raw: record_held(raw, json.dumps(["5", [STANDING_URI]])),
+            id="a principal text that is a number",
+        ),
+    ],
+)
+def test_a_lapse_that_cannot_read_the_record_writes_nothing_logs_and_keeps_its_claim(
+    server: FakeServer,
+    redis_clock: RedisClock,
+    caplog: pytest.LogCaptureFixture,
+    damage: Callable[[FakeAsyncRedis], Awaitable[None]],
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+
+    async def scenario() -> tuple[dict[str, object], dict[str, object], list[Event], object]:
+        raw = FakeAsyncRedis(server=server)
+        store = a_pod(server)
+        async with subscribed(store) as events:
+            await store.acknowledged("held", _ALICE, [STANDING_URI], _ALLOWANCE)
+            await delivered_up_to(store, events, _AFTER_EVERYTHING)
+            await damage(raw)
+            redis_clock.advance(_ALLOWANCE.total_seconds())
+            before = await dump_of(raw, "listens", "streams")
+            await store.lapse_due("pod")
+            seen = await delivered_up_to(store, events, _AFTER_EVERYTHING)
+            claimed = await raw.zrange(key_names(raw)["claimed"], 0, -1)
+            return before, await dump_of(raw, "listens", "streams"), seen, claimed
+
+    before, after, seen, claimed = asyncio.run(scenario())
+
+    assert after == before
+    assert seen == [Resubscribed(), _YES, _AFTER_EVERYTHING]
+    assert claimed == [b"held"]
+    (warning,) = caplog.records
+    assert warning.levelno == logging.WARNING
+
+
+async def record_held(raw: FakeAsyncRedis, record: str) -> None:
+    await raw.hset(key_names(raw)["streams"], "held", record)

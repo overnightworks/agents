@@ -50,6 +50,15 @@ local keys = {due = KEYS[1], claimed = KEYS[2], claim = KEYS[3]}
 local listens = KEYS[4]
 local streams = KEYS[5]
 
+-- Redis does not roll a script back and tandem.deadline_set writes key by key, so a key of the
+-- wrong type is refused before the first write.
+local function expect_type(key, expected)
+  local actual = redis.call('TYPE', key)['ok']
+  if actual ~= 'none' and actual ~= expected then
+    error(key .. ' holds a ' .. actual .. ', not a ' .. expected)
+  end
+end
+
 local function member(uri, principal_text, stream)
   return uri .. '\n' .. principal_text .. '\n' .. stream
 end
@@ -76,6 +85,11 @@ end
 _ACKNOWLEDGED: Final = (
     _PRELUDE
     + r"""
+expect_type(keys.due, 'zset')
+expect_type(keys.claimed, 'zset')
+expect_type(keys.claim, 'hash')
+expect_type(listens, 'zset')
+expect_type(streams, 'hash')
 local stream = ARGV[1]
 if redis.call('HEXISTS', streams, stream) == 1 then
   return {}
@@ -111,6 +125,10 @@ local due_in_ms = tonumber(ARGV[2])
 if not due_in_ms then
   error('the due time is no number')
 end
+expect_type(keys.due, 'zset')
+expect_type(keys.claimed, 'zset')
+expect_type(keys.claim, 'hash')
+expect_type(streams, 'hash')
 local state = tandem.deadline_state(keys, ARGV[1])
 if redis.call('HEXISTS', streams, ARGV[1]) == 0 or not state or state[1] ~= 'waiting'
     or state[2] <= tandem.now_ms() + due_in_ms then
@@ -127,6 +145,10 @@ _LAPSED: Final = (
     _PRELUDE
     + r"""
 local stream = ARGV[1]
+expect_type(keys.due, 'zset')
+expect_type(keys.claimed, 'zset')
+expect_type(listens, 'zset')
+expect_type(streams, 'hash')
 local state = tandem.deadline_state(keys, stream)
 local record = redis.call('HGET', streams, stream)
 if not state or state[1] ~= 'claimed' or not record then
@@ -135,6 +157,9 @@ end
 local decoded = cjson.decode(record)
 local principal_text, uris = decoded[1], decoded[2]
 local principal = cjson.decode(principal_text)
+if type(principal) ~= 'table' then
+  error('the record of ' .. stream .. ' holds no principal')
+end
 local turned = {}
 for _, uri in ipairs(uris) do
   if not held_by_another(uri, principal_text, stream) then
