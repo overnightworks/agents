@@ -44,6 +44,7 @@ from tandem import Resubscribed as TandemResubscribed
 
 from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.place_store import (
+    LapseRun,
     LeaseRenewal,
     LeaseRoster,
     LeaseStanding,
@@ -53,6 +54,7 @@ from agents.mcp_server.place_store import (
     ResourceChange,
     Resubscribed,
     ToolsChange,
+    failure_type,
 )
 from agents.member import LEASE_SECONDS
 from agents.turn import Principal
@@ -163,7 +165,8 @@ return 1
 )
 
 # ARGV: stream, origin, wake channel. Only a claimed stream with a record lapses; the record is
-# decoded before the first write, and a principal's last stream of a URI publishes its no.
+# decoded before the first write, and a principal's last stream of a URI publishes its no. The
+# reply is the principal text and the URIs turned to no, or empty when none turned.
 _LAPSED: Final = (
     _PRELUDE
     + r"""
@@ -175,7 +178,7 @@ expect_type(streams, 'hash')
 local state = tandem.deadline_state(keys, stream)
 local record = redis.call('HGET', streams, stream)
 if not state or state[1] ~= 'claimed' or not record then
-  return 0
+  return {}
 end
 local decoded = cjson.decode(record)
 local principal_text, uris = decoded[1], decoded[2]
@@ -196,7 +199,10 @@ end
 for _, uri in ipairs(turned) do
   tandem.wake(ARGV[3], turn('listening-no', principal, uri, ARGV[2]))
 end
-return #turned
+if #turned == 0 then
+  return {}
+end
+return {principal_text, unpack(turned)}
 """
 )
 
@@ -315,7 +321,8 @@ class RedisPlaceStore:
                 signal = _decoded(event.address)
                 if signal is None:
                     _LOG.warning(
-                        "a payload of %d characters is no address: skipped", len(event.address)
+                        "place_signal.refused",
+                        extra={"reason": "not_an_address", "character_count": len(event.address)},
                     )
                 else:
                     yield signal
@@ -350,18 +357,28 @@ class RedisPlaceStore:
         texts = {member.split("\n")[1] for member in await self._members_of(f"{uri}\n", -1)}
         return frozenset(_principal_from(text) for text in texts)
 
-    async def lapse_due(self, claimer: str) -> None:
+    async def lapse_due(self, claimer: str) -> LapseRun:
         with _store_errors():
             claims = await self._deadlines.claim_due(claimer=claimer, limit=_LAPSE_BATCH)
+        turns: list[ListeningTurn] = []
+        lapsed = failed = 0
+        last_error_type: str | None = None
         for due in claims:
             try:
-                await self._lapse.run(self._keys, [due.key, self._origin, self._wake_channel])
-                await self._deadlines.done(due)
-            except StoreError as failure:
-                _LOG.warning(
-                    "a listen's lapse failed with %s and its claim expires",
-                    type(failure.__cause__).__name__,
-                )
+                with _store_errors():
+                    turns.extend(await self._lapsed_turns(due.key))
+                    await self._deadlines.done(due)
+            except PlaceStoreError as failure:
+                failed += 1
+                last_error_type = failure_type(failure)
+            else:
+                lapsed += 1
+        return LapseRun(
+            turns=tuple(turns),
+            stream_count=lapsed,
+            failed_count=failed,
+            last_error_type=last_error_type,
+        )
 
     async def renew(self, principal: Principal) -> LeaseRenewal:
         with _store_errors():
@@ -392,6 +409,14 @@ class RedisPlaceStore:
 
         with _store_errors():
             await self._leases.serve_lapses(hand_over, claimer=claimer, every=_LEASE_SWEEP_EVERY)
+
+    async def _lapsed_turns(self, stream: str) -> list[ListeningTurn]:
+        reply = await self._lapse.run(self._keys, [stream, self._origin, self._wake_channel])
+        texts = self._texts(reply)
+        if not texts:
+            return []
+        principal = _principal_from(texts[0])
+        return [ListeningTurn(principal, uri, listens=False) for uri in texts[1:]]
 
     async def _members_of(self, prefix: str, limit: int) -> list[str]:
         with _store_errors():

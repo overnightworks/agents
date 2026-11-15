@@ -483,6 +483,35 @@ served methods, and `tool_name` for an offered tool), `listen_stream.cut`, `tool
 `reason` (`no_status`, `incomplete`, `too_large`, `status`, `not_text`) and `status` when the app
 sent one. The inner route request carries the outer trace id under a new span id.
 
+The place store, the listen record and the lease write one `<noun>.ended` line per call of the
+store, with `duration_ms` and `outcome`; a call that raises `PlaceStoreError` is `failed` with
+`error_type`, and no line carries a URI, a generation or content:
+
+| Line | Fields beside the timer's |
+|---|---|
+| `place_publish.ended` | `signal_kind` (`resource` or `tools`) |
+| `listen_acknowledgement.ended` | `uri_count`, `turned_count` |
+| `listen_end.ended` | none; a failed end or one past its cap is `failed`, WARNING |
+| `listening_lookup.ended`, `listeners_lookup.ended` | `principal_count` on the second |
+| `lease_renewal.ended`, `lease_state_lookup.ended` | none |
+| `lease_roster_lookup.ended` | `holder_count` |
+
+State changes and background runs write their own lines, carrying `sub` where they name a person:
+
+| Line | When |
+|---|---|
+| `listening.opened` | once for each URI an acknowledgement turned to yes, written by the pod that took it |
+| `listening.lapsed` | once for each URI a lapse turned to no, written by the pod that claimed the lapse |
+| `member_lease.opened` | a renewal started a lease |
+| `member_lease.lapsed` | a lapse is handed to `lease_ended`; it may repeat as the handover may |
+| `listen_lapse.ended` | a lapse run that lapsed or failed a stream: `stream_count`, `turn_count`, `failed_count` and, after a failure, `last_error_type`; `failed` with `reason` `store_failed` or `lapse_failed`, WARNING. A run that found nothing writes no line |
+| `listen_lapse.resumed` | the first run after failed ones, with `failed_run_count`; a streak of failed runs writes only its first |
+| `place_subscription.renewed` | a later confirmation of the subscription, with `stream_count` |
+| `place_subscription.failed` | the subscription failed for good, ERROR, `error_type` of its cause |
+| `place_signal.refused` | a payload on the channel that is no address: `reason` `not_an_address` and `character_count`, WARNING |
+| `host_callback.failed` | `listening_changed` or `listening_resynced` raised: `callback` and `error_type`, ERROR |
+| `lease_lapse_service.failed` | the lapse service failed, ERROR, `error_type`, the first of a streak; a traceback only for an unexpected exception |
+
 ## The person front
 
 `agents.mcp_server.McpPersonFront(tools, *, resolve_person)` is the MCP endpoint of
@@ -748,13 +777,13 @@ read within `LISTEN_BOUND_SECONDS`.
 changes; while Redis is unreachable it stays not ready, and a subscription the store refuses
 before that raises `PlaceStoreError` out of `running()`, which fails the host's startup. At every
 later confirmation each open stream receives every URI it honored, and the tool list if it
-honored that, and the front logs one line, because a change sent while the subscription was down
-is lost. When a publish fails, `changed` raises `PlaceStoreError` (a host never imports tandem or
+honored that, and the front writes `place_subscription.renewed`, because a change sent while the
+subscription was down is lost. When a publish fails, `changed` raises `PlaceStoreError` (a host never imports tandem or
 redis to catch it) and retries nothing: delivery is uncertain, and a member sees the change by its
 next listen's read within `LISTEN_BOUND_SECONDS`. A payload on agents' channel that is no address
-is logged by its length and skipped, one that is no UTF-8 included. If the subscription fails for good after
-startup, the front logs the cause, ends its open listens and answers every request with 503 until
-the pod restarts.
+writes `place_signal.refused` with its length and is skipped. If the subscription fails for good
+after startup, the front writes `place_subscription.failed`, ends its open listens and answers
+every request with 503 until the pod restarts.
 Proved by `tests/test_mcp_server_place_wake.py`, `tests/integration/test_redis_place_store.py` and
 the tests of `tests/integration/real_redis`, which `scripts/run_redis_tests.sh` runs.
 
@@ -795,7 +824,9 @@ log only the exception's type. Proved by `tests/test_mcp_server_listen.py`.
 alike, whether that principal holds a stream, on any pod, whose acknowledgement honored the URI and
 whose lapse has not yet run; `await changes.listeners(uri)` lists those principals. A stream lapses
 `LISTEN_ALLOWANCE_SECONDS` after it ends, at the next lapse poll (about a second), or `claim_for`
-later if the pod that claimed its lapse died. Both read the place store on Redis time and raise
+later if the pod that claimed its lapse died. `PlaceStore.lapse_due` returns a `LapseRun` (the
+`turns` it published, the `stream_count` it lapsed, a `failed_count` with the `last_error_type`),
+which a host that implements the port builds; the run's pod writes `listening.lapsed` for each turn. Both read the place store on Redis time and raise
 `PlaceStoreError` when it fails; a host that gets the error does not offer the agent. An app that
 offers an agent only while it can answer an invitation asks for `STANDING_URI`. The allowance lets a
 runner that listens again at once (the connection and one `current` call, a few milliseconds plus the
@@ -825,8 +856,8 @@ ones it offers on. `listening_resynced()` is called after every confirmed subscr
 one included, because a turn sent while the subscription was down is lost; the host rebuilds its
 view from `listeners(uri)` and applies the `listening_changed` calls that arrive during the rebuild
 after it, so a `False` is not overwritten by an older read. Neither callable may block (a host
-schedules its own work from it), and an exception from either is logged by type and never reaches a
-listen.
+schedules its own work from it), and an exception from either writes `host_callback.failed` by type
+and never reaches a listen.
 
 The record keeps each stream that honored a URI as a tandem deadline, so a stream lapses once its
 deadline passes whichever pod opened it. A pod that dies leaves a stale yes for at most
@@ -889,8 +920,8 @@ raises gets the lapse again once the claim has run out, `claim_for` (5 s) later.
 mid-handling hands it to another. So the app's lapse action is idempotent and fenced by the
 generation, one atomic step in the app's own store that acts only if the generation it stored is
 the lapsed one; a lease that started again meanwhile has another generation and is left alone. A
-failure of the lapse service, a refusal or an unexpected exception, is logged once per streak by
-type and the service serves again after 5 s; it never ends silently and no readiness signal reflects
+failure of the lapse service, a refusal or an unexpected exception, writes `lease_lapse_service.failed`
+once per streak, by type, and the service serves again after 5 s; it never ends silently and no readiness signal reflects
 it. The block's exit cancels the service and waits for it. Proved by
 `tests/test_mcp_server_leases.py`, `tests/integration/test_redis_leases.py` and the real-Redis
 cells of `tests/integration/real_redis`: a lease renewed on one pod still holds, with its

@@ -517,10 +517,11 @@ def test_no_marker_from_a_uri_a_principal_or_a_failure_reaches_any_log(
     assert {line["error_type"] for line in log_lines.of("resource_lookup.failed")} == {
         "RuntimeError"
     }
-    assert not any(
-        marker in logged
-        for marker in ("marker-uri-91c2", "marker-principal-3b7a", "marker-failure-5d1e")
-    )
+    assert not any(marker in logged for marker in ("marker-uri-91c2", "marker-failure-5d1e"))
+    for line in log_lines.all():
+        assert {key for key, value in line.items() if "marker-principal-3b7a" in str(value)} <= {
+            "sub"
+        }
 
 
 @pytest.mark.parametrize(

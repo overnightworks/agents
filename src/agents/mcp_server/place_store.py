@@ -62,6 +62,18 @@ class ListeningTurn:
 
 
 @dataclass(frozen=True)
+class LapseRun:
+    """What one ``lapse_due`` did: the ``turns`` it published, the streams it ``stream_count``
+    lapsed, and the streams it could not (``failed_count``), with the type name of the last
+    failure. A run that claimed nothing is all zeros and ``None``."""
+
+    turns: tuple[ListeningTurn, ...] = ()
+    stream_count: int = 0
+    failed_count: int = 0
+    last_error_type: str | None = None
+
+
+@dataclass(frozen=True)
 class Resubscribed:
     """The subscription is confirmed, the first time and after every reconnect: a signal sent
     while it was down is lost, so every pod re-reads what it serves."""
@@ -112,9 +124,11 @@ class ListenRecord(Protocol):
         """The principals with a recorded stream that honored the URI."""
         ...
 
-    async def lapse_due(self, claimer: str) -> None:
+    async def lapse_due(self, claimer: str) -> LapseRun:
         """Lapses every stream whose deadline passed that nobody else lapses now; a principal's
-        last stream of a URI turns it to no and publishes a ``ListeningTurn``."""
+        last stream of a URI turns it to no, publishes a ``ListeningTurn`` and is one of the
+        run's ``turns``, which this call's pod alone returns. A stream that fails to lapse is
+        counted, not raised, and its claim runs out."""
         ...
 
 

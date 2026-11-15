@@ -4,13 +4,11 @@ service it runs in its lifespan."""
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
 
 import pytest
 
 from agents.mcp_server import MemberLeases
-from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.leases import LAPSE_RESTART_SECONDS
 from agents.mcp_server.place_store import (
     LeaseRenewal,
@@ -20,11 +18,14 @@ from agents.mcp_server.place_store import (
 )
 from agents.member import LEASE_SECONDS
 from agents.turn import Principal
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import a_member
 from tests.support.place_store_support import LeaseRecordFake
 from tests.support.virtual_time import in_virtual_time
 
 _PAST_THE_LEASE = LEASE_SECONDS + 2
+
+log_lines = log_lines
 
 
 class LapseLog:
@@ -128,10 +129,9 @@ def test_a_lease_ended_that_raises_reaches_the_store_and_is_not_swallowed(
     assert len(record.serve_calls) == 1
 
 
-def test_a_lapse_service_that_fails_is_logged_by_type_and_serves_again_after_the_pause(
-    leases: MemberLeases, record: LeaseRecordFake, caplog: pytest.LogCaptureFixture
+def test_a_lapse_service_that_fails_writes_one_error_line_by_type_and_serves_again_after_the_pause(
+    leases: MemberLeases, record: LeaseRecordFake, log_lines: LogLines
 ) -> None:
-    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
     refusal = PlaceStoreError("the secret detail")
     refusal.__cause__ = PermissionError("no permission")
     record.serve_failures = [refusal]
@@ -146,15 +146,15 @@ def test_a_lapse_service_that_fails_is_logged_by_type_and_serves_again_after_the
     before, serving = in_virtual_time(scenario())
 
     assert (before, len(record.serve_calls), serving) == (1, 2, True)
-    logged = " ".join(entry.getMessage() for entry in caplog.records)
-    assert "PermissionError" in logged
-    assert "secret detail" not in logged
+    failed = log_lines.one("lease_lapse_service.failed")
+    assert (failed["level"], failed["error_type"]) == ("error", "PermissionError")
+    assert "exception" not in failed
+    assert "secret detail" not in log_lines.everything()
 
 
-def test_an_unexpected_failure_of_the_lapse_service_is_logged_with_its_traceback_once(
-    leases: MemberLeases, record: LeaseRecordFake, caplog: pytest.LogCaptureFixture
+def test_an_unexpected_failure_of_the_lapse_service_is_written_with_its_traceback_once_per_streak(
+    leases: MemberLeases, record: LeaseRecordFake, log_lines: LogLines
 ) -> None:
-    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
     record.serve_failures = [RuntimeError("one"), RuntimeError("two"), RuntimeError("three")]
 
     async def scenario() -> None:
@@ -163,15 +163,14 @@ def test_an_unexpected_failure_of_the_lapse_service_is_logged_with_its_traceback
 
     in_virtual_time(scenario())
 
-    failures = [entry for entry in caplog.records if entry.exc_info is not None]
-    assert len(failures) == 1
-    assert "RuntimeError" in failures[0].getMessage()
+    failed = log_lines.one("lease_lapse_service.failed")
+    assert failed["error_type"] == "RuntimeError"
+    assert "exception" in failed
 
 
-def test_a_failure_after_a_run_longer_than_the_pause_is_logged_again(
-    leases: MemberLeases, record: LeaseRecordFake, caplog: pytest.LogCaptureFixture
+def test_a_failure_after_a_run_longer_than_the_pause_is_written_again(
+    leases: MemberLeases, record: LeaseRecordFake, log_lines: LogLines
 ) -> None:
-    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
     record.serve_failures = [RuntimeError("first streak")]
 
     async def scenario() -> None:
@@ -182,7 +181,67 @@ def test_a_failure_after_a_run_longer_than_the_pause_is_logged_again(
 
     in_virtual_time(scenario())
 
-    assert len([entry for entry in caplog.records if entry.exc_info is not None]) == 2
+    assert len(log_lines.of("lease_lapse_service.failed")) == 2
+
+
+def test_a_renewal_is_one_line_and_only_a_start_writes_an_opened_line_with_the_sub(
+    leases: MemberLeases, alice: Principal, log_lines: LogLines
+) -> None:
+    async def scenario() -> LeaseRenewal:
+        first = await leases.renew(alice)
+        await leases.renew(alice)
+        return first
+
+    first = in_virtual_time(scenario())
+
+    renewals = log_lines.of("lease_renewal.ended")
+    assert [line["outcome"] for line in renewals] == ["ok", "ok"]
+    assert log_lines.one("member_lease.opened")["sub"] == alice.sub
+    assert first.generation not in log_lines.everything()
+
+
+def test_a_failing_renewal_raises_and_writes_one_failed_line(
+    leases: MemberLeases, record: LeaseRecordFake, alice: Principal, log_lines: LogLines
+) -> None:
+    record.failure = PlaceStoreError("the store did not answer")
+    renewing = leases.renew(alice)
+
+    with pytest.raises(PlaceStoreError):
+        in_virtual_time(renewing)
+
+    failed = log_lines.one("lease_renewal.ended")
+    assert (failed["outcome"], failed["error_type"]) == ("failed", "PlaceStoreError")
+    assert log_lines.of("member_lease.opened") == []
+
+
+def test_a_state_and_a_roster_read_are_one_line_each_with_the_count_of_holders(
+    leases: MemberLeases, alice: Principal, log_lines: LogLines
+) -> None:
+    async def scenario() -> None:
+        await leases.renew(alice)
+        await leases.state(alice)
+        await leases.live()
+
+    in_virtual_time(scenario())
+
+    assert log_lines.one("lease_state_lookup.ended")["outcome"] == "ok"
+    roster = log_lines.one("lease_roster_lookup.ended")
+    assert (roster["outcome"], roster["holder_count"]) == ("ok", 1)
+
+
+def test_a_lapse_writes_a_lapsed_line_with_the_sub_and_never_the_generation(
+    leases: MemberLeases, alice: Principal, log_lines: LogLines
+) -> None:
+    async def scenario() -> str:
+        async with leases.running():
+            renewal = await leases.renew(alice)
+            await asyncio.sleep(_PAST_THE_LEASE)
+            return renewal.generation
+
+    generation = in_virtual_time(scenario())
+
+    assert log_lines.one("member_lease.lapsed")["sub"] == alice.sub
+    assert generation not in log_lines.everything()
 
 
 def test_leaving_running_cancels_the_lapse_service_and_waits_for_it(

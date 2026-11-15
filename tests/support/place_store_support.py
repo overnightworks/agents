@@ -14,6 +14,7 @@ from datetime import timedelta
 from typing import NoReturn
 
 from agents.mcp_server.place_store import (
+    LapseRun,
     LeaseRenewal,
     LeaseRoster,
     LeaseStanding,
@@ -58,12 +59,16 @@ class SharedPlaceStore:
     def listeners(self, uri: str) -> frozenset[Principal]:
         return frozenset(r.principal for r in self.streams.values() if uri in r.uris)
 
-    def lapse_due(self, now: float) -> None:
-        for stream in [name for name, record in self.streams.items() if record.due <= now]:
+    def lapse_due(self, now: float) -> LapseRun:
+        due = [name for name, record in self.streams.items() if record.due <= now]
+        turns: list[ListeningTurn] = []
+        for stream in due:
             record = self.streams.pop(stream)
             for uri in record.uris:
                 if record.principal not in self.listeners(uri):
-                    self.broadcast(ListeningTurn(record.principal, uri, listens=False))
+                    turns.append(ListeningTurn(record.principal, uri, listens=False))
+                    self.broadcast(turns[-1])
+        return LapseRun(turns=tuple(turns), stream_count=len(due))
 
 
 @dataclass
@@ -88,6 +93,7 @@ class PlaceStoreFake:
     ended_failure: PlaceStoreError | None = None
     ended_takes: float = 0
     lapse_failure: Exception | None = None
+    lapse_item_failure: str | None = None
     read_failure: PlaceStoreError | None = None
     published: list[PlaceSignal] = field(default_factory=list)
     signal_task: asyncio.Task[object] | None = None
@@ -154,11 +160,13 @@ class PlaceStoreFake:
             raise self.read_failure
         return self.shared.listeners(uri)
 
-    async def lapse_due(self, claimer: str) -> None:
+    async def lapse_due(self, claimer: str) -> LapseRun:
         del claimer
         if self.lapse_failure is not None:
             raise self.lapse_failure
-        self.shared.lapse_due(asyncio.get_running_loop().time())
+        if self.lapse_item_failure is not None:
+            return LapseRun(failed_count=1, last_error_type=self.lapse_item_failure)
+        return self.shared.lapse_due(asyncio.get_running_loop().time())
 
     def hold_signals(self) -> None:
         self._released.clear()

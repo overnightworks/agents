@@ -22,13 +22,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable, Collection, Sequence
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Final
 from uuid import uuid4
 
 import anyio
+from logline import StepTimer
 from mcp.server.context import ServerRequestContext
 from mcp.shared.subscriptions import (
     SUBSCRIPTION_ID_META_KEY,
@@ -48,6 +49,7 @@ from mcp_types import (
 
 from agents.mcp_server.asgi import LISTEN_METHOD, LOGGER_NAME
 from agents.mcp_server.place_store import (
+    LapseRun,
     ListeningTurn,
     PlaceSignal,
     PlaceStore,
@@ -155,6 +157,12 @@ class ResourceChanges:
     its view from ``listeners`` when ``listening_resynced`` is called, after every confirmed
     subscription, and applies the calls that arrive during the rebuild after it. Neither callable
     may block; a failure is logged by type and never reaches a listen.
+
+    Every call of the store is one timed line (``place_publish.ended``,
+    ``listen_acknowledgement.ended``, ``listen_end.ended``, ``listening_lookup.ended``,
+    ``listeners_lookup.ended``); ``listening.opened`` is written once by the pod whose
+    acknowledgement turned a URI to yes and ``listening.lapsed`` once by the pod whose lapse run
+    turned it to no. No line carries a URI or content.
     """
 
     def __init__(
@@ -179,7 +187,8 @@ class ResourceChanges:
         Runs on the front's event loop or through ``anyio.from_thread.run``, and only after the
         change is visible to the read.
         """
-        await self._store.publish(ResourceChange(recipient, uri, self._origin))
+        async with StepTimer("place_publish.ended", _LOG, signal_kind="resource"):
+            await self._store.publish(ResourceChange(recipient, uri, self._origin))
 
     async def tools_changed(self, recipient: Principal) -> None:
         """Signal every registered stream of the recipient on every pod that the tools offered to
@@ -188,7 +197,8 @@ class ResourceChanges:
         Runs on the front's event loop or through ``anyio.from_thread.run``, and only after the new
         offer is visible to ``offered_tools``.
         """
-        await self._store.publish(ToolsChange(recipient, self._origin))
+        async with StepTimer("place_publish.ended", _LOG, signal_kind="tools"):
+            await self._store.publish(ToolsChange(recipient, self._origin))
 
     @property
     def dead(self) -> bool:
@@ -200,12 +210,13 @@ class ResourceChanges:
         """The store's subscription as a task of its own, for as long as the block runs.
 
         Yields at the first ``Resubscribed`` and raises ``PlaceStoreError`` if the subscription
-        fails or ends before it. A failure after it logs the cause, ends every open stream and
-        turns ``dead``; the block stays entered. The task runs outside the SDK manager's task
-        group, so its failure never reaches one. A second task lapses the streams of the place
-        store that ended, about every ``LAPSE_POLL_SECONDS``; it runs until the block ends, and a
-        failure of one poll, whatever it is, is logged by type once per streak and the next poll
-        goes on.
+        fails or ends before it. A failure after it writes ``place_subscription.failed`` with the
+        type of the cause, ends every open stream and turns ``dead``; the block stays entered. The
+        task runs outside the SDK manager's task group, so its failure never reaches one. A second
+        task lapses the streams of the place store that ended, about every ``LAPSE_POLL_SECONDS``;
+        it runs until the block ends and writes ``listen_lapse.ended`` only for a run that lapsed
+        or failed a stream. A failure of one poll, whatever it is, is written by type once per
+        streak, and the next poll goes on.
 
         The exit waits for the ends of listens still in flight, each capped at ``_END_CAP_SECONDS``.
         A second cancellation stops that wait at once, and a stream whose end is then not recorded
@@ -225,21 +236,31 @@ class ResourceChanges:
                 await asyncio.wait(tuple(self._ending))
 
     async def _lapse_ended_streams(self) -> None:
-        failing = False
+        failed_run_count = 0
         while True:
             await asyncio.sleep(LAPSE_POLL_SECONDS)
+            step = StepTimer("listen_lapse.ended", _LOG)
+            step.handled()
             try:
-                await self._store.lapse_due(self._origin)
+                run = await self._store.lapse_due(self._origin)
             except Exception as failure:
-                if not failing:
-                    _LOG.warning(
-                        "the place store did not lapse the ended listens: %s", failure_type(failure)
-                    )
-                failing = True
-            else:
-                if failing:
-                    _LOG.info("the place store lapses the ended listens again")
-                failing = False
+                step.add(last_error_type=failure_type(failure))
+                step.fail("store_failed")
+                failed_run_count = _ended_when_first_failure(step, failed_run_count)
+                continue
+            for turn in run.turns:
+                _LOG.info("listening.lapsed", extra={"sub": turn.principal.sub})
+            if run.failed_count:
+                step.add(**_lapse_counts(run), last_error_type=run.last_error_type)
+                step.fail("lapse_failed")
+                failed_run_count = _ended_when_first_failure(step, failed_run_count)
+                continue
+            if failed_run_count:
+                _LOG.info("listen_lapse.resumed", extra={"failed_run_count": failed_run_count})
+                failed_run_count = 0
+            if run.stream_count:
+                step.add(**_lapse_counts(run))
+                step.end()
 
     async def _follow(self, confirmed: asyncio.Future[None]) -> None:
         try:
@@ -249,7 +270,10 @@ class ResourceChanges:
                         self._resync()
                         self._resynced()
                         if confirmed.done():
-                            _LOG.info("the place store re-subscribed and every stream was resynced")
+                            _LOG.info(
+                                "place_subscription.renewed",
+                                extra={"stream_count": self._stream_count()},
+                            )
                         else:
                             confirmed.set_result(None)
                     case ListeningTurn(principal, uri, listens):
@@ -279,9 +303,12 @@ class ResourceChanges:
             for stream in streams:
                 stream.resync()
 
+    def _stream_count(self) -> int:
+        return sum(len(streams) for streams in self._streams.values())
+
     def _die(self, failure: Exception) -> None:
         self._dead = True
-        _LOG.error("the place store's subscription failed for good: %s", failure)
+        _LOG.error("place_subscription.failed", extra={"error_type": failure_type(failure)})
         for streams in self._streams.values():
             for stream in streams:
                 stream.end()
@@ -294,12 +321,16 @@ class ResourceChanges:
         only the tool list counts for no URI. A stream lapses ``LISTEN_ALLOWANCE_SECONDS`` after it
         ends, at the next lapse poll. Raises ``PlaceStoreError`` when the store fails.
         """
-        return await self._store.listens_to(principal, uri)
+        async with StepTimer("listening_lookup.ended", _LOG):
+            return await self._store.listens_to(principal, uri)
 
     async def listeners(self, uri: str) -> frozenset[Principal]:
         """The principals for whom ``listens_to`` answers yes for the URI. Raises
         ``PlaceStoreError`` when the store fails."""
-        return await self._store.listeners(uri)
+        async with StepTimer("listeners_lookup.ended", _LOG) as step:
+            principals = await self._store.listeners(uri)
+            step.add(principal_count=len(principals))
+            return principals
 
     @asynccontextmanager
     async def opened(self, recipient: Principal) -> AsyncGenerator[_ListenStream, None]:
@@ -334,28 +365,34 @@ class ResourceChanges:
         turned: frozenset[str] = frozenset()
         if honored:
             stream.recorded = True
-            turned = await self._store.acknowledged(
-                stream.identity, recipient, honored, _HOLDS_OPEN
-            )
+            async with StepTimer(
+                "listen_acknowledgement.ended", _LOG, uri_count=len(honored)
+            ) as step:
+                step.handled()
+                turned = await self._store.acknowledged(
+                    stream.identity, recipient, honored, _HOLDS_OPEN
+                )
+                step.add(turned_count=len(turned))
         stream.honor(honored, tools=tools)
         for uri in honored:
             if uri in turned:
+                _LOG.info("listening.opened", extra={"sub": recipient.sub})
                 self._signal(recipient, uri, listens=True)
 
     async def _end_record(self, stream: _ListenStream) -> None:
         """Ends the stream in the store in a task of its own, so a cancellation of the listen
-        never cuts it; its failure is logged by type."""
+        never cuts it; its failure is its line."""
         ending = asyncio.create_task(self._end_in_store(stream))
         self._ending.add(ending)
         ending.add_done_callback(self._ending.discard)
         await asyncio.shield(ending)
 
     async def _end_in_store(self, stream: _ListenStream) -> None:
-        try:
-            async with asyncio.timeout(_END_CAP_SECONDS):
-                await self._store.ended(stream.identity, _HOLDS_ENDED)
-        except (PlaceStoreError, TimeoutError) as failure:
-            _LOG.warning("a listen's end was not recorded: %s", type(failure).__name__)
+        with suppress(PlaceStoreError, TimeoutError):  # the failed line is the record
+            async with StepTimer("listen_end.ended", _LOG) as step:
+                step.handled()
+                async with asyncio.timeout(_END_CAP_SECONDS):
+                    await self._store.ended(stream.identity, _HOLDS_ENDED)
 
     def _forget(self, recipient: Principal, stream: _ListenStream) -> None:
         streams = self._streams[recipient]
@@ -376,7 +413,25 @@ def _call_host(name: str, call: Callable[[], None]) -> None:
     try:
         call()
     except Exception as failure:
-        _LOG.error("the %s callable failed: it raised %s", name, type(failure).__name__)
+        _LOG.error(
+            "host_callback.failed", extra={"callback": name, "error_type": failure_type(failure)}
+        )
+
+
+def _lapse_counts(run: LapseRun) -> dict[str, int]:
+    return {
+        "stream_count": run.stream_count,
+        "turn_count": len(run.turns),
+        "failed_count": run.failed_count,
+    }
+
+
+def _ended_when_first_failure(step: StepTimer, failed_run_count: int) -> int:
+    """Writes the run's line only for the first failed run of a streak; returns the streak's
+    length including this run."""
+    if not failed_run_count:
+        step.end()
+    return failed_run_count + 1
 
 
 def _wanted(uri: str, honored: Collection[str]) -> bool:

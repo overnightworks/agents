@@ -18,6 +18,7 @@ from tandem import Deadlines
 from agents.mcp_server import McpPersonFront, ResourceChanges
 from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.place_store import (
+    LapseRun,
     ListeningTurn,
     PlaceSignal,
     PlaceStoreError,
@@ -30,6 +31,7 @@ from agents.member import LISTEN_ALLOWANCE_SECONDS, LISTEN_BOUND_SECONDS, STANDI
 from agents.turn import Principal
 from tests.support import redis_listen_support
 from tests.support.faulty_redis import EvalshaStopsAfter, LostReplyRedis, retrying
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import (
     MemberApp,
     a_member,
@@ -52,6 +54,7 @@ from tests.support.redis_listen_support import (
 )
 
 redis_clock = redis_listen_support.redis_clock
+log_lines = log_lines
 
 _PREFIX = "notes"
 _ALICE = a_member("alice")
@@ -94,10 +97,9 @@ def test_a_signal_one_pod_publishes_reaches_the_subscription_of_another(
     assert asyncio.run(scenario()) == [Resubscribed(), signal]
 
 
-def test_a_payload_that_is_no_address_is_skipped_and_logged_by_length_only(
-    server: FakeServer, caplog: pytest.LogCaptureFixture
+def test_a_payload_that_is_no_address_is_skipped_and_refused_by_its_length_only(
+    server: FakeServer, log_lines: LogLines
 ) -> None:
-    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
     channel = "notes-agents:tandem:v1:wake"
     foreign = [
         "not json at all",
@@ -118,9 +120,11 @@ def test_a_payload_that_is_no_address_is_skipped_and_logged_by_length_only(
             return list(events)
 
     assert asyncio.run(scenario()) == [Resubscribed(), wake]
-    warned = [record.getMessage() for record in caplog.records]
-    assert len(warned) == len(foreign)
-    assert not any("not json at all" in message for message in warned)
+    refused = log_lines.of("place_signal.refused")
+    assert [(line["level"], line["reason"], line["character_count"]) for line in refused] == [
+        ("warning", "not_an_address", len(payload)) for payload in foreign
+    ]
+    assert "not json at all" not in log_lines.everything()
 
 
 def test_a_failing_store_raises_place_store_error_from_publish(server: FakeServer) -> None:
@@ -350,25 +354,52 @@ def test_acknowledged_twice_with_one_stream_returns_empty_publishes_nothing_and_
 
 
 def test_a_lapse_whose_claim_was_never_finished_is_done_again_by_the_next_claim_without_a_second_no(
-    server: FakeServer, redis_clock: RedisClock, caplog: pytest.LogCaptureFixture
+    server: FakeServer, redis_clock: RedisClock
 ) -> None:
-    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
-
-    async def scenario() -> list[object]:
+    async def scenario() -> tuple[LapseRun, LapseRun, list[object]]:
         store_a = a_pod_that_loses_its_connection_after(server, evalshas=2)
         store_b = a_pod(server)
         async with subscribed(store_b) as events:
             await store_b.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            await store_a.lapse_due("a")
+            first = await store_a.lapse_due("a")
             redis_clock.advance(CLAIM_FOR.total_seconds())
-            await store_b.lapse_due("b")
-            return await delivered_up_to(store_b, events, _AFTER_EVERYTHING)
+            second = await store_b.lapse_due("b")
+            return first, second, await delivered_up_to(store_b, events, _AFTER_EVERYTHING)
 
-    assert asyncio.run(scenario()) == [Resubscribed(), _YES, _NO, _AFTER_EVERYTHING]
-    (warning,) = caplog.records
-    assert warning.levelno == logging.WARNING
-    assert "ConnectionError" in warning.getMessage()
+    first, second, seen = asyncio.run(scenario())
+
+    assert seen == [Resubscribed(), _YES, _NO, _AFTER_EVERYTHING]
+    assert first == LapseRun(
+        turns=(ListeningTurn(_ALICE, STANDING_URI, listens=False),),
+        failed_count=1,
+        last_error_type="StoreError",
+    )
+    assert second == LapseRun(stream_count=1)
+
+
+def test_a_lapse_returns_the_turns_it_published_and_the_count_of_the_streams_it_lapsed(
+    server: FakeServer, redis_clock: RedisClock
+) -> None:
+    first = window_uri("first")
+
+    async def scenario() -> tuple[LapseRun, LapseRun]:
+        store = a_pod(server)
+        await store.acknowledged("one", _ALICE, [STANDING_URI, first], _ALLOWANCE)
+        await store.acknowledged("two", _ALICE, [STANDING_URI], _ALLOWANCE)
+        idle = await store.lapse_due("pod")
+        redis_clock.advance(_ALLOWANCE.total_seconds())
+        return idle, await store.lapse_due("pod")
+
+    idle, lapsed = asyncio.run(scenario())
+
+    assert idle == LapseRun()
+    assert (lapsed.stream_count, lapsed.failed_count, lapsed.last_error_type) == (2, 0, None)
+    assert set(lapsed.turns) == {
+        ListeningTurn(_ALICE, STANDING_URI, listens=False),
+        ListeningTurn(_ALICE, first, listens=False),
+    }
+    assert len(lapsed.turns) == 2
 
 
 def test_a_pod_that_claimed_a_stream_and_lost_its_connection_leaves_it_to_the_next_claim(
@@ -664,15 +695,12 @@ def test_acknowledged_and_ended_refuse_a_key_of_the_wrong_type_before_they_write
         ),
     ],
 )
-def test_a_lapse_that_cannot_read_the_record_writes_nothing_logs_and_keeps_its_claim(
+def test_a_lapse_that_cannot_read_the_record_writes_nothing_counts_the_failure_and_keeps_its_claim(
     server: FakeServer,
     redis_clock: RedisClock,
-    caplog: pytest.LogCaptureFixture,
     damage: Callable[[FakeAsyncRedis], Awaitable[None]],
 ) -> None:
-    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
-
-    async def scenario() -> tuple[tuple[object, object], list[Event], object]:
+    async def scenario() -> tuple[tuple[object, object], list[Event], object, LapseRun]:
         raw = FakeAsyncRedis(server=server)
         client = FakeAsyncRedis(server=server)
         store = RedisPlaceStore(client, key_prefix=_PREFIX)
@@ -682,18 +710,19 @@ def test_a_lapse_that_cannot_read_the_record_writes_nothing_logs_and_keeps_its_c
             await delivered_up_to(store, events, _BEFORE_THE_LAPSE)
             await damage(raw)
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            await store.lapse_due("pod")
+            run = await store.lapse_due("pod")
             seen = await delivered_up_to(store, events, _AFTER_THE_LAPSE)
             claimed = await raw.zrange(key_names(raw)["claimed"], 0, -1)
-            return around_scripts[-1], seen, claimed
+            return around_scripts[-1], seen, claimed, run
 
-    (before, after), seen, claimed = asyncio.run(scenario())
+    (before, after), seen, claimed, run = asyncio.run(scenario())
 
     assert after == before
     assert seen == [Resubscribed(), _YES, _BEFORE_THE_LAPSE, _AFTER_THE_LAPSE]
     assert claimed == [b"held"]
-    (warning,) = caplog.records
-    assert warning.levelno == logging.WARNING
+    assert run.turns == ()
+    assert (run.stream_count, run.failed_count) == (0, 1)
+    assert run.last_error_type is not None
 
 
 async def record_held(raw: FakeAsyncRedis, record: str) -> None:
