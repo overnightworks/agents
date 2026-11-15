@@ -44,6 +44,7 @@ from tests.support.gateway_turn_support import (
     self_signed_authority,
     server_context,
 )
+from tests.support.keep_alive_gateway import serving_keep_alive
 
 scenario = gateway_turn_support.scenario
 
@@ -541,12 +542,64 @@ def test_a_redirect_is_not_followed_and_a_cookie_is_not_kept(scenario):
     )
     backend = GatewayBackend(scenario.config(), transport=gateway)
 
-    _, first = scenario.outcome(backend)
-    scenario.outcome(backend)
+    async def both_in_one_loop():
+        async with backend:
+            first = await _turn(backend, a_request(), scenario.person()[0])
+            await _turn(backend, a_request(), scenario.person()[0])
+            return first
+
+    _, first = asyncio.run(both_in_one_loop())
 
     assert (first.kind, first.code, first.detail) == (*UNAVAILABLE, GatewayDetail.GATEWAY_FAILED)
     assert [sent.url.host for sent in gateway.requests] == ["gateway.test", "gateway.test"]
     assert "cookie" not in gateway.requests[1].headers
+
+
+def test_a_cookie_the_gateway_sets_is_not_sent_back_over_a_pooled_connection(scenario):
+    async def drive():
+        async with serving_keep_alive(set_cookie="session=1") as gateway:
+            async with GatewayBackend(scenario.config(origin=gateway.origin)) as backend:
+                for _ in range(2):
+                    await _turn(backend, a_request(), scenario.person()[0])
+            return gateway.cookies
+
+    assert asyncio.run(drive()) == [None, None]
+
+
+def test_consecutive_turns_share_one_connection(scenario):
+    async def drive():
+        async with serving_keep_alive() as gateway:
+            async with GatewayBackend(scenario.config(origin=gateway.origin)) as backend:
+                outcomes = [await _turn(backend, a_request(), scenario.person()[0]) for _ in "ab"]
+            return [stopped for _, stopped in outcomes], gateway.accepted
+
+    assert asyncio.run(drive()) == ([None, None], 1)
+
+
+def test_a_connection_the_gateway_closed_while_idle_still_serves_the_next_turn(scenario):
+    async def drive():
+        async with serving_keep_alive() as gateway:
+            async with GatewayBackend(scenario.config(origin=gateway.origin)) as backend:
+                await _turn(backend, a_request(), scenario.person()[0])
+                await gateway.close_idle()
+                events, stopped = await _turn(backend, a_request(), scenario.person()[0])
+            return events[-1], stopped, gateway.accepted
+
+    assert asyncio.run(drive()) == (FinalEvent(text="hi"), None, 2)
+
+
+def test_closing_the_backend_ends_its_connection_and_refuses_further_turns(scenario):
+    async def drive():
+        async with serving_keep_alive() as gateway:
+            backend = GatewayBackend(scenario.config(origin=gateway.origin))
+            await _turn(backend, a_request(), scenario.person()[0])
+            await backend.aclose()
+            await gateway.wait_until_ended(1)
+            with pytest.raises(RuntimeError):
+                await _turn(backend, a_request(), scenario.person()[0])
+            return gateway.ended
+
+    assert asyncio.run(drive()) == 1
 
 
 async def _serve_ok(reader, writer):
@@ -567,8 +620,8 @@ def _loopback_turn(scenario, *, server_context=None, ca_file=None):
         port = server.sockets[0].getsockname()[1]
         scheme = "http" if server_context is None else "https"
         config = scenario.config(origin=f"{scheme}://127.0.0.1:{port}", ca_file=ca_file)
-        async with server:
-            return await _turn(GatewayBackend(config), a_request(), scenario.person()[0])
+        async with server, GatewayBackend(config) as backend:
+            return await _turn(backend, a_request(), scenario.person()[0])
 
     return asyncio.run(drive())
 
@@ -602,13 +655,15 @@ def test_a_turn_advanced_from_a_new_task_per_event_reads_its_stream_over_a_socke
             serve_the_rest_once_the_first_piece_showed, "127.0.0.1", 0
         )
         port = server.sockets[0].getsockname()[1]
-        backend = GatewayBackend(scenario.config(origin=f"http://127.0.0.1:{port}"))
         events = []
 
         async def next_event(stream):
             return await anext(stream, None)
 
-        async with server:
+        async with (
+            server,
+            GatewayBackend(scenario.config(origin=f"http://127.0.0.1:{port}")) as backend,
+        ):
             try:
                 turn = backend.run(a_request(max_duration_seconds=5), scenario.person()[0])
                 async with contextlib.aclosing(turn) as stream:

@@ -363,8 +363,10 @@ class VoicePlace:
             port = server.sockets[0].getsockname()[1]
             config = a_gateway_config(self.directory)
             gateway = config.gateway.model_copy(update={"origin": f"http://127.0.0.1:{port}"})
-            backend = GatewayBackend(config.model_copy(update={"gateway": gateway}))
-            async with server:
+            async with (
+                server,
+                GatewayBackend(config.model_copy(update={"gateway": gateway})) as backend,
+            ):
                 try:
                     return await self._ended(
                         hearing, backend, self._wake_rule(None, None), None, ()
