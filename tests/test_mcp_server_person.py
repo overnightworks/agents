@@ -499,12 +499,13 @@ def test_a_tool_call_writes_one_ended_line_with_its_outcome_and_the_tool_name(
 
     ended = log_lines.one("tool_call.ended")
     assert ended["tool_name"] == "read_note"
-    assert (
+    observed = (
         ended["outcome"],
         ended.get("reason"),
         ended["level"],
         ended.get("error_type"),
-    ) == expected
+    )
+    assert observed == expected
     assert "tool_call_id" not in ended
     assert not any(word in log_lines.everything() for word in ("an argument", "a secret", "aaaa"))
 
