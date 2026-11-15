@@ -799,7 +799,7 @@ restart without persistence every answer is no until each runner's next listen, 
 `LISTEN_BOUND_SECONDS` away. When the store fails at a listen's acknowledgement the listen answers
 `-32603` with one fixed text and calls nothing on the request task; the record may still hold the
 stream, which then lapses after the allowance. Proved by `tests/test_mcp_server_listen_liveness.py`,
-`tests/integration/test_redis_listen_record.py` and the real-Redis tests of
+`tests/integration/test_redis_place_store.py` and the real-Redis tests of
 `tests/integration/real_redis`.
 
 **The tools of the moment.** A host that offers a member only the tools it can use now passes
