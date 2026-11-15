@@ -178,8 +178,8 @@ forbidden_modules =
 # The place store's Redis half stays an extra: only agents.mcp_server.redis_place_store imports
 # tandem and redis, and no other mcp_server module, the package __init__ included, reaches it, so an
 # app without ResourceChanges never loads either. as_packages = False keeps the package __init__ a
-# source without making the modules beside it one; the listed modules are every other mcp_server
-# module.
+# source without making the modules beside it one; the wildcard covers every other mcp_server
+# module, and the ignored imports are the store's own.
 [importlinter:contract:only-the-redis-place-store-imports-tandem-and-redis]
 name = only agents.mcp_server.redis_place_store imports tandem and redis
 type = protected
@@ -195,15 +195,11 @@ type = forbidden
 as_packages = False
 source_modules =
     agents.mcp_server
-    agents.mcp_server.asgi
-    agents.mcp_server.hearing
-    agents.mcp_server.listen
-    agents.mcp_server.person
-    agents.mcp_server.place_store
-    agents.mcp_server.resources
-    agents.mcp_server.route_call
-    agents.mcp_server.routes
+    agents.mcp_server.*
 forbidden_modules =
     agents.mcp_server.redis_place_store
     tandem
     redis
+ignore_imports =
+    agents.mcp_server.redis_place_store -> redis
+    agents.mcp_server.redis_place_store -> tandem
