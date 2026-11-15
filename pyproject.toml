@@ -21,7 +21,7 @@ mcp-server = [
 ]
 redis = [
     "overnightworks-agents[mcp-server]",
-    "overnightworks-tandem @ git+https://github.com/overnightworks/tandem@v0.2.0",
+    "overnightworks-tandem @ git+https://github.com/overnightworks/tandem@v0.5.0",
 ]
 voice = [
     "syntok>=1.4.4,<2",

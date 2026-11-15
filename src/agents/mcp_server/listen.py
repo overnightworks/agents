@@ -55,6 +55,7 @@ from agents.mcp_server.place_store import (
     ResourceChange,
     Resubscribed,
     ToolsChange,
+    failure_type,
 )
 from agents.mcp_server.resources import MemberResources, failure_answer, served_uris
 from agents.member import (
@@ -202,7 +203,13 @@ class ResourceChanges:
         fails or ends before it. A failure after it logs the cause, ends every open stream and
         turns ``dead``; the block stays entered. The task runs outside the SDK manager's task
         group, so its failure never reaches one. A second task lapses the streams of the place
-        store that ended, about every ``LAPSE_POLL_SECONDS``; it runs until the block ends.
+        store that ended, about every ``LAPSE_POLL_SECONDS``; it runs until the block ends, and a
+        failure of one poll, whatever it is, is logged by type once per streak and the next poll
+        goes on.
+
+        The exit waits for the ends of listens still in flight, each capped at ``_END_CAP_SECONDS``.
+        A second cancellation stops that wait at once, and a stream whose end is then not recorded
+        lapses by its open deadline: ``LISTEN_BOUND_SECONDS`` plus ``LISTEN_ALLOWANCE_SECONDS``.
         """
         confirmed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
         tasks = [asyncio.create_task(self._follow(confirmed))]
@@ -214,6 +221,8 @@ class ResourceChanges:
             for task in tasks:
                 task.cancel()
             await asyncio.wait(tasks)
+            if self._ending:
+                await asyncio.wait(tuple(self._ending))
 
     async def _lapse_ended_streams(self) -> None:
         failing = False
@@ -221,9 +230,11 @@ class ResourceChanges:
             await asyncio.sleep(LAPSE_POLL_SECONDS)
             try:
                 await self._store.lapse_due(self._origin)
-            except PlaceStoreError as failure:
+            except Exception as failure:
                 if not failing:
-                    _LOG.warning("the place store did not lapse the ended listens: %r", failure)
+                    _LOG.warning(
+                        "the place store did not lapse the ended listens: %s", failure_type(failure)
+                    )
                 failing = True
             else:
                 if failing:

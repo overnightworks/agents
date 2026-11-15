@@ -443,12 +443,28 @@ def test_a_listen_whose_task_is_cancelled_still_ends_its_stream_in_the_store(
     assert place_store.shared.stream_calls == ["acknowledged", "ended"]
 
 
-def test_a_failing_lapse_is_logged_and_the_next_tick_lapses(
+def _refused_with_a_cause() -> PlaceStoreError:
+    refusal = PlaceStoreError("the store is down")
+    refusal.__cause__ = PermissionError("the secret detail")
+    return refusal
+
+
+@pytest.mark.parametrize(
+    ("failure", "logged_type"),
+    [
+        pytest.param(PlaceStoreError("the store is down"), "PlaceStoreError", id="a store error"),
+        pytest.param(_refused_with_a_cause(), "PermissionError", id="a refusal with its cause"),
+        pytest.param(RuntimeError("the secret detail"), "RuntimeError", id="an unexpected error"),
+    ],
+)
+def test_a_failing_lapse_is_logged_by_type_and_the_next_tick_lapses(
     signalling_front: McpPersonFront,
     host: ListeningHost,
     place_store: PlaceStoreFake,
     alice: Principal,
     caplog: pytest.LogCaptureFixture,
+    failure: Exception,
+    logged_type: str,
 ) -> None:
     caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
     connection = listen_connection(signalling_front, alice, [STANDING_URI])
@@ -457,7 +473,7 @@ def test_a_failing_lapse_is_logged_and_the_next_tick_lapses(
         async with signalling_front.running():
             async with open_stream(connection):
                 pass
-            place_store.lapse_failure = PlaceStoreError("the store is down")
+            place_store.lapse_failure = failure
             await asyncio.sleep(_PAST_THE_ALLOWANCE)
             failing = [listens for _p, _u, listens, _t in host.calls]
             place_store.lapse_failure = None
@@ -465,7 +481,25 @@ def test_a_failing_lapse_is_logged_and_the_next_tick_lapses(
             return [*failing, host.calls[-1][2]]
 
     assert served(scenario()) == [True, True, False]
-    assert "PlaceStoreError" in " ".join(record.getMessage() for record in caplog.records)
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert logged_type in logged
+    assert "secret detail" not in logged
+
+
+def test_a_listen_cancelled_as_the_front_stops_has_its_end_recorded_before_running_exits(
+    signalling_front: McpPersonFront, place_store: PlaceStoreFake, alice: Principal
+) -> None:
+    place_store.ended_takes = 1
+    connection = listen_connection(signalling_front, alice, [STANDING_URI])
+
+    async def scenario() -> list[str]:
+        async with signalling_front.running():
+            task = asyncio.create_task(connection.run())
+            await settled()
+            task.cancel()
+        return place_store.shared.stream_calls
+
+    assert served(scenario()) == ["acknowledged", "ended"]
 
 
 @pytest.mark.parametrize("read", ["listens_to", "listeners"])

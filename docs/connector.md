@@ -694,14 +694,19 @@ with the port, `resources.subscribe` true with `changes`, and `tools.listChanged
 **The place store.** `store` is a `PlaceStore` (exported by `agents.mcp_server`) shared by every
 pod of the app; `RedisPlaceStore(redis, *, key_prefix)`, imported from
 `agents.mcp_server.redis_place_store` and installed with the `redis` extra, is the one
-implementation. `changed` and `tools_changed` publish an address, never content, and every pod's
-front, the publishing one included, delivers it to its open streams, which read the app's own
-truth; a listening turn carries its direction as well, and the store holds the listen record that
+implementation, and is the `LeaseRecord` of [the lease](#the-lease) too. `changed` and
+`tools_changed` publish an address, never content, and every pod's front, the publishing one
+included, delivers it to its open streams, which read the app's own truth; a listening turn carries
+its direction as well, and the store holds the listen record that
 **Whether a member listens** below describes. Pass `RedisPlaceStore` your app's
 `redis.asyncio` client, the `tandem.Client` of its parameter, and its key prefix: its repository
 name, the one segment (`[a-z0-9][a-z0-9-]*`) your app gives its own tandem. agents keeps everything
-it stores, tandem's channel included, under `<prefix>-agents`, so its keys and wakes never meet
-your app's; it refuses a prefix ending in `-agents`. The client carries a `Retry` and sets
+it stores, tandem's channel included, under `<prefix>-agents`, so its keys and wakes never meet your
+app's; it refuses a prefix ending in `-agents`. A member's lease keeps its keys beside the listen
+record's, `<prefix>-agents:tandem:v1:epoch` and `<prefix>-agents:tandem:v1:l:member:*`, on tandem's
+leases of family `member`; the `redis` extra pins tandem to one tag, which an app that pins tandem
+itself uses too, because uv resolves one version.
+The client carries a `Retry` and sets
 `socket_timeout` and `socket_connect_timeout`: without the timeouts a publish to a silent Redis
 waits for ever, and without the `Retry` the first re-read after a Redis restart can fail on a
 stale pooled connection (tandem's README names both duties). The client is built without
@@ -828,14 +833,46 @@ allow. A stream that honored only `toolsListChanged` counts for no URI in `liste
 `tests/test_mcp_server_offered_tools.py`.
 
 **The lease.** Every call a member makes is an admitted call, each opening of a stream included,
-and the app renews the member's lease on each. A runner that calls again within `LEASE_SECONDS`
-keeps its lease. The lease says nothing about listening: a call from an agent that listens
-nowhere renews it too. The listen is the offer rule only; a request to call an agent and the
-agent's accept keep the lease as their check.
+and the app renews the member's lease on each with `await leases.renew(principal)`, where
+`leases` is a `MemberLeases(store, lease_ended=...)` (exported by `agents.mcp_server`, `store` a
+`LeaseRecord` such as `RedisPlaceStore`). `renew` is async, so an app calls it from an async site, an
+ASGI wrapper around the front, never from the synchronous `resolve_person`. A runner that calls
+again within `LEASE_SECONDS` keeps its lease. The lease says nothing about listening: a call from an
+agent that listens nowhere renews it too. The listen is the offer rule only; a request to call an
+agent and the agent's accept keep the lease as their check.
+
+`renew` answers `LeaseRenewal(started, generation)`. The generation is a random text, new at every
+start, and an app compares it by equality only: a renewal the store replays answers
+`started=False`, so an app treats a generation other than the one it stored as a start. A generation
+is app-internal: an app never shows it to a person and never logs it, because it is a value that can
+end the lease. `await leases.state(principal)` answers `LeaseStanding(holds, generation)` from one
+snapshot and renews nothing. `holds` is true while the lease runs and also right after a fresh
+namespace or a Redis restart, for `LEASE_SECONDS`, when a lease may have been lost with the data;
+`generation` is set only while the lease runs, so a `holds` without a generation is that unknown
+state, and an add an app accepts then is caught only by its own reconcile. `await leases.live()`
+answers `LeaseRoster(holders, settled)`: the principals whose lease runs, and whether `settled`, which
+is true once `LEASE_SECONDS` have passed since the namespace began, so that a principal missing from
+`holders` is gone and not lost. All three raise `PlaceStoreError` when the store fails.
+
+`leases.running()` is entered once in the app's lifespan, on every pod. It hands each lapse to
+`lease_ended(principal, generation)` on one live pod, at least once: the store's claim on the lapse
+is extended while the handler runs and the handler is never cancelled by it, and a handler that
+raises gets the lapse again once the claim has run out, `claim_for` (5 s) later. A pod that dies
+mid-handling hands it to another. So the app's lapse action is idempotent and fenced by the
+generation, one atomic step in the app's own store that acts only if the generation it stored is
+the lapsed one; a lease that started again meanwhile has another generation and is left alone. A
+failure of the lapse service, a refusal or an unexpected exception, is logged once per streak by
+type and the service serves again after 5 s; it never ends silently and no readiness signal reflects
+it. The block's exit cancels the service and waits for it. Proved by
+`tests/test_mcp_server_leases.py`, `tests/integration/test_redis_leases.py` and the real-Redis
+cells of `tests/integration/real_redis`: a lease renewed on one pod still holds, with its
+generation, on another after the first was killed, and its lapse reaches `lease_ended` once with that
+generation.
 
 **What each app owns:** its places and who stands where, the invitation, its expiry (it lasts
 `INVITATION_SECONDS`) and the epoch check at accept, the participation and permission
-decisions, and enforcing the lease, removing a member whose lease ran out.
+decisions, and acting on a lapse fenced by its generation, and reconciling after a Redis restart
+where `holds` is false.
 
 ## Hearing and speaking
 

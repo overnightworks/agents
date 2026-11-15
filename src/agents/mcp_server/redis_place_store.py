@@ -9,24 +9,44 @@ The listen record is a deadline of kind ``listen`` per stream, keyed by the stre
 two keys: ``v1:listens``, a lexical sorted set whose members join the URI, the principal text and
 the stream by newlines, and ``v1:streams``, a hash from the stream to its record. Redis does not
 roll a script back, so each script reads and validates everything before its first write.
+
+A member's lease is tandem's ``Leases`` of family ``member`` and lasts ``LEASE_SECONDS``; its keys
+are tandem's, ``<key_prefix>-agents:tandem:v1:epoch`` and
+``<key_prefix>-agents:tandem:v1:l:member:*``, and the holder is the principal text. A principal
+whose lease the store may have lost reads as holding, with no generation, for ``LEASE_SECONDS``
+after the epoch began.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncIterator, Collection, Generator
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Generator
 from contextlib import contextmanager
 from datetime import timedelta
-from typing import Final, Literal, cast
+from typing import Final, Literal, NoReturn, cast
 from uuid import uuid4
 
 from pydantic import TypeAdapter, ValidationError
-from tandem import Client, Deadlines, Script, StoreError, WakeChannel, checked_segment, wake_channel
+from tandem import (
+    Client,
+    Deadlines,
+    Lapse,
+    Leases,
+    Liveness,
+    Script,
+    StoreError,
+    WakeChannel,
+    checked_segment,
+    wake_channel,
+)
 from tandem import Resubscribed as TandemResubscribed
 
 from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.place_store import (
+    LeaseRenewal,
+    LeaseRoster,
+    LeaseStanding,
     ListeningTurn,
     PlaceSignal,
     PlaceStoreError,
@@ -34,11 +54,14 @@ from agents.mcp_server.place_store import (
     Resubscribed,
     ToolsChange,
 )
+from agents.member import LEASE_SECONDS
 from agents.turn import Principal
 
 _LOG: Final = logging.getLogger(LOGGER_NAME)
 _NAMESPACE_SUFFIX: Final = "-agents"
 CLAIM_FOR: Final = timedelta(seconds=5)
+_LEASE_FAMILY: Final = "member"
+_LEASE_SWEEP_EVERY: Final = timedelta(seconds=1)
 _LAPSE_BATCH: Final = 20
 _MILLISECOND: Final = timedelta(milliseconds=1)
 
@@ -241,7 +264,8 @@ def _store_errors() -> Generator[None]:
 
 
 class RedisPlaceStore:
-    """``PlaceStore`` on tandem's wake channel and deadlines under ``<key_prefix>-agents``.
+    """``PlaceStore`` and ``LeaseRecord`` on tandem's wake channel, deadlines and leases under
+    ``<key_prefix>-agents``.
 
     ``key_prefix`` is the app's one segment, the value it gives its own tandem. ``redis`` is the
     app's client, which carries the ``Retry`` and the socket timeouts tandem's duties name. A
@@ -258,6 +282,13 @@ class RedisPlaceStore:
         self._channel = WakeChannel(redis, key_prefix=namespace)
         self._wake_channel = wake_channel(namespace)
         self._deadlines = Deadlines(redis, key_prefix=namespace, kind="listen", claim_for=CLAIM_FOR)
+        self._leases = Leases(
+            redis,
+            key_prefix=namespace,
+            family=_LEASE_FAMILY,
+            lasts=timedelta(seconds=LEASE_SECONDS),
+            claim_for=CLAIM_FOR,
+        )
         deadline_keys = self._deadlines.keys
         self._keys = [
             deadline_keys.due,
@@ -331,6 +362,36 @@ class RedisPlaceStore:
                     "a listen's lapse failed with %s and its claim expires",
                     type(failure.__cause__).__name__,
                 )
+
+    async def renew(self, principal: Principal) -> LeaseRenewal:
+        with _store_errors():
+            renewal = await self._leases.renew(_principal_text(principal))
+        return LeaseRenewal(started=renewal.started, generation=renewal.generation)
+
+    async def state(self, principal: Principal) -> LeaseStanding:
+        holder = _principal_text(principal)
+        with _store_errors():
+            standing = (await self._leases.state([holder]))[holder]
+        return LeaseStanding(
+            holds=standing.liveness is not Liveness.GONE, generation=standing.generation
+        )
+
+    async def live(self) -> LeaseRoster:
+        with _store_errors():
+            roster = await self._leases.live()
+        return LeaseRoster(
+            holders=frozenset(_principal_from(holder) for holder in roster.holders),
+            settled=roster.settled,
+        )
+
+    async def serve_lapses(
+        self, handle: Callable[[Principal, str], Awaitable[None]], *, claimer: str
+    ) -> NoReturn:
+        async def hand_over(lapse: Lapse) -> None:
+            await handle(_principal_from(lapse.holder), lapse.generation)
+
+        with _store_errors():
+            await self._leases.serve_lapses(hand_over, claimer=claimer, every=_LEASE_SWEEP_EVERY)
 
     async def _members_of(self, prefix: str, limit: int) -> list[str]:
         with _store_errors():
