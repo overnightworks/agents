@@ -1,0 +1,8 @@
+claim_id = "a3f10250ff3c4d1fa83fe663630a9278"
+agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
+role = "builder"
+base = "fd993e20526da95b2f774f03f45251625de24f10"
+branch = "claude/issue-973-tandem-range"
+scope = ["README.md", "docs/connector.md", "pyproject.toml", "uv.lock"]
+opened_commit = "fbb6ae1501543fb238089cdbc9c673bc2bac553f"
+whole_reason = "The pin, its lock and the two sentences naming it are one change."
