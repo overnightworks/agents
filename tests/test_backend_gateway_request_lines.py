@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from contextlib import suppress
+from contextlib import aclosing, suppress
 from dataclasses import dataclass
 
 import httpx2
 import pytest
 
+from agents.backend import TurnStopped
 from agents.backend.fake_gateway import (
     FakeGateway,
     Reply,
@@ -256,6 +257,29 @@ def test_a_reply_read_whole_that_is_no_valid_round_is_a_malformed_reply_line(
 
     line = log_lines.one(MODEL_REQUEST)
     assert (line["outcome"], line["reason"]) == ("failed", "malformed_reply")
+
+
+def test_a_deadline_reached_while_the_app_holds_a_piece_is_a_limit_exceeded_line(
+    scenario, log_lines
+):
+    request = a_request()
+    backend = GatewayBackend(
+        scenario.config(),
+        transport=Streamed((an_event_stream(a_chunk("a"), done=False),), hangs=True),
+    )
+
+    async def pull_late() -> None:
+        async with aclosing(backend.run(request, scenario.person()[0])) as stream:
+            await anext(stream)
+            await asyncio.sleep(request.max_duration_seconds)
+            with suppress(TurnStopped):
+                await anext(stream)
+
+    with asyncio.Runner(loop_factory=VirtualTimeLoop) as runner:
+        runner.run(pull_late())
+
+    line = log_lines.one(MODEL_REQUEST)
+    assert (line["outcome"], line["reason"]) == ("failed", "limit_exceeded")
 
 
 def test_the_hosts_close_during_a_round_is_a_cancelled_line(scenario, log_lines):

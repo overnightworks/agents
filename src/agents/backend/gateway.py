@@ -213,7 +213,6 @@ class GatewayBackend(AgentBackend):
                 async with contextlib.aclosing(_streamed_round(opened, offered, deadline)) as parts:
                     while isinstance(part := await anext(parts), str):
                         yield AssistantTextEvent(text=part)
-                        _refuse_after(deadline)
                     reply = part
                 usages.append(reply.usage)
                 if reply.message is None:
@@ -576,7 +575,8 @@ async def _streamed_round(
 ) -> AsyncGenerator[str | _Round, None]:
     """Each text piece of a round as it streams, then the round, judged whole.
 
-    Opening the request and each read run under the deadline, and no timeout spans a yield. The
+    Opening the request and each read run under the deadline, and no timeout spans a yield. A
+    deadline reached while the app holds a piece fails the round's line when the app pulls on. The
     round's one line is written when the request ends, and a failure, the round's judgement
     included, is raised after its handler ends.
     """
@@ -591,6 +591,7 @@ async def _streamed_round(
                 while not isinstance(part := await anext(parts), StreamedRound):
                     step.first_output()
                     yield part
+                    _refuse_after(deadline)
                 completed.append(part)
         except httpx2.DecodingError, MalformedRound:
             failure = _malformed_reply()
