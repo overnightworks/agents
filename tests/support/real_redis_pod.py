@@ -1,6 +1,6 @@
 """One pod of a minimal test host: the person front on a real Redis, served by its own uvicorn.
 
-Run as ``python -m tests.integration.real_redis.pod <port> <redis url> <key prefix>``. The pod
+Run as ``python -m tests.support.real_redis_pod <port> <redis url> <key prefix>``. The pod
 serves the standing of one member; ``POST /write`` counts a write in Redis and announces it
 through ``ResourceChanges``, the way a host's own handler does.
 """

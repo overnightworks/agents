@@ -82,3 +82,13 @@ what = 'import-linter changes root_packages'
 item = "overnightworks/agents#837"
 date = 2026-11-09
 reason = "the rename moves the same modules to the import agents"
+
+[[layout.allow]]
+path = "tests/integration/test_redis_place_store.py"
+rule = "test-layout"
+reason = "an adapter-bound suite: it needs the redis extra, so it lives apart from the core suites"
+
+[[layout.allow]]
+path = "tests/integration/real_redis/test_two_pods.py"
+rule = "test-layout"
+reason = "the two-process tests on a real Redis, run by scripts/run_redis_tests.sh and skipped by default collection"

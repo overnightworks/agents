@@ -26,7 +26,7 @@ from redis import Redis
 
 from agents.mcp_wire import MCP_ENDPOINT_PATH
 from agents.member import STANDING_URI
-from tests.integration.real_redis.pod import WRITE_PATH, WRITES_KEY, WRITTEN_MEMBER
+from tests.support.real_redis_pod import WRITE_PATH, WRITES_KEY, WRITTEN_MEMBER
 from tests.support.mcp_server_support import member_scope, rpc_body
 
 _REPOSITORY = Path(__file__).resolve().parents[3]
@@ -90,7 +90,7 @@ def started(tmp_path: Path, redis_url: str) -> Pod:
             [
                 sys.executable,
                 "-m",
-                "tests.integration.real_redis.pod",
+                "tests.support.real_redis_pod",
                 str(port),
                 redis_url,
                 _PREFIX,
