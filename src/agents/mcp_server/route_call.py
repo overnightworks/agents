@@ -9,12 +9,14 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from enum import StrEnum
 from http import HTTPStatus
 from typing import Final
 from urllib.parse import quote, urlencode
 
 import anyio
 import anyio.lowlevel
+from logline import outgoing_headers
 
 from agents.mcp_server.asgi import (
     LOGGER_NAME,
@@ -124,6 +126,9 @@ def _inner_request(
 def _headers_of(outer: Scope, body: bytes | None) -> list[tuple[bytes, bytes]]:
     headers = [(name, value) for name in _REPLAYED_FIELDS for value in field_values(outer, name)]
     headers.append((b"content-length", str(len(body or b"")).encode("ascii")))
+    headers.extend(
+        (name.encode("ascii"), value.encode("ascii")) for name, value in outgoing_headers().items()
+    )
     if body is not None:
         headers.append((b"content-type", b"application/json"))
     return headers
@@ -164,25 +169,40 @@ class _Response:
         self.complete = not message.get("more_body", False)
 
 
-def _failure(status: int | None) -> ToolOutcome:
-    _LOG.warning("a route gave no usable answer: status=%s", status)
+class _RouteRefusal(StrEnum):
+    """Why a route's answer is no usable result: the ``reason`` of ``route_answer.refused``."""
+
+    NO_STATUS = "no_status"
+    INCOMPLETE = "incomplete"
+    TOO_LARGE = "too_large"
+    STATUS = "status"
+    NOT_TEXT = "not_text"
+
+
+def _failure(reason: _RouteRefusal, status: int | None) -> ToolOutcome:
+    fields = {"reason": reason} if status is None else {"reason": reason, "status": status}
+    _LOG.warning("route_answer.refused", extra=fields)
     return ToolOutcome(_ROUTE_FAILED_TEXT, is_error=True)
 
 
 def _outcome(response: _Response) -> ToolOutcome:
     status = response.status
-    if status is None or not response.complete or response.overflowed:
-        return _failure(status)
+    if status is None:
+        return _failure(_RouteRefusal.NO_STATUS, status)
+    if response.overflowed:
+        return _failure(_RouteRefusal.TOO_LARGE, status)
+    if not response.complete:
+        return _failure(_RouteRefusal.INCOMPLETE, status)
     if HTTPStatus.OK <= status < HTTPStatus.MULTIPLE_CHOICES:
         is_error = False
     elif HTTPStatus.BAD_REQUEST <= status < HTTPStatus.INTERNAL_SERVER_ERROR:
         is_error = True
     else:
-        return _failure(status)
+        return _failure(_RouteRefusal.STATUS, status)
     try:
         return ToolOutcome(b"".join(response.chunks).decode("utf-8"), is_error=is_error)
     except UnicodeDecodeError:
-        return _failure(status)
+        return _failure(_RouteRefusal.NOT_TEXT, status)
 
 
 async def call_route(

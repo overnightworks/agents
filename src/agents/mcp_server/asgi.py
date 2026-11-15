@@ -73,7 +73,6 @@ WITHHELD: Final = HttpAnswer(HTTPStatus.INTERNAL_SERVER_ERROR, None, b"")
 DISCOVER_METHOD: Final = "server/discover"
 LISTEN_METHOD: Final = "subscriptions/listen"
 _UNKNOWN_METHOD: Final = "unknown_method"
-_UNKNOWN_TOOL: Final = "unknown_tool"
 _TOOLS_CALL: Final = "tools/call"
 _SERVED_METHODS: Final = frozenset(
     {
@@ -125,16 +124,29 @@ async def write_stream(
     return cut
 
 
-def request_label(document: JsonValue, offered_tools: Container[str]) -> str:
-    """Only closed words: a served method and an offered tool name, else a fixed stand-in."""
+@dataclass(frozen=True)
+class RequestLabel:
+    """Only closed words: a served method and, for a call, the offered tool's name."""
+
+    method: str
+    tool_name: str | None = None
+
+    def fields(self) -> dict[str, str]:
+        """The label as the fields of a log line."""
+        if self.tool_name is None:
+            return {"method": self.method}
+        return {"method": self.method, "tool_name": self.tool_name}
+
+
+def request_label(document: JsonValue, offered_tools: Container[str]) -> RequestLabel:
+    """The served method of a request and, for a call, its tool when it is offered."""
     if not isinstance(document, dict):
-        return _UNKNOWN_METHOD
+        return RequestLabel(_UNKNOWN_METHOD)
     method = document.get("method")
     if not isinstance(method, str) or method not in _SERVED_METHODS:
-        return _UNKNOWN_METHOD
+        return RequestLabel(_UNKNOWN_METHOD)
     if method != _TOOLS_CALL:
-        return method
+        return RequestLabel(method)
     params = document.get("params")
     name = params.get("name") if isinstance(params, dict) else None
-    known = isinstance(name, str) and name in offered_tools
-    return f"{method} {name if known else _UNKNOWN_TOOL}"
+    return RequestLabel(method, name if isinstance(name, str) and name in offered_tools else None)

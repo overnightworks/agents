@@ -101,5 +101,7 @@ async def read_answer(
 
 def failure_answer(method: str, failure: Exception) -> ErrorData:
     """The fixed answer of a failed port; only the exception's type is logged."""
-    _LOG.error("a resource method failed: %s raised %s", method, type(failure).__name__)
+    _LOG.error(
+        "resource_lookup.failed", extra={"method": method, "error_type": type(failure).__name__}
+    )
     return ErrorData(code=INTERNAL_ERROR, message=_RESOURCE_FAILED_TEXT)

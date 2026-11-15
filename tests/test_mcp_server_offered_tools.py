@@ -9,17 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from typing import Any
 
 import pytest
 from mcp.shared.subscriptions import ToolsListChanged
 
 from agents.mcp_server import McpPersonFront, ResourceChanges
-from agents.mcp_server.asgi import LOGGER_NAME as LOGGER
 from agents.member import STANDING_URI
 from agents.tools import Principal
 from tests.support import listen_support
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_person_support import Person
 from tests.support.mcp_server_support import (
     ListenConnection,
@@ -48,6 +47,8 @@ _TOOLS_CHANGED = "notifications/tools/list_changed"
 _ACKNOWLEDGED = "notifications/subscriptions/acknowledged"
 _NOT_OFFERED_TEXT = "the tool is not offered now"
 _OFFER_FAILED_TEXT = "the tool offer failed"
+
+log_lines = log_lines
 _DECLARED = ("read_note", "edit_note", "bid")
 
 
@@ -173,11 +174,10 @@ def test_a_broken_offer_answers_one_fixed_failure_and_logs_only_the_exception_ty
     person: Person,
     offer: ToolOffer,
     alice: Principal,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
     method: str,
     breakage: dict[str, Any],
 ) -> None:
-    caplog.set_level(logging.DEBUG, logger=LOGGER)
     for field_name, value in breakage.items():
         setattr(offer, field_name, value)
     params = call_params("bid") if method == "tools/call" else {}
@@ -186,8 +186,9 @@ def test_a_broken_offer_answers_one_fixed_failure_and_logs_only_the_exception_ty
 
     assert (reply["error"]["code"], reply["error"]["message"]) == (-32603, _OFFER_FAILED_TEXT)
     assert person.calls == []
-    logged = " ".join(record.getMessage() for record in caplog.records)
-    assert method in logged
+    failed = log_lines.one("tool_offer.failed")
+    logged = log_lines.everything()
+    assert (failed["method"], failed["level"]) == (method, "error")
     assert "secret-marker" not in logged + json.dumps(reply)
     assert "never_declared" not in logged + json.dumps(reply)
 

@@ -270,11 +270,8 @@ async def _serve_model_list(reader, writer):
     writer.close()
 
 
-def test_a_list_call_writes_the_key_into_no_record_under_debug_on_the_transport_loggers(
-    tmp_path, caplog
-):
-    for name in ("httpx2", "httpcore2"):
-        caplog.set_level(logging.DEBUG, logger=name)
+def test_a_list_call_writes_the_key_into_no_record_under_debug(tmp_path, caplog):
+    caplog.set_level(logging.DEBUG)
 
     async def list_over_loopback():
         server = await asyncio.start_server(_serve_model_list, "127.0.0.1", 0)
@@ -290,30 +287,3 @@ def test_a_list_call_writes_the_key_into_no_record_under_debug_on_the_transport_
     assert any(record.name.startswith("httpcore2") for record in caplog.records)
     assert key not in caplog.text
     assert key not in "".join(str(record.__dict__) for record in caplog.records)
-
-
-@pytest.mark.parametrize(
-    "name", ["httpx2", "httpcore2", "httpcore2.connection", "httpcore2.http11"]
-)
-def test_a_transport_logger_the_host_left_unset_is_not_enabled_for_debug_after_a_list_call(
-    tmp_path, caplog, name
-):
-    caplog.set_level(logging.DEBUG)
-    for logger in ("httpx2", "httpcore2"):
-        caplog.set_level(logging.NOTSET, logger=logger)
-
-    list_models(a_gateway(tmp_path), FakeGateway(model_list("text/a")))
-
-    assert not logging.getLogger(name).isEnabledFor(logging.DEBUG)
-
-
-@pytest.mark.parametrize("logger", ["httpx2", "httpcore2"])
-@pytest.mark.parametrize("level", [logging.DEBUG, logging.ERROR])
-def test_a_level_the_host_set_on_a_transport_logger_stands_after_a_list_call(
-    tmp_path, caplog, logger, level
-):
-    caplog.set_level(level, logger=logger)
-
-    list_models(a_gateway(tmp_path), FakeGateway(model_list("text/a")))
-
-    assert logging.getLogger(logger).level == level

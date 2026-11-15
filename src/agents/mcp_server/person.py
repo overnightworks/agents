@@ -27,6 +27,7 @@ from http import HTTPStatus
 from typing import Any, Final, cast
 
 import anyio.lowlevel
+from logline import StepTimer
 from mcp import MCPError
 from mcp.server.context import ServerRequestContext
 from mcp.server.lowlevel import Server
@@ -93,6 +94,7 @@ from agents.turn import (
     Principal,
     StrictModel,
     ToolImage,
+    ToolRefusal,
     UnicodeText,
     is_within_event_bound,
     written_base64,
@@ -369,7 +371,7 @@ class McpPersonFront:
         if answer is None:
             return
         if any(carries_signature_of(token, answer.body) for token in bearers):
-            _LOG.warning("an answer was withheld: %s", request_label(document, self._tools))
+            _LOG.warning("answer.withheld", extra=request_label(document, self._tools).fields())
             answer = WITHHELD
         await write(send, answer)
 
@@ -398,14 +400,13 @@ class McpPersonFront:
         refused = _revision_refusal(protocol_version(scope), document)
         if refused is not None:
             return refused, document
-        label = request_label(document, self._tools)
-        if label == LISTEN_METHOD:
+        if request_label(document, self._tools).method == LISTEN_METHOD:
             respond = partial(manager.handle_request, scope, _replayed(body, receive))
             cut = await write_stream(
                 respond, send, bearers, seconds=LISTEN_BOUND_SECONDS + _FINAL_FRAME_SECONDS
             )
             if cut:
-                _LOG.warning("a stream was cut: %s", label)
+                _LOG.warning("listen_stream.cut")
             return None, document
         sent: list[Message] = []
 
@@ -457,18 +458,18 @@ class McpPersonFront:
     @staticmethod
     async def _called(tool: PersonTool, arguments: JsonObject) -> CallToolResult:
         """The tool's result; every failure answers one fixed text and never raises into the SDK."""
-        name = tool.declaration.name
         try:
-            outcome = await tool.handler(_CURRENT_REQUEST.get(), arguments)
-            if not is_within_event_bound(outcome.content, outcome.image):
-                outcome = ToolOutcome(_RESULT_TOO_LARGE_TEXT, is_error=True)
-            result = _written(outcome)
-        except Exception as failure:
-            _LOG.error("a tool failed: %s raised %s", name, type(failure).__name__)
-            outcome = ToolOutcome(_HANDLER_FAILED_TEXT, is_error=True)
-            result = _written(outcome)
-        _LOG.info("a tool was called: %s is_error=%s", name, outcome.is_error)
-        return result
+            async with StepTimer("tool_call.ended", _LOG, tool_name=tool.declaration.name) as step:
+                step.handled()
+                outcome = await tool.handler(_CURRENT_REQUEST.get(), arguments)
+                if not is_within_event_bound(outcome.content, outcome.image):
+                    step.refuse(ToolRefusal.RESULT_TOO_LARGE)
+                    outcome = ToolOutcome(_RESULT_TOO_LARGE_TEXT, is_error=True)
+                elif outcome.is_error:
+                    step.refuse(ToolRefusal.TOOL_ERROR)
+                return _written(outcome)
+        except Exception:  # the timer wrote the line; only the class name is ever logged
+            return _written(ToolOutcome(_HANDLER_FAILED_TEXT, is_error=True))
 
 
 async def _offer(
@@ -487,7 +488,9 @@ async def _offer(
         if not offer.issubset(declared):
             raise _UnusableOfferError("the offer names an undeclared tool")
     except Exception as failure:
-        _LOG.error("the tool offer failed: %s raised %s", method, type(failure).__name__)
+        _LOG.error(
+            "tool_offer.failed", extra={"method": method, "error_type": type(failure).__name__}
+        )
         return ErrorData(code=INTERNAL_ERROR, message=_OFFER_FAILED_TEXT)
     return offer
 
