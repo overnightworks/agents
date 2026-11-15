@@ -151,9 +151,9 @@ class GatewayBackend(AgentBackend):
     async def aclose(self) -> None:
         """Close the pooled connections; a ``run`` or a round after this raises ``RuntimeError``.
 
-    The pooled client is bound to the event loop of its first request: drive one backend from
-    one loop.
-    """
+        The pooled client is bound to the event loop of its first request: drive one backend
+        from one loop.
+        """
         self._closed = True
         if self._pooled is not None:
             pooled, self._pooled = self._pooled, None
@@ -683,11 +683,7 @@ async def _chunks(response: httpx2.Response, deadline: float) -> AsyncGenerator[
 
 
 async def _read_to_the_end(chunks: AsyncIterator[bytes]) -> None:
-    """Take what follows ``[DONE]``, so the pool can keep the connection for the next request.
-
-    A response left unread closes its connection; a slow, long or broken tail only does the
-    same, since the round is already complete.
-    """
+    """Take what follows ``[DONE]`` so the pool keeps the connection; a bad tail only closes it."""
     remaining = _TRAILING_READ_BYTES
     with contextlib.suppress(TimeoutError, httpx2.HTTPError, OSError):
         async with asyncio.timeout(_TRAILING_READ_SECONDS):

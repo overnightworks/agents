@@ -418,8 +418,9 @@ exist is the gateway's: the client checks the size's shape only.
 `await list_gateway_models(config.gateway, *, transport=None)` (in
 `agents.backend.gateway`) answers a `GatewayModels` for an admin page, which has no
 turn. It sends a bare `GET <origin>/v1/models` with a text turn's client rules, on a client of its
-own that it closes, and `Authorization: Bearer <key>` alone. The key file is read per call. The whole call has one
-deadline of 10 seconds and a reply body bound of `MAX_EVENT_BYTES`. Proved by
+own that it closes, and `Authorization: Bearer <key>` alone. The key file is read per call.
+The whole call has one deadline of 10 seconds and a reply body bound of `MAX_EVENT_BYTES`.
+Proved by
 `tests/test_backend_gateway_models.py`: `test_the_request_is_a_bare_get_with_the_key_and_nothing_else`,
 `test_the_key_is_read_again_for_each_call` and `test_a_body_at_its_bound_passes`.
 

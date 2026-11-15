@@ -65,8 +65,9 @@ def test_closing_the_backend_ends_its_connection_and_refuses_further_turns(scena
             await _turn(backend, a_request(), scenario.person()[0])
             await backend.aclose()
             await gateway.wait_until_ended(1)
+            refused_turn = _turn(backend, a_request(), scenario.person()[0])
             with pytest.raises(RuntimeError):
-                await _turn(backend, a_request(), scenario.person()[0])
+                await refused_turn
             return gateway.ended
 
     assert asyncio.run(drive()) == 1
@@ -103,11 +104,10 @@ def test_closing_the_backend_during_a_turn_refuses_its_next_round(shop):
     backend = GatewayBackend(shop.config(), tools=[tool], transport=gateway)
     holder.append(backend)
 
-    async def drive():
-        return await _turn(backend, a_tool_request([tool], 5), a_person())
+    closing_turn = _turn(backend, a_tool_request([tool], 5), a_person())
 
     with pytest.raises(RuntimeError):
-        asyncio.run(drive())
+        asyncio.run(closing_turn)
     assert len(gateway.requests) == 1
 
 
