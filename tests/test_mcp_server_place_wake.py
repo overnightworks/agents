@@ -1,6 +1,6 @@
 """A change on one pod wakes the open streams of every pod through the place store.
 
-The store is the in-memory ``PlaceSignalsFake``: it shows the front's reaction to the subscription,
+The store is the in-memory ``PlaceStoreFake``: it shows the front's reaction to the subscription,
 its confirmation, its re-confirmation and its death. The Redis adapter has its own suite.
 """
 
@@ -21,6 +21,7 @@ from agents.mcp_server.place_store import PlaceStoreError, ResourceChange
 from agents.member import STANDING_URI
 from agents.tools import Principal
 from tests.support import listen_support
+from tests.support.listen_support import ListeningHost
 from tests.support.mcp_server_support import (
     MemberApp,
     ToolOffer,
@@ -32,13 +33,13 @@ from tests.support.mcp_server_support import (
     settled,
     window_uri,
 )
-from tests.support.place_store_support import PlaceSignalsFake
+from tests.support.place_store_support import PlaceStoreFake
 
 alice = listen_support.alice
 bob = listen_support.bob
 app = listen_support.app
 changes = listen_support.changes
-place_signals = listen_support.place_signals
+place_store = listen_support.place_store
 front = listen_support.front
 served = listen_support.served
 
@@ -48,11 +49,11 @@ _TOOLS_CHANGED = "notifications/tools/list_changed"
 _ANOTHER_POD = "another-pod"
 
 
-def failing_with(place_signals: PlaceSignalsFake, how: str) -> Callable[[], None]:
+def failing_with(place_store: PlaceStoreFake, how: str) -> Callable[[], None]:
     """The store's subscription raising, or ending, once what came before it was read."""
     if how == "raises":
-        return lambda: place_signals.fail(PlaceStoreError("the subscription was refused"))
-    return place_signals.end
+        return lambda: place_store.fail(PlaceStoreError("the subscription was refused"))
+    return place_store.end
 
 
 def frames_of(connection: Any) -> list[tuple[str | None, str | None]]:
@@ -62,11 +63,11 @@ def frames_of(connection: Any) -> list[tuple[str | None, str | None]]:
 
 
 def test_a_change_publishes_an_address_that_names_the_member_and_the_uri_and_no_content(
-    changes: ResourceChanges, place_signals: PlaceSignalsFake, alice: Principal
+    changes: ResourceChanges, place_store: PlaceStoreFake, alice: Principal
 ) -> None:
     served(changes.changed(alice, STANDING_URI))
 
-    [published] = place_signals.published
+    [published] = place_store.published
     assert isinstance(published, ResourceChange)
     assert (published.principal, published.uri) == (alice, STANDING_URI)
 
@@ -74,10 +75,10 @@ def test_a_change_publishes_an_address_that_names_the_member_and_the_uri_and_no_
 def test_a_failing_publish_raises_place_store_error_and_wakes_no_stream(
     front: McpPersonFront,
     changes: ResourceChanges,
-    place_signals: PlaceSignalsFake,
+    place_store: PlaceStoreFake,
     alice: Principal,
 ) -> None:
-    place_signals.publish_failure = PlaceStoreError("the store did not answer")
+    place_store.publish_failure = PlaceStoreError("the store did not answer")
     connection = listen_connection(front, alice, [STANDING_URI])
 
     async def scenario() -> None:
@@ -92,7 +93,7 @@ def test_a_failing_publish_raises_place_store_error_and_wakes_no_stream(
 
 
 def test_a_signal_another_pod_published_reaches_the_streams_of_its_member_only(
-    front: McpPersonFront, place_signals: PlaceSignalsFake, alice: Principal, bob: Principal
+    front: McpPersonFront, place_store: PlaceStoreFake, alice: Principal, bob: Principal
 ) -> None:
     streams = {
         "alice": listen_connection(front, alice, [STANDING_URI]),
@@ -101,7 +102,7 @@ def test_a_signal_another_pod_published_reaches_the_streams_of_its_member_only(
 
     async def scenario() -> None:
         async with front.running(), open_stream(streams["alice"]), open_stream(streams["bob"]):
-            place_signals.deliver(ResourceChange(alice, STANDING_URI, _ANOTHER_POD))
+            place_store.deliver(ResourceChange(alice, STANDING_URI, _ANOTHER_POD))
             await settled()
 
     served(scenario())
@@ -113,9 +114,9 @@ def test_a_signal_another_pod_published_reaches_the_streams_of_its_member_only(
 
 
 def test_running_yields_only_once_the_first_subscription_is_confirmed(
-    front: McpPersonFront, place_signals: PlaceSignalsFake
+    front: McpPersonFront, place_store: PlaceStoreFake
 ) -> None:
-    place_signals.confirms_subscription = False
+    place_store.confirms_subscription = False
 
     async def scenario() -> list[bool]:
         entered = asyncio.Event()
@@ -129,7 +130,7 @@ def test_running_yields_only_once_the_first_subscription_is_confirmed(
         serving = asyncio.create_task(serve())
         await settled()
         before = entered.is_set()
-        place_signals.resubscribe()
+        place_store.resubscribe()
         await settled()
         after = entered.is_set()
         leave.set()
@@ -139,12 +140,30 @@ def test_running_yields_only_once_the_first_subscription_is_confirmed(
     assert served(scenario()) == [False, True]
 
 
+def test_listening_resynced_is_called_at_every_confirmed_subscription_the_first_included(
+    place_store: PlaceStoreFake, app: MemberApp
+) -> None:
+    host = ListeningHost(place_store)
+    front = McpPersonFront([], resolve_person=resolve_member, resources=app, changes=host.changes())
+
+    async def scenario() -> list[int]:
+        counts = []
+        async with front.running():
+            counts.append(host.resyncs)
+            place_store.resubscribe()
+            await settled()
+            counts.append(host.resyncs)
+        return counts
+
+    assert served(scenario()) == [1, 2]
+
+
 @pytest.mark.parametrize("how", ["raises", "ends"])
 def test_running_raises_place_store_error_when_the_subscription_fails_before_it_is_confirmed(
-    front: McpPersonFront, place_signals: PlaceSignalsFake, how: str
+    front: McpPersonFront, place_store: PlaceStoreFake, how: str
 ) -> None:
-    place_signals.confirms_subscription = False
-    failing_with(place_signals, how)()
+    place_store.confirms_subscription = False
+    failing_with(place_store, how)()
 
     async def scenario() -> None:
         async with front.running():
@@ -159,7 +178,7 @@ def test_running_raises_place_store_error_when_the_subscription_fails_before_it_
 def test_a_later_subscription_gives_each_stream_what_it_honored_and_logs_one_line_each(
     app: MemberApp,
     alice: Principal,
-    place_signals: PlaceSignalsFake,
+    place_store: PlaceStoreFake,
     changes: ResourceChanges,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -182,9 +201,9 @@ def test_a_later_subscription_gives_each_stream_what_it_honored_and_logs_one_lin
         async with front.running(), open_stream(watching_everything):
             async with open_stream(watching_the_standing):
                 logged_before = len(caplog.records)
-                place_signals.resubscribe()
+                place_store.resubscribe()
                 await settled()
-                place_signals.resubscribe()
+                place_store.resubscribe()
                 await settled()
         return len(caplog.records) - logged_before
 
@@ -203,7 +222,7 @@ def test_a_later_subscription_gives_each_stream_what_it_honored_and_logs_one_lin
 def test_a_subscription_that_fails_later_ends_the_open_listens_and_answers_503_before_resolving(
     app: MemberApp,
     alice: Principal,
-    place_signals: PlaceSignalsFake,
+    place_store: PlaceStoreFake,
     changes: ResourceChanges,
     caplog: pytest.LogCaptureFixture,
     how: str,
@@ -221,7 +240,7 @@ def test_a_subscription_that_fails_later_ends_the_open_listens_and_answers_503_b
     async def scenario() -> list[int]:
         async with front.running(), open_stream(listening):
             resolved_before = len(resolved)
-            failing_with(place_signals, how)()
+            failing_with(place_store, how)()
             await settled()
             statuses = [
                 (await post(front, alice, rpc_body("tools/list")))[0]["status"] for _ in range(2)
@@ -239,14 +258,14 @@ def test_a_subscription_that_fails_later_ends_the_open_listens_and_answers_503_b
 
 def test_a_subscription_failing_for_good_logs_its_cause(
     front: McpPersonFront,
-    place_signals: PlaceSignalsFake,
+    place_store: PlaceStoreFake,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level(logging.ERROR, logger=LOGGER_NAME)
 
     async def scenario() -> None:
         async with front.running():
-            place_signals.fail(PlaceStoreError("no permission for the channel"))
+            place_store.fail(PlaceStoreError("no permission for the channel"))
             await settled()
 
     served(scenario())
@@ -257,7 +276,7 @@ def test_a_subscription_failing_for_good_logs_its_cause(
 
 
 def test_a_listen_that_passed_the_dead_check_before_the_subscription_failed_opens_no_stream(
-    front: McpPersonFront, app: MemberApp, place_signals: PlaceSignalsFake, alice: Principal
+    front: McpPersonFront, app: MemberApp, place_store: PlaceStoreFake, alice: Principal
 ) -> None:
     connection = listen_connection(front, alice, [STANDING_URI])
     request_released = asyncio.Event()
@@ -273,7 +292,7 @@ def test_a_listen_that_passed_the_dead_check_before_the_subscription_failed_open
         async with front.running():
             serving = asyncio.create_task(connection.run())
             await settled()
-            place_signals.fail(PlaceStoreError("the subscription was refused"))
+            place_store.fail(PlaceStoreError("the subscription was refused"))
             await settled()
             request_released.set()
             await serving

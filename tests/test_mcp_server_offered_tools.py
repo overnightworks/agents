@@ -35,13 +35,13 @@ from tests.support.mcp_server_support import (
     resolve_member,
     settled,
 )
-from tests.support.place_store_support import PlaceSignalsFake
+from tests.support.place_store_support import PlaceStoreFake
 
 alice = listen_support.alice
 bob = listen_support.bob
 app = listen_support.app
 changes = listen_support.changes
-place_signals = listen_support.place_signals
+place_store = listen_support.place_store
 served = listen_support.served
 
 _TOOLS_CHANGED = "notifications/tools/list_changed"
@@ -328,10 +328,10 @@ def test_a_stream_honoring_only_tools_counts_for_no_uri_and_signals_no_listening
     person: Person,
     offer: ToolOffer,
     alice: Principal,
-    place_signals: PlaceSignalsFake,
+    place_store: PlaceStoreFake,
 ) -> None:
     heard: list[tuple[Principal, str, bool]] = []
-    changes = ResourceChanges(place_signals, listening_changed=lambda *args: heard.append(args))
+    changes = ResourceChanges(place_store, listening_changed=lambda *args: heard.append(args))
     front = McpPersonFront(
         [person.tool("bid")],
         resolve_person=resolve_member,
@@ -344,13 +344,14 @@ def test_a_stream_honoring_only_tools_counts_for_no_uri_and_signals_no_listening
 
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
-            during.append(changes.listens_to(alice, STANDING_URI))
+            during.append(await changes.listens_to(alice, STANDING_URI))
             await asyncio.sleep(1)
 
     served(scenario())
 
     assert during == [False]
     assert heard == []
+    assert place_store.shared.stream_calls == []
 
 
 def test_the_sdk_client_hears_the_change_lists_the_new_offer_and_is_refused_the_old_tool(
