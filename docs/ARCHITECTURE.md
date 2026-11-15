@@ -64,6 +64,12 @@ flowchart TB
   in-memory record of which member hears which speaker ([hearing.md](hearing.md)); `mcp_wire`
   holds what the SDK does not own (the endpoint path, the strict JSON reader, the bearer-reflection
   check) and imports no extra.
+- The **`redis` extra** adds `redis` and `overnightworks-tandem` for
+  `agents.mcp_server.redis_place_store`, the only module that imports either. The place store is
+  what the pods of one app share: `ResourceChanges` publishes an address, never content, through
+  the `PlaceSignals` port of `mcp_server.place_store`, and `RedisPlaceStore` carries it on tandem's
+  wake channel under `<key_prefix>-agents`, apart from the host's own keys. `agents.mcp_server`
+  does not re-export it, so an app without `ResourceChanges` never loads tandem or redis.
 - The **`voice` extra** adds `syntok` for `agents.voice`: the voice loop
   (`voice.loop.run_voice_loop`) on the `AgentBackend` port, its ports `VoiceOut` and `WakeRule`
   and its events. `voice.reply` owns the reply markers, the protocol text composed from them and
@@ -120,8 +126,13 @@ resolves the person through a port, answers `tools/list` and `tools/call`, and r
 marked route as an in-process request into the host's whole application.
 
 Every answer of the front is buffered, so a bearer reflected into it can be withheld whole. The
-one streaming path is `subscriptions/listen`, per verified principal: `ResourceChanges` wakes each
-open stream of the signalled principal, and the stream acknowledges, delivers and ends at a bound.
+one streaming path is `subscriptions/listen`, per verified principal: a change published through
+the place store reaches every pod's subscription, which wakes each open stream of the signalled
+principal, and the stream acknowledges, delivers and ends at a bound. A pod is ready at its first
+confirmed subscription and re-reads what its streams honored at every later one. A subscription
+that fails for good turns the front dead: it ends its open streams and answers 503 before it
+resolves the person, until the pod restarts, because a pod that no change reaches would serve
+stale truth.
 The shell's writer checks each frame for the bearer and holds the response start until the first
 frame, so a bearer in the first one is still withheld and in a later one cuts the stream. The shell
 caps that call at the bound plus time for the completion, because the SDK's write to a client has
@@ -167,7 +178,8 @@ malformed value fails loud.
 against `FakeGateway`'s scripted transport, `load_agent` against files, and the person front
 as an ASGI app driven with real scopes and the SDK's own `Client`. Pure rules (`mcp_wire`, the
 turn vocabulary, the streamed-round reader) are called directly. The suite needs no live
-provider. `quality / verdict` holds the import contracts, size and clone ratchets, and coverage
+provider. Two processes of a minimal host on one real Redis prove the wake across pods
+(`scripts/run_redis_tests.sh`); every other test runs in process. `quality / verdict` holds the import contracts, size and clone ratchets, and coverage
 over the whole suite.
 
 ## Constraints and reasons
