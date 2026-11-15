@@ -36,7 +36,7 @@ REPLY_RULES: Final = (
     "Write only the words to say aloud, never what you are doing or why.\n"
     f"To say nothing, reply with {SILENT_REPLY} and nothing else."
 )
-"""What a runner appends when a reply is spoken through ``ReplyReader``: the rules of a spoken reply."""
+"""What a runner appends when a ``ReplyReader`` reads its reply: the rules of a spoken reply."""
 
 PROTOCOL_TEXT: Final = (
     "You take part in a conversation by voice. Each user message holds what was heard or "
