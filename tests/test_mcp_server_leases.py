@@ -91,9 +91,10 @@ def test_a_failing_store_raises_place_store_error_from_each_call(
     read: Callable[[MemberLeases, Principal], Awaitable[object]],
 ) -> None:
     record.failure = PlaceStoreError("the store did not answer")
+    lease_call = read(leases, alice)
 
     with pytest.raises(PlaceStoreError):
-        in_virtual_time(read(leases, alice))
+        in_virtual_time(lease_call)
 
 
 def test_a_lapse_reaches_lease_ended_with_the_principal_and_the_generation_it_lapsed_with(
