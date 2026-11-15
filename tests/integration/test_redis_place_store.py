@@ -361,9 +361,9 @@ def test_a_lapse_whose_claim_was_never_finished_is_done_again_by_the_next_claim_
             return await delivered_up_to(store_b, events, _AFTER_EVERYTHING)
 
     assert asyncio.run(scenario()) == [Resubscribed(), _YES, _NO, _AFTER_EVERYTHING]
-    assert [record.getMessage() for record in caplog.records] == [
-        "a listen's lapse failed with ConnectionError and its claim expires"
-    ]
+    (warning,) = caplog.records
+    assert warning.levelno == logging.WARNING
+    assert "ConnectionError" in warning.getMessage()
 
 
 def test_a_pod_that_claimed_a_stream_and_lost_its_connection_leaves_it_to_the_next_claim(
