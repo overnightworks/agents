@@ -559,9 +559,10 @@ def test_a_failing_store_raises_place_store_error_from_every_call_of_the_record(
 ) -> None:
     server.connected = False
     store = a_pod(server)
+    failing_call = call(store)  # type: ignore[operator]
 
     with pytest.raises(PlaceStoreError):
-        asyncio.run(call(store))  # type: ignore[operator]
+        asyncio.run(failing_call)
 
 
 _RECORD = json.dumps([json.dumps([_ALICE.iss, _ALICE.sub]), [STANDING_URI]])

@@ -480,8 +480,10 @@ def test_a_failing_store_raises_place_store_error_from_a_read(
         else:
             await changes.listeners(STANDING_URI)
 
+    read_scenario = scenario()
+
     with pytest.raises(PlaceStoreError):
-        served(scenario())
+        served(read_scenario)
 
 
 def test_a_callable_that_raises_leaves_the_listen_unharmed_and_is_logged_by_type_only(
