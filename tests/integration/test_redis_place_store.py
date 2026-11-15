@@ -49,15 +49,22 @@ def a_pod(server: FakeServer, *, key_prefix: str = _PREFIX) -> RedisPlaceStore:
 async def subscribed(store: RedisPlaceStore) -> AsyncIterator[list[PlaceSignal | Resubscribed]]:
     """The events one subscription yields, collected until the block ends."""
     events: list[PlaceSignal | Resubscribed] = []
+    first_event_or_end = asyncio.Event()
 
     async def collect() -> None:
-        async for event in store.received():
-            events.append(event)
+        try:
+            async for event in store.received():
+                events.append(event)
+                first_event_or_end.set()
+        finally:
+            first_event_or_end.set()
 
     task = asyncio.create_task(collect())
-    while not events:
-        await asyncio.sleep(0.01)
     try:
+        async with asyncio.timeout(5):
+            await first_event_or_end.wait()
+        if task.done():
+            await task
         yield events
     finally:
         task.cancel()
