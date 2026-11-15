@@ -127,9 +127,10 @@ def test_a_payload_that_is_no_address_is_skipped_and_logged_by_length_only(
 
 def test_a_failing_store_raises_place_store_error_from_publish(server: FakeServer) -> None:
     server.connected = False
+    publishing = a_pod(server).publish(ToolsChange(_ALICE, "pod-a"))
 
     with pytest.raises(PlaceStoreError):
-        asyncio.run(a_pod(server).publish(ToolsChange(_ALICE, "pod-a")))
+        asyncio.run(publishing)
 
 
 @pytest.mark.parametrize(

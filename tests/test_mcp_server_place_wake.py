@@ -150,8 +150,10 @@ def test_running_raises_place_store_error_when_the_subscription_fails_before_it_
         async with front.running():
             pytest.fail("the front served without a confirmed subscription")
 
+    serving = scenario()
+
     with pytest.raises(PlaceStoreError):
-        served(scenario())
+        served(serving)
 
 
 def test_a_later_subscription_gives_each_stream_what_it_honored_and_logs_one_line_each(
