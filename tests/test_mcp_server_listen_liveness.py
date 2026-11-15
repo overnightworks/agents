@@ -25,7 +25,7 @@ from tests.support.mcp_server_support import (
     settled,
     window_uri,
 )
-from tests.support.place_store_support import PlaceStoreFake
+from tests.support.place_store_support import PlaceStoreFake, refused_with_a_cause
 
 alice = listen_support.alice
 bob = listen_support.bob
@@ -383,7 +383,7 @@ def test_a_failing_acknowledgement_answers_the_fixed_text_and_calls_nothing_on_t
     alice: Principal,
     log_lines: LogLines,
 ) -> None:
-    place_store.acknowledged_failure = PlaceStoreError("the reply was lost")
+    place_store.acknowledged_failure = refused_with_a_cause()
     connection = listen_connection(signalling_front, alice, [STANDING_URI])
 
     async def scenario() -> None:
@@ -402,12 +402,13 @@ def test_a_failing_acknowledgement_answers_the_fixed_text_and_calls_nothing_on_t
     ]
     assert "ended" in place_store.shared.stream_calls
     failed = log_lines.one("listen_acknowledgement.ended")
-    assert (failed["outcome"], failed["level"], failed["error_type"], failed["uri_count"]) == (
-        "failed",
-        "warning",
-        "PlaceStoreError",
-        1,
-    )
+    assert (
+        failed["outcome"],
+        failed["level"],
+        failed["error_type"],
+        failed["cause_type"],
+        failed["uri_count"],
+    ) == ("failed", "warning", "PlaceStoreError", "PermissionError", 1)
     assert "turned_count" not in failed
     assert log_lines.of("listening.opened") == []
 
@@ -437,7 +438,7 @@ def test_a_failing_end_is_one_failed_line_without_the_detail_and_the_listen_ends
     alice: Principal,
     log_lines: LogLines,
 ) -> None:
-    place_store.ended_failure = PlaceStoreError("the secret detail")
+    place_store.ended_failure = refused_with_a_cause()
     connection = listen_connection(signalling_front, alice, [STANDING_URI])
 
     async def scenario() -> None:
@@ -448,10 +449,11 @@ def test_a_failing_end_is_one_failed_line_without_the_detail_and_the_listen_ends
 
     ended = log_lines.one("listen_end.ended")
     assert connection.status == 200
-    assert (ended["outcome"], ended["level"], ended["error_type"]) == (
+    assert (ended["outcome"], ended["level"], ended["error_type"], ended["cause_type"]) == (
         "failed",
         "warning",
         "PlaceStoreError",
+        "PermissionError",
     )
     assert "secret detail" not in log_lines.everything()
 
@@ -489,17 +491,11 @@ def test_a_listen_whose_task_is_cancelled_still_ends_its_stream_in_the_store(
     assert place_store.shared.stream_calls == ["acknowledged", "ended"]
 
 
-def _refused_with_a_cause() -> PlaceStoreError:
-    refusal = PlaceStoreError("the store is down")
-    refusal.__cause__ = PermissionError("the secret detail")
-    return refusal
-
-
 @pytest.mark.parametrize(
     ("failure", "logged_type"),
     [
         pytest.param(PlaceStoreError("the store is down"), "PlaceStoreError", id="a store error"),
-        pytest.param(_refused_with_a_cause(), "PermissionError", id="a refusal with its cause"),
+        pytest.param(refused_with_a_cause(), "PermissionError", id="a refusal with its cause"),
         pytest.param(RuntimeError("the secret detail"), "RuntimeError", id="an unexpected error"),
     ],
 )
@@ -658,7 +654,7 @@ def test_a_failing_store_raises_place_store_error_from_a_read_and_writes_one_fai
     event: str,
     log_lines: LogLines,
 ) -> None:
-    place_store.read_failure = PlaceStoreError("the store did not answer")
+    place_store.read_failure = refused_with_a_cause()
 
     async def scenario() -> None:
         if read == "listens_to":
@@ -672,7 +668,11 @@ def test_a_failing_store_raises_place_store_error_from_a_read_and_writes_one_fai
         served(read_scenario)
 
     failed = log_lines.one(event)
-    assert (failed["outcome"], failed["error_type"]) == ("failed", "PlaceStoreError")
+    assert (failed["outcome"], failed["error_type"], failed["cause_type"]) == (
+        "failed",
+        "PlaceStoreError",
+        "PermissionError",
+    )
 
 
 def test_a_callable_that_raises_leaves_the_listen_unharmed_and_is_one_error_line_by_type_only(

@@ -484,8 +484,10 @@ served methods, and `tool_name` for an offered tool), `listen_stream.cut`, `tool
 sent one. The inner route request carries the outer trace id under a new span id.
 
 The place store, the listen record and the lease write one `<noun>.ended` line per call of the
-store, with `duration_ms` and `outcome`; a call that raises `PlaceStoreError` is `failed` with
-`error_type`, and no line carries a URI, a generation or content:
+store, with `duration_ms` and `outcome`; a call that fails is `failed` with `error_type`, the class
+of the failure. The listen record's lines add `cause_type` to a failed call: the type of the library
+failure a `PlaceStoreError` stands for, the name `listen_lapse.ended` carries as `last_error_type`.
+No line carries a URI, a generation or content:
 
 | Line | Fields beside the timer's |
 |---|---|

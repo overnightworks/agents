@@ -33,6 +33,13 @@ _ENDED = object()
 type _Event = PlaceSignal | ListeningTurn | Resubscribed
 
 
+def refused_with_a_cause() -> PlaceStoreError:
+    """The failure a store library's refusal becomes: a ``PlaceStoreError`` over its cause."""
+    refusal = PlaceStoreError("the secret detail")
+    refusal.__cause__ = PermissionError("the secret detail")
+    return refusal
+
+
 @dataclass
 class _StreamRecord:
     principal: Principal

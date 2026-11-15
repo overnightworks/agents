@@ -34,7 +34,7 @@ from tests.support.mcp_server_support import (
     settled,
     window_uri,
 )
-from tests.support.place_store_support import PlaceStoreFake
+from tests.support.place_store_support import PlaceStoreFake, refused_with_a_cause
 
 alice = listen_support.alice
 bob = listen_support.bob
@@ -81,7 +81,7 @@ def test_a_failing_publish_raises_place_store_error_and_wakes_no_stream(
     alice: Principal,
     log_lines: LogLines,
 ) -> None:
-    place_store.publish_failure = PlaceStoreError("the store did not answer")
+    place_store.publish_failure = refused_with_a_cause()
     connection = listen_connection(front, alice, [STANDING_URI])
 
     async def scenario() -> None:
@@ -94,11 +94,12 @@ def test_a_failing_publish_raises_place_store_error_and_wakes_no_stream(
 
     assert connection.updated_uris == []
     failed = log_lines.one("place_publish.ended")
-    assert (failed["outcome"], failed["signal_kind"], failed["error_type"]) == (
-        "failed",
-        "resource",
-        "PlaceStoreError",
-    )
+    assert (
+        failed["outcome"],
+        failed["signal_kind"],
+        failed["error_type"],
+        failed["cause_type"],
+    ) == ("failed", "resource", "PlaceStoreError", "PermissionError")
 
 
 @pytest.mark.parametrize(

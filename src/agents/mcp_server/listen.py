@@ -187,7 +187,7 @@ class ResourceChanges:
         Runs on the front's event loop or through ``anyio.from_thread.run``, and only after the
         change is visible to the read.
         """
-        async with StepTimer("place_publish.ended", _LOG, signal_kind="resource"):
+        async with _store_step("place_publish.ended", signal_kind="resource"):
             await self._store.publish(ResourceChange(recipient, uri, self._origin))
 
     async def tools_changed(self, recipient: Principal) -> None:
@@ -197,7 +197,7 @@ class ResourceChanges:
         Runs on the front's event loop or through ``anyio.from_thread.run``, and only after the new
         offer is visible to ``offered_tools``.
         """
-        async with StepTimer("place_publish.ended", _LOG, signal_kind="tools"):
+        async with _store_step("place_publish.ended", signal_kind="tools"):
             await self._store.publish(ToolsChange(recipient, self._origin))
 
     @property
@@ -321,13 +321,13 @@ class ResourceChanges:
         only the tool list counts for no URI. A stream lapses ``LISTEN_ALLOWANCE_SECONDS`` after it
         ends, at the next lapse poll. Raises ``PlaceStoreError`` when the store fails.
         """
-        async with StepTimer("listening_lookup.ended", _LOG):
+        async with _store_step("listening_lookup.ended"):
             return await self._store.listens_to(principal, uri)
 
     async def listeners(self, uri: str) -> frozenset[Principal]:
         """The principals for whom ``listens_to`` answers yes for the URI. Raises
         ``PlaceStoreError`` when the store fails."""
-        async with StepTimer("listeners_lookup.ended", _LOG) as step:
+        async with _store_step("listeners_lookup.ended") as step:
             principals = await self._store.listeners(uri)
             step.add(principal_count=len(principals))
             return principals
@@ -365,9 +365,7 @@ class ResourceChanges:
         turned: frozenset[str] = frozenset()
         if honored:
             stream.recorded = True
-            async with StepTimer(
-                "listen_acknowledgement.ended", _LOG, uri_count=len(honored)
-            ) as step:
+            async with _store_step("listen_acknowledgement.ended", uri_count=len(honored)) as step:
                 step.handled()
                 turned = await self._store.acknowledged(
                     stream.identity, recipient, honored, _HOLDS_OPEN
@@ -389,7 +387,7 @@ class ResourceChanges:
 
     async def _end_in_store(self, stream: _ListenStream) -> None:
         with suppress(PlaceStoreError, TimeoutError):  # the failed line is the record
-            async with StepTimer("listen_end.ended", _LOG) as step:
+            async with _store_step("listen_end.ended") as step:
                 step.handled()
                 async with asyncio.timeout(_END_CAP_SECONDS):
                     await self._store.ended(stream.identity, _HOLDS_ENDED)
@@ -407,6 +405,21 @@ class ResourceChanges:
     def _resynced(self) -> None:
         if (resynced := self._listening_resynced) is not None:
             _call_host("listening_resynced", resynced)
+
+
+@asynccontextmanager
+async def _store_step(event: str, **fields: int | str) -> AsyncGenerator[StepTimer, None]:
+    """One timed call of the place store: the timer's line, and on a failure the line also carries
+    ``cause_type``, the name ``failure_type`` gives, since the timer's ``error_type`` is the class
+    of the ``PlaceStoreError`` itself."""
+    timer = StepTimer(event, _LOG)
+    timer.add(**fields)
+    async with timer as step:
+        try:
+            yield step
+        except Exception as failure:
+            step.add(cause_type=failure_type(failure))
+            raise
 
 
 def _call_host(name: str, call: Callable[[], None]) -> None:
