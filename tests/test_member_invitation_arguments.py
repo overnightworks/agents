@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from agents.figure_vocabulary import FigureGesture
 from agents.member import (
@@ -19,6 +19,7 @@ from agents.member import (
     PlaceRef,
     Standing,
     StandingState,
+    Voices,
 )
 
 PLACE = PlaceRef(kind="room", id="r-1")
@@ -288,6 +289,20 @@ def test_accept_invitation_arguments_refuse_voices_outside_the_form(
 
     with pytest.raises(ValidationError):
         AcceptInvitationArguments.model_validate_json(wire_text)
+
+
+@pytest.mark.parametrize(
+    "voices",
+    [[f"v{number}" for number in range(9)], ["nova", "alloy", "nova"]],
+    ids=["nine-voices", "duplicate-voice"],
+)
+def test_a_host_side_voices_type_refuses_what_the_accept_arguments_refuse(
+    voices: list[str],
+) -> None:
+    with pytest.raises(ValidationError):
+        TypeAdapter(Voices).validate_python(voices)
+    with pytest.raises(ValidationError):
+        AcceptInvitationArguments.model_validate_json(json.dumps(ACCEPT_WIRE | {"voices": voices}))
 
 
 def test_a_figure_takes_a_clip_for_each_base_gesture_and_reads_them_back() -> None:
