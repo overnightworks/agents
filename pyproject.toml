@@ -23,7 +23,7 @@ mcp-server = [
 ]
 redis = [
     "overnightworks-agents[mcp-server]",
-    "overnightworks-tandem @ git+https://github.com/overnightworks/tandem@v0.5.1",
+    "overnightworks-tandem>=0.6,<0.7",
 ]
 voice = [
     "syntok>=1.4.4,<2",
@@ -46,10 +46,11 @@ dev = [
 Repository = "https://github.com/overnightworks/agents"
 
 [dependency-groups]
-dev = ["overnightworks-logline"]
+dev = ["overnightworks-logline", "overnightworks-tandem"]
 
 [tool.uv.sources]
 overnightworks-logline = { git = "https://github.com/overnightworks/logline", tag = "v0.3.0", group = "dev" }
+overnightworks-tandem = { git = "https://github.com/overnightworks/tandem", tag = "v0.6.0", group = "dev" }
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]

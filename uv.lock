@@ -540,6 +540,7 @@ voice = [
 [package.dev-dependencies]
 dev = [
     { name = "overnightworks-logline" },
+    { name = "overnightworks-tandem" },
 ]
 
 [package.metadata]
@@ -554,7 +555,7 @@ requires-dist = [
     { name = "overnightworks-agents", extras = ["mcp-server"], marker = "extra == 'redis'" },
     { name = "overnightworks-logline", marker = "extra == 'backend'", specifier = ">=0.3,<0.4" },
     { name = "overnightworks-logline", marker = "extra == 'mcp-server'", specifier = ">=0.3,<0.4" },
-    { name = "overnightworks-tandem", marker = "extra == 'redis'", git = "https://github.com/overnightworks/tandem?rev=v0.5.1" },
+    { name = "overnightworks-tandem", marker = "extra == 'redis'", specifier = ">=0.6,<0.7" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = "==1.1.414" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1,<10" },
@@ -569,7 +570,10 @@ requires-dist = [
 provides-extras = ["backend", "mcp-server", "redis", "voice", "dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "overnightworks-logline", git = "https://github.com/overnightworks/logline?tag=v0.3.0" }]
+dev = [
+    { name = "overnightworks-logline", git = "https://github.com/overnightworks/logline?tag=v0.3.0" },
+    { name = "overnightworks-tandem", git = "https://github.com/overnightworks/tandem?tag=v0.6.0" },
+]
 
 [[package]]
 name = "overnightworks-logline"
@@ -582,9 +586,10 @@ dependencies = [
 
 [[package]]
 name = "overnightworks-tandem"
-version = "0.5.1"
-source = { git = "https://github.com/overnightworks/tandem?rev=v0.5.1#0e0ada6725368ca8d5af477960f49d94a3999681" }
+version = "0.6.0"
+source = { git = "https://github.com/overnightworks/tandem?tag=v0.6.0#2f917bee352afa2c359b602206eb451f5d411678" }
 dependencies = [
+    { name = "overnightworks-logline" },
     { name = "redis" },
 ]
 
