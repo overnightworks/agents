@@ -1,0 +1,8 @@
+claim_id = "ce4630582fee408497741be2601f0422"
+agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
+role = "builder"
+base = "45dd78e223442d47c480e7aadbfe725699842baf"
+branch = "claude/issue-949-drop-wake-workaround"
+scope = ["docs/connector.md", "pyproject.toml", "src/agents/mcp_server/redis_place_store.py", "tests/integration/test_redis_place_store.py", "uv.lock"]
+opened_commit = "49b01b2f20c948bdf2d8fe201c8150b37d6dc9b4"
+whole_reason = "One pin raise and the removal of the workaround it makes obsolete, with the doc lines that describe both."
