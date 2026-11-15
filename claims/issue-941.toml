@@ -1,8 +1,0 @@
-claim_id = "54a98cf0e32f44069b7b95690d40439a"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "fb279b26852f654ba9919b222343964056d31c90"
-branch = "claude/issue-941-gateway-pooled-client"
-scope = ["README.md", "docs/ARCHITECTURE.md", "docs/connector.md", "src/agents/backend/gateway.py", "tests"]
-opened_commit = "918cfdf4650b4af5b2e80f64da0f42b2e6b06cd5"
-whole_reason = "One client owner change in one module with its docs and the tests whose real-socket sites must now close the backend."
