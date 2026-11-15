@@ -1045,8 +1045,13 @@ await run_voice_loop(
 
 - `agent` is the `AgentDefinition`, with a `voice` section; without one, `run_voice_loop` raises
   `ValueError` before it reads `hearing`. The system text is its prompt, then the library's
-  protocol text (`voice.reply.PROTOCOL_TEXT`: the line format, the window note, plain spoken
-  sentences, `[silent]`), then `context`, the app's pinned part.
+  protocol text (`voice.reply.PROTOCOL_TEXT`: the line format, the window note, how the loop
+  records replies and ends with `REPLY_RULES`), then `context`, the app's pinned part.
+  `REPLY_RULES` is the one text of what a spoken reply is: heard once, plain sentences without
+  markup, lists, headings or emoji, only the words said aloud and never what the agent does or
+  why, `[silent]` alone to say nothing. It names no channel to answer in; a runner whose reply
+  is read by `ReplyReader` outside the loop appends it too, and a written line's own tool
+  description says what that line does.
 - `backend` is the app's `AgentBackend`, and `person` the one `TurnPerson` the loop runs for,
   never a speaker: every decision is charged to that person's budget at the gateway.
 - `hearing` is an `AsyncIterator[PlaceEntry]` in increasing `seq`; a new window generation is a
