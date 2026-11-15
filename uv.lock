@@ -502,6 +502,7 @@ dependencies = [
 [package.optional-dependencies]
 backend = [
     { name = "httpx2" },
+    { name = "overnightworks-logline" },
 ]
 dev = [
     { name = "anyio" },
@@ -510,6 +511,7 @@ dev = [
     { name = "fastapi" },
     { name = "httpx2" },
     { name = "mcp" },
+    { name = "overnightworks-logline" },
     { name = "overnightworks-tandem" },
     { name = "pyright" },
     { name = "pytest" },
@@ -523,14 +525,21 @@ dev = [
 mcp-server = [
     { name = "anyio" },
     { name = "mcp" },
+    { name = "overnightworks-logline" },
 ]
 redis = [
     { name = "anyio" },
     { name = "mcp" },
+    { name = "overnightworks-logline" },
     { name = "overnightworks-tandem" },
 ]
 voice = [
     { name = "syntok" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "overnightworks-logline" },
 ]
 
 [package.metadata]
@@ -543,6 +552,8 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'mcp-server'", specifier = ">=2.3,<3" },
     { name = "overnightworks-agents", extras = ["backend", "mcp-server", "redis", "voice"], marker = "extra == 'dev'" },
     { name = "overnightworks-agents", extras = ["mcp-server"], marker = "extra == 'redis'" },
+    { name = "overnightworks-logline", marker = "extra == 'backend'", specifier = ">=0.3,<0.4" },
+    { name = "overnightworks-logline", marker = "extra == 'mcp-server'", specifier = ">=0.3,<0.4" },
     { name = "overnightworks-tandem", marker = "extra == 'redis'", git = "https://github.com/overnightworks/tandem?rev=v0.5.1" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = "==1.1.414" },
@@ -556,6 +567,18 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'dev'", specifier = ">=0.54,<1" },
 ]
 provides-extras = ["backend", "mcp-server", "redis", "voice", "dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "overnightworks-logline", git = "https://github.com/overnightworks/logline?tag=v0.3.0" }]
+
+[[package]]
+name = "overnightworks-logline"
+version = "0.3.0"
+source = { git = "https://github.com/overnightworks/logline?tag=v0.3.0#ce06443ab20bd5fa3c153700e940cc8ace40bbcb" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "structlog" },
+]
 
 [[package]]
 name = "overnightworks-tandem"
@@ -1006,6 +1029,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ad/eb/4e197bf26b023abafc5e9043ec8710d7de0fcb032d0969045236d72aa0b1/starlette-1.9.0.tar.gz", hash = "sha256:3d931de246ed870e35ce605974440816ef895e592f255d1396cfdf191d4c4318", size = 2732466, upload-time = "2026-10-18T15:50:33.189Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f3/93/181df62699d9b5aca1d87e5cfda131dac87e3cdaebf668662f7206ca3470/starlette-1.9.0-py3-none-any.whl", hash = "sha256:fd3f159936e882d06c1108f84688f7cda2cf85fc6a592a50edbd175e882c2ddc", size = 80335, upload-time = "2026-10-18T15:50:31.526Z" },
+]
+
+[[package]]
+name = "structlog"
+version = "26.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5e/89/b4a0bcfdf4f71a3dea31379f095929613d7e4528a0996bca6aa964cd0dca/structlog-26.1.0.tar.gz", hash = "sha256:f63a716cbd1b1291cf7661de7794b455acfa4c43c5bcf1630e6ad5ddc1adb3b7", size = 1459881, upload-time = "2026-06-06T07:33:39.348Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/18/489c97b834dfff9cf2fc2507cede4bcd4b11e67f84bc462acd1992496f86/structlog-26.1.0-py3-none-any.whl", hash = "sha256:e081a26d6c373e6d201eca24eede26d8ffab07f88f477822e679183428d3d91e", size = 73764, upload-time = "2026-06-06T07:33:38.046Z" },
 ]
 
 [[package]]
