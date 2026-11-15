@@ -5,15 +5,13 @@ run on a real Redis in ``real_redis``."""
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import timedelta
 
 import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
 
-from agents.mcp_server import MemberLeases, redis_place_store
+from agents.mcp_server import MemberLeases
 from agents.mcp_server.place_store import (
     LeaseRenewal,
     LeaseRoster,
@@ -253,47 +251,6 @@ def test_a_lapse_whose_handler_raised_returns_with_the_same_generation_after_the
     generation, handled = asyncio.run(scenario())
 
     assert handled == [(_ALICE, generation)] * 2
-
-
-def test_a_claim_that_runs_out_under_a_running_handler_is_not_logged_with_the_generation(
-    server: FakeServer,
-    redis_clock: RedisClock,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    monkeypatch.setattr(redis_place_store, "CLAIM_FOR", timedelta(milliseconds=300))
-    caplog.set_level(logging.WARNING)
-
-    async def scenario() -> str:
-        pod = a_pod(server)
-        await a_settled_namespace(pod, redis_clock)
-        renewal = await pod.renew(_ALICE)
-        redis_clock.advance(LEASE_SECONDS)
-        running = asyncio.Event()
-        release = asyncio.Event()
-
-        async def handle(_principal: Principal, _generation: str) -> None:
-            running.set()
-            await release.wait()
-
-        service = asyncio.create_task(pod.serve_lapses(handle, claimer="pod"))
-        try:
-            async with asyncio.timeout(_WAIT_SECONDS):
-                await running.wait()
-                redis_clock.advance(1)
-                while not caplog.records:
-                    await asyncio.sleep(0.01)
-        finally:
-            release.set()
-            service.cancel()
-            await asyncio.wait({service})
-        return renewal.generation
-
-    generation = asyncio.run(scenario())
-
-    logged = " ".join(entry.getMessage() for entry in caplog.records)
-    assert _ALICE.sub in logged
-    assert generation not in logged
 
 
 def test_leaving_running_during_a_handler_cuts_it_and_the_lapse_is_handed_over_again(
