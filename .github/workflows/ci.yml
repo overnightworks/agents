@@ -82,6 +82,16 @@ jobs:
           python3 -I -m zipfile -e dist/overnightworks_agents-*-py3-none-any.whl "$licence"
           cmp LICENSE "$licence"/overnightworks_agents-*.dist-info/licenses/LICENSE
 
+      - name: The logline source a host supplies
+        run: |
+          python3 -I -c '
+          import tomllib
+
+          with open("pyproject.toml", "rb") as pyproject:
+              source = tomllib.load(pyproject)["tool"]["uv"]["sources"]["overnightworks-logline"]
+          print("LOGLINE_SOURCE=overnightworks-logline @ git+" + source["git"] + "@" + source["tag"])
+          ' >> "$GITHUB_ENV"
+
       - name: The client wheel imports alone, without its extras
         run: |
           proof="$(mktemp -d "$RUNNER_TEMP/client-only.XXXXXX")"
@@ -105,6 +115,7 @@ jobs:
               ) or module.name in (
                   "agents.backend.gateway",
                   "agents.backend.fake_gateway",
+                  "agents.backend.tool_result",
               ):
                   continue
               importlib.import_module(module.name)
@@ -116,7 +127,7 @@ jobs:
           proof="$(mktemp -d "$RUNNER_TEMP/client-mcp-server.XXXXXX")"
           uv venv "$proof/venv"
           client_wheel="$(ls "$GITHUB_WORKSPACE"/dist/overnightworks_agents-*-py3-none-any.whl)"
-          uv pip install --python "$proof/venv/bin/python" "$client_wheel[mcp-server]"
+          uv pip install --python "$proof/venv/bin/python" "$client_wheel[mcp-server]" "$LOGLINE_SOURCE"
           cd "$proof"
           "$proof/venv/bin/python" -I -c '
           import agents.mcp_server
@@ -129,7 +140,7 @@ jobs:
           proof="$(mktemp -d "$RUNNER_TEMP/client-redis.XXXXXX")"
           uv venv "$proof/venv"
           client_wheel="$(ls "$GITHUB_WORKSPACE"/dist/overnightworks_agents-*-py3-none-any.whl)"
-          uv pip install --python "$proof/venv/bin/python" "$client_wheel[redis]"
+          uv pip install --python "$proof/venv/bin/python" "$client_wheel[redis]" "$LOGLINE_SOURCE"
           cd "$proof"
           "$proof/venv/bin/python" -I -c '
           import agents.mcp_server.redis_place_store
@@ -142,7 +153,7 @@ jobs:
           proof="$(mktemp -d "$RUNNER_TEMP/client-backend.XXXXXX")"
           uv venv "$proof/venv"
           client_wheel="$(ls "$GITHUB_WORKSPACE"/dist/overnightworks_agents-*-py3-none-any.whl)"
-          uv pip install --python "$proof/venv/bin/python" "$client_wheel[backend]"
+          uv pip install --python "$proof/venv/bin/python" "$client_wheel[backend]" "$LOGLINE_SOURCE"
           cd "$proof"
           "$proof/venv/bin/python" -I -c '
           import agents.backend.fake_gateway
