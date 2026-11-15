@@ -1,8 +1,0 @@
-claim_id = "3bebd33c9dcc4e81a3872e72ba917ce0"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "b15e84f817114e9bd9aee2563f0a55245822d71a"
-branch = "claude/issue-976-gateway-request-lines"
-scope = ["docs/connector.md", "pyproject.toml", "src/agents/backend/gateway.py", "src/agents/backend/streamed_round.py", "src/agents/backend/tool_result.py", "tests", "uv.lock"]
-opened_commit = "da1ee415be0b66271a55c1de11ebc05a300f416e"
-whole_reason = "The request line, its status mapping and the removal of the old error kind are one change for a host reading the gateway."
