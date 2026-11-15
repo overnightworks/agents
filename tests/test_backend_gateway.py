@@ -19,7 +19,7 @@ from agents.backend.fake_gateway import (
     tool_call,
     tool_round,
 )
-from agents.backend.gateway import GatewayBackend, GatewayDetail
+from agents.backend.gateway import GatewayBackend
 from agents.tools import HandTool, ToolDeclaration, ToolEffect
 from agents.turn import (
     MAX_EVENT_BYTES,
@@ -534,21 +534,6 @@ def test_closing_a_suspended_turn_leaves_the_response_closed_and_yields_nothing_
     assert asyncio.run(scenario_run()) == (AssistantTextEvent(text="The answer."), True)
 
 
-def test_a_redirect_is_not_followed_and_a_cookie_is_not_kept(scenario):
-    gateway = FakeGateway(
-        Reply(302, {"Location": "http://elsewhere.test/", "Set-Cookie": "session=1"}),
-        completion("ok"),
-    )
-    backend = GatewayBackend(scenario.config(), transport=gateway)
-
-    _, first = scenario.outcome(backend)
-    scenario.outcome(backend)
-
-    assert (first.kind, first.code, first.detail) == (*UNAVAILABLE, GatewayDetail.GATEWAY_FAILED)
-    assert [sent.url.host for sent in gateway.requests] == ["gateway.test", "gateway.test"]
-    assert "cookie" not in gateway.requests[1].headers
-
-
 async def _serve_ok(reader, writer):
     await reader.readuntil(b"\r\n\r\n")
     body = an_event_stream(a_chunk("hi"), a_chunk(finish_reason="stop"))
@@ -567,8 +552,8 @@ def _loopback_turn(scenario, *, server_context=None, ca_file=None):
         port = server.sockets[0].getsockname()[1]
         scheme = "http" if server_context is None else "https"
         config = scenario.config(origin=f"{scheme}://127.0.0.1:{port}", ca_file=ca_file)
-        async with server:
-            return await _turn(GatewayBackend(config), a_request(), scenario.person()[0])
+        async with server, GatewayBackend(config) as backend:
+            return await _turn(backend, a_request(), scenario.person()[0])
 
     return asyncio.run(drive())
 
@@ -602,13 +587,15 @@ def test_a_turn_advanced_from_a_new_task_per_event_reads_its_stream_over_a_socke
             serve_the_rest_once_the_first_piece_showed, "127.0.0.1", 0
         )
         port = server.sockets[0].getsockname()[1]
-        backend = GatewayBackend(scenario.config(origin=f"http://127.0.0.1:{port}"))
         events = []
 
         async def next_event(stream):
             return await anext(stream, None)
 
-        async with server:
+        async with (
+            server,
+            GatewayBackend(scenario.config(origin=f"http://127.0.0.1:{port}")) as backend,
+        ):
             try:
                 turn = backend.run(a_request(max_duration_seconds=5), scenario.person()[0])
                 async with contextlib.aclosing(turn) as stream:

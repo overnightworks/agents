@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import http.cookiejar
 import json
 import logging
 import re
 import ssl
-from collections.abc import AsyncGenerator, Awaitable, Iterable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from http import HTTPStatus
@@ -81,6 +82,8 @@ _PICTURES_PATH: Final = "/v1/images/generations"
 _MODELS_PATH: Final = "/v1/models"
 _BUDGET_EXCEEDED: Final = "budget_exceeded"
 _MODEL_LIST_DEADLINE_SECONDS: Final = 10
+_TRAILING_READ_SECONDS: Final = 1
+_TRAILING_READ_BYTES: Final = 65536
 _PICTURE_FILE_NAME: Final = "picture"
 # Their records carry the gateway URL and the response headers; an app gets them only by
 # setting these loggers itself.
@@ -126,11 +129,35 @@ class GatewayBackend(AgentBackend):
         _quiet_transport_loggers()
         self._config = config
         self._transport = transport
+        self._pooled: httpx2.AsyncClient | None = None
+        self._closed = False
         self._tools: dict[str, HandTool] = {}
         for tool in tools:
             if tool.declaration.name in self._tools:
                 raise ValueError(f"tool {tool.declaration.name!r} is given twice")
             self._tools[tool.declaration.name] = tool
+
+    async def __aenter__(self) -> GatewayBackend:
+        return self
+
+    async def __aexit__(
+        self,
+        error_type: type[BaseException] | None,
+        error: BaseException | None,
+        trace: TracebackType | None,
+    ) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        """Close the pooled connections; a ``run`` or a round after this raises ``RuntimeError``.
+
+        The pooled client is bound to the event loop of its first request: drive one backend
+        from one loop.
+        """
+        self._closed = True
+        if self._pooled is not None:
+            pooled, self._pooled = self._pooled, None
+            await pooled.aclose()
 
     async def run(
         self, request: TurnRequest, person: TurnPerson
@@ -141,6 +168,8 @@ class GatewayBackend(AgentBackend):
         errors it passed through; a stop the host raised is the same exception, its traceback
         cut of the gateway path's frames, which hold the key, the reply and the call arguments.
         """
+        if self._closed:
+            raise RuntimeError("the gateway backend is closed")
         try:
             async with contextlib.aclosing(self._turn(request, person)) as events:
                 async for event in events:
@@ -233,7 +262,11 @@ class GatewayBackend(AgentBackend):
     def _post(
         self, path: str, body: str, key: str
     ) -> contextlib.AbstractAsyncContextManager[httpx2.Response]:
-        return _opened(self._config.gateway, self._transport, "POST", path, key, content=body)
+        if self._closed:
+            raise RuntimeError("the gateway backend is closed")
+        if self._pooled is None:
+            self._pooled = _client(self._config.gateway, self._transport)
+        return _opened(self._pooled, "POST", path, key, content=body)
 
 
 @dataclass(frozen=True)
@@ -278,7 +311,10 @@ async def _get_models(
     gateway: ChatGateway, transport: httpx2.AsyncBaseTransport | None
 ) -> GatewayModels:
     key = _read_key(gateway.key_file)
-    async with _opened(gateway, transport, "GET", _MODELS_PATH, key) as response:
+    async with (
+        _client(gateway, transport) as client,
+        _opened(client, "GET", _MODELS_PATH, key) as response,
+    ):
         return await _models_of(response)
 
 
@@ -291,8 +327,7 @@ def _quiet_transport_loggers() -> None:
 
 @contextlib.asynccontextmanager
 async def _opened(
-    gateway: ChatGateway,
-    transport: httpx2.AsyncBaseTransport | None,
+    client: httpx2.AsyncClient,
     method: str,
     path: str,
     key: str,
@@ -305,10 +340,7 @@ async def _opened(
         headers["Content-Type"] = "application/json"
     try:
         # ssl.SSLError is an OSError.
-        async with (
-            _client(gateway, transport) as client,
-            client.stream(method, path, content=content, headers=headers) as response,
-        ):
+        async with client.stream(method, path, content=content, headers=headers) as response:
             await _raise_unless_ok(response)
             yield response
     except httpx2.HTTPError, httpx2.InvalidURL, OSError:
@@ -318,18 +350,25 @@ async def _opened(
 def _client(
     gateway: ChatGateway, transport: httpx2.AsyncBaseTransport | None
 ) -> httpx2.AsyncClient:
-    verify = True
-    if gateway.ca_file is not None and transport is None:
-        verify = ssl.create_default_context(cafile=str(gateway.ca_file))
-    # One client per request keeps cookies from outliving it; the deadline is the only timeout.
-    return httpx2.AsyncClient(
-        base_url=gateway.origin,
-        transport=transport,
-        verify=verify,
-        trust_env=False,
-        follow_redirects=False,
-        timeout=None,
-    )
+    try:
+        verify = True
+        if gateway.ca_file is not None and transport is None:
+            verify = ssl.create_default_context(cafile=str(gateway.ca_file))
+        # The jar allows no domain, so a pooled client stores and sends no cookie across
+        # requests; the deadline is the only timeout.
+        return httpx2.AsyncClient(
+            base_url=gateway.origin,
+            transport=transport,
+            verify=verify,
+            trust_env=False,
+            follow_redirects=False,
+            timeout=None,
+            cookies=http.cookiejar.CookieJar(
+                policy=http.cookiejar.DefaultCookiePolicy(allowed_domains=[])
+            ),
+        )
+    except httpx2.InvalidURL, OSError:  # ssl.SSLError is an OSError.
+        raise _unavailable(GatewayDetail.CONNECTION_FAILED) from None
 
 
 class _TextPart(TypedDict):
@@ -632,6 +671,7 @@ async def _streamed_round(
             failure = _unavailable(GatewayDetail.GATEWAY_FAILED)
         if failure is not None:
             raise failure
+        await _read_to_the_end(chunks)
     yield _judged(completed[0], offered)
 
 
@@ -640,6 +680,17 @@ async def _chunks(response: httpx2.Response, deadline: float) -> AsyncGenerator[
     async with contextlib.aclosing(response.aiter_bytes()) as chunks:
         while (chunk := await _before(deadline, anext(chunks, None))) is not None:
             yield chunk
+
+
+async def _read_to_the_end(chunks: AsyncIterator[bytes]) -> None:
+    """Take what follows ``[DONE]`` so the pool keeps the connection; a bad tail only closes it."""
+    remaining = _TRAILING_READ_BYTES
+    with contextlib.suppress(TimeoutError, httpx2.HTTPError, OSError):
+        async with asyncio.timeout(_TRAILING_READ_SECONDS):
+            async for chunk in chunks:
+                remaining -= len(chunk)
+                if remaining < 0:
+                    return
 
 
 def _judged(streamed: StreamedRound, offered: frozenset[str]) -> _Round:
