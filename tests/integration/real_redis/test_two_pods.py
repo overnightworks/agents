@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -105,17 +105,16 @@ def started(tmp_path: Path, redis_url: str) -> Pod:
             stderr=subprocess.STDOUT,
         )
     pod = Pod(process, f"http://127.0.0.1:{port}", log)
-    try:
+    with ExitStack() as killed_unless_ready:
+        killed_unless_ready.callback(pod.kill)
         deadline = time.monotonic() + _WAIT_SECONDS
         while time.monotonic() < deadline:
             assert process.poll() is None, log.read_text()
             with suppress(OSError), socket.create_connection(("127.0.0.1", port), timeout=1):
+                killed_unless_ready.pop_all()
                 return pod
             time.sleep(0.1)
         pytest.fail(f"the pod on port {port} was not ready: {log.read_text()}")
-    except BaseException:
-        pod.kill()
-        raise
 
 
 @pytest.fixture
