@@ -3,6 +3,6 @@ agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
 role = "builder"
 base = "b7f47b83c804fa268fb414ba72f06d4b49d82900"
 branch = "claude/issue-965-member-leases"
-scope = ["README.md", "docs/ARCHITECTURE.md", "docs/connector.md", "pyproject.toml", "src/agents/mcp_server", "tests", "uv.lock"]
+scope = ["README.md", "docs/ARCHITECTURE.md", "docs/connector.md", "pyproject.toml", "quality/config.toml", "src/agents/mcp_server", "tests", "uv.lock"]
 opened_commit = "5553b6a7f32ade2e60e2b76acbb9b4f70e1adbaf"
 whole_reason = "The lease port, its Redis adapter, the facade, the lapse restarts and their two-process proof are one capability a host adopts at once."
