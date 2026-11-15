@@ -3,6 +3,6 @@ agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
 role = "builder"
 base = "cec452860612e4cb5884e741e8b0585aeac4e305"
 branch = "claude/issue-968-trace-tool-lines"
-scope = [".github/dependabot.yml", ".importlinter", "README.md", "docs/connector.md", "pyproject.toml", "src/agents/backend", "src/agents/mcp_server/person.py", "src/agents/mcp_server/resources.py", "src/agents/mcp_server/route_call.py", "tests", "uv.lock"]
+scope = [".github/dependabot.yml", ".github/workflows/ci.yml", ".importlinter", "README.md", "docs/connector.md", "pyproject.toml", "src/agents/backend", "src/agents/mcp_server/asgi.py", "src/agents/mcp_server/person.py", "src/agents/mcp_server/resources.py", "src/agents/mcp_server/route_call.py", "src/agents/turn.py", "tests", "uv.lock"]
 opened_commit = "0995cc3dc84d44c5600e7e637a8770e6c3326d0e"
 whole_reason = "The trace header, the pin and the tool-call line share one field set and one logline dependency a host adopts at once."
