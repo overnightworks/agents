@@ -44,6 +44,11 @@ class Pod:
     url: str
     log: Path
 
+    def kill(self) -> None:
+        if self.process.poll() is None:
+            self.process.kill()
+        self.process.wait()
+
     def stop(self) -> int:
         """SIGTERM and the exit status, which is the signal itself once uvicorn shut down in order;
         a pod that does not leave is killed and fails the test."""
@@ -100,14 +105,17 @@ def started(tmp_path: Path, redis_url: str) -> Pod:
             stderr=subprocess.STDOUT,
         )
     pod = Pod(process, f"http://127.0.0.1:{port}", log)
-    deadline = time.monotonic() + _WAIT_SECONDS
-    while time.monotonic() < deadline:
-        assert process.poll() is None, log.read_text()
-        with suppress(OSError), socket.create_connection(("127.0.0.1", port), timeout=1):
-            return pod
-        time.sleep(0.1)
-    process.kill()
-    pytest.fail(f"the pod on port {port} was not ready: {log.read_text()}")
+    try:
+        deadline = time.monotonic() + _WAIT_SECONDS
+        while time.monotonic() < deadline:
+            assert process.poll() is None, log.read_text()
+            with suppress(OSError), socket.create_connection(("127.0.0.1", port), timeout=1):
+                return pod
+            time.sleep(0.1)
+        pytest.fail(f"the pod on port {port} was not ready: {log.read_text()}")
+    except BaseException:
+        pod.kill()
+        raise
 
 
 @pytest.fixture
@@ -122,12 +130,14 @@ def pods(tmp_path: Path, redis_url: str, admin: Redis) -> Iterator[tuple[Pod, Po
         commands=["+@all"],
     )
     pod_a = started(tmp_path, as_user(redis_url, _POD_A_USER, _POD_A_PASSWORD))
-    pod_b = started(tmp_path, redis_url)
-    yield pod_a, pod_b
-    for pod in (pod_a, pod_b):
-        if pod.process.poll() is None:
-            pod.process.kill()
-        pod.process.wait()
+    try:
+        pod_b = started(tmp_path, redis_url)
+        try:
+            yield pod_a, pod_b
+        finally:
+            pod_b.kill()
+    finally:
+        pod_a.kill()
 
 
 def request_of(body: bytes) -> tuple[bytes, dict[str, str]]:
