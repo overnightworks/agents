@@ -52,6 +52,10 @@ def interrupted_wire(**fields: Any) -> dict[str, Any]:
     return {"id": "h-1"} | fields
 
 
+def stop_wire(**fields: Any) -> dict[str, Any]:
+    return {"place": {"kind": "room", "id": "r-1"}} | fields
+
+
 def continue_wire(**fields: Any) -> dict[str, Any]:
     return {"place": {"kind": "room", "id": "r-1"}, "interrupted": "h-1"} | fields
 

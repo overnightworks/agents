@@ -177,7 +177,7 @@ holds the agent at once (HEARING-30). After a `continue_speaking` or a `speak` t
 hold's id, a person who is already speaking does not hold the agent again; a person who starts
 afresh does, with a new `id`. A partial can therefore go
 with no line after it, and a runner treats a partial as provisional. A person's turn that began
-before the agent has a sentence that plays or waits creates no record.
+before the agent has a sentence that plays or waits, or is held, creates no record.
 
 **HEARING-22 (A).** `stop_speaking(place, interrupted)` cuts the agent's playing sentence in every
 seat and drops its whole queue there, and answers `StoppedSpeaking(cut)` with the text of the cut

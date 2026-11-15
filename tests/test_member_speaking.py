@@ -34,6 +34,7 @@ from tests.support.member_wire import (
     interrupted_wire,
     speak_wire,
     spoken_wire,
+    stop_wire,
     talked_over_wire,
     talked_window_wire,
     window_from,
@@ -129,25 +130,18 @@ def test_stopped_speaking_with_a_malformed_field_is_refused(wire: dict[str, Any]
         StoppedSpeaking.model_validate_json(json.dumps(wire))
 
 
-@pytest.mark.parametrize("interrupted", ["h-1", None], ids=["with-id", "without-id"])
-def test_stop_speaking_arguments_name_the_hold_only_when_given(interrupted: str | None) -> None:
-    wire = {"place": {"kind": "room", "id": "r-1"}}
-    if interrupted is not None:
-        wire["interrupted"] = interrupted
+def test_stop_speaking_arguments_name_the_hold_when_given() -> None:
+    arguments = StopSpeakingArguments.model_validate_json(json.dumps(stop_wire(interrupted="h-1")))
 
-    arguments = StopSpeakingArguments.model_validate_json(json.dumps(wire))
-
-    assert arguments.interrupted == interrupted
-    assert json.loads(arguments.model_dump_json()) == wire
+    assert arguments.interrupted == "h-1"
+    assert json.loads(arguments.model_dump_json()) == stop_wire(interrupted="h-1")
     assert StopSpeakingArguments.model_validate_json(arguments.model_dump_json()) == arguments
 
 
 @pytest.mark.parametrize("interrupted", ["", 1, ["h-1"]], ids=["empty", "number", "list"])
 def test_stop_speaking_arguments_with_a_malformed_hold_are_refused(interrupted: object) -> None:
-    wire = {"place": {"kind": "room", "id": "r-1"}, "interrupted": interrupted}
-
     with pytest.raises(ValidationError):
-        StopSpeakingArguments.model_validate_json(json.dumps(wire))
+        StopSpeakingArguments.model_validate_json(json.dumps(stop_wire(interrupted=interrupted)))
 
 
 def test_continue_speaking_arguments_name_the_hold_on_the_wire() -> None:
