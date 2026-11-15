@@ -63,6 +63,9 @@ jobs:
       - name: Tests
         run: uv run --locked --no-sync pytest -q -n auto --cov=src --cov=scripts --cov-report=xml:coverage.xml
 
+      - name: Two pods on a real Redis
+        run: scripts/run_redis_tests.sh -q
+
       - name: Upload the coverage report for the quality gate
         if: matrix.python-version == '3.14'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -119,6 +122,19 @@ jobs:
           import agents.mcp_server
 
           print("imported", agents.mcp_server.__name__)
+          '
+
+      - name: The client wheel with the redis extra imports its place store
+        run: |
+          proof="$(mktemp -d "$RUNNER_TEMP/client-redis.XXXXXX")"
+          uv venv "$proof/venv"
+          client_wheel="$(ls "$GITHUB_WORKSPACE"/dist/overnightworks_agents-*-py3-none-any.whl)"
+          uv pip install --python "$proof/venv/bin/python" "$client_wheel[redis]"
+          cd "$proof"
+          "$proof/venv/bin/python" -I -c '
+          import agents.mcp_server.redis_place_store
+
+          print("imported", agents.mcp_server.redis_place_store.__name__)
           '
 
       - name: The client wheel with the backend extra imports the gateway backend
