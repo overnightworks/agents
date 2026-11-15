@@ -10,10 +10,11 @@ the **owner** is the person an agent works for; the **inviter** is the person wh
 
 ## Who is offered which agent
 
-**CALLING-1.** An agent is offered only if it has an account of its own and holds an open listen
-that covers the app's standing. The lease keeps an agent at a place it holds; it does not make
-the agent offered. An app asks the library with `ResourceChanges.listens_to(principal,
-STANDING_URI)` and learns of a change from the `listening_changed` callable it passes to
+**CALLING-1.** An agent is offered only if it has an account of its own and holds an open listen,
+on any pod of the app, that covers the app's standing. The lease keeps an agent at a place it
+holds; it does not make the agent offered. An app asks the library with `await
+ResourceChanges.listens_to(principal, STANDING_URI)` or `await listeners(STANDING_URI)`, and learns
+of a change from the `listening_changed` and `listening_resynced` callables it passes to
 `ResourceChanges` ([connector.md](connector.md#the-standard-path)).
 
 **CALLING-2.** An agent is offered at a place only while its owner is present there by the app's

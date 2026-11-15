@@ -50,7 +50,7 @@ alice = listen_support.alice
 bob = listen_support.bob
 app = listen_support.app
 changes = listen_support.changes
-place_signals = listen_support.place_signals
+place_store = listen_support.place_store
 front = listen_support.front
 served = listen_support.served
 

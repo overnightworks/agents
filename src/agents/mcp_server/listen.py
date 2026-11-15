@@ -12,15 +12,19 @@ The SDK's ``ListenHandler`` checks no principal, so this module owns the handler
 its stream first, so a change while the acknowledgement is being built is kept, and it checks
 every pulse against ``MemberResources.current`` when the pulse is drained, queued pulses included,
 so a removal ends delivery during an open stream.
+
+Whether a principal listens lives in the place store, not in a pod: a stream that honored a URI is
+recorded there with a deadline, and every pod's lapse poll turns an ended stream's answer to no.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Callable, Collection, Generator, Sequence
-from contextlib import asynccontextmanager, contextmanager
+from collections.abc import AsyncGenerator, Callable, Collection, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Final
 from uuid import uuid4
 
@@ -44,8 +48,9 @@ from mcp_types import (
 
 from agents.mcp_server.asgi import LISTEN_METHOD, LOGGER_NAME
 from agents.mcp_server.place_store import (
+    ListeningTurn,
     PlaceSignal,
-    PlaceSignals,
+    PlaceStore,
     PlaceStoreError,
     ResourceChange,
     Resubscribed,
@@ -63,14 +68,25 @@ from agents.turn import Principal
 
 _LOG: Final = logging.getLogger(LOGGER_NAME)
 
+LAPSE_POLL_SECONDS: Final = 1
+_END_CAP_SECONDS: Final = 5
+_HOLDS_OPEN: Final = timedelta(seconds=LISTEN_BOUND_SECONDS + LISTEN_ALLOWANCE_SECONDS)
+_HOLDS_ENDED: Final = timedelta(seconds=LISTEN_ALLOWANCE_SECONDS)
+
 type _Pulse = ResourceUpdated | ToolsListChanged
 
 
 class _ListenStream:
     """One listen stream: its pending pulses, a repeated one staying once at its first arrival,
-    and what it honors from its acknowledgement on: URIs, and whether the tool list."""
+    and what it honors from its acknowledgement on: URIs, and whether the tool list.
+
+    ``identity`` names it in the place store; ``recorded`` is set before the store is asked to
+    record it, because a call that failed may have committed.
+    """
 
     def __init__(self) -> None:
+        self.identity = uuid4().hex
+        self.recorded = False
         self._pulses: dict[_Pulse, None] = {}
         self._arrived = anyio.Event()
         self._honored: dict[str, None] = {}
@@ -129,23 +145,30 @@ class ResourceChanges:
     and a member sees it at the next listen's read. The front enters ``following`` in its own
     ``running()``.
 
-    ``listening_changed`` is called with the principal, the URI and the new answer of
-    ``listens_to`` whenever that answer changes: to yes on the request task that wrote the first
-    acknowledgement honoring the URI, to no on the event loop once the last such stream ended and
-    ``LISTEN_ALLOWANCE_SECONDS`` passed. It must not block; its failure is logged by type and
-    never reaches a listen.
+    ``listens_to`` and ``listeners`` read the place store and raise ``PlaceStoreError`` when it
+    fails. ``listening_changed`` is called with the principal, the URI and the new answer whenever
+    it turns: with ``True`` on the request task whose acknowledgement turned it to yes, and, on
+    every pod, with the turn's direction on the signal task. The signal-task calls follow the
+    store's turns in order and miss none while the subscription stands; the request-task ``True``
+    is an early copy and may come before an older ``False``. A direction may repeat. A host rebuilds
+    its view from ``listeners`` when ``listening_resynced`` is called, after every confirmed
+    subscription, and applies the calls that arrive during the rebuild after it. Neither callable
+    may block; a failure is logged by type and never reaches a listen.
     """
 
     def __init__(
         self,
-        store: PlaceSignals,
+        store: PlaceStore,
         *,
         listening_changed: Callable[[Principal, str, bool], None] | None = None,
+        listening_resynced: Callable[[], None] | None = None,
     ) -> None:
         self._store = store
         self._origin = uuid4().hex
         self._streams: dict[Principal, set[_ListenStream]] = {}
         self._listening_changed = listening_changed
+        self._listening_resynced = listening_resynced
+        self._ending: set[asyncio.Task[None]] = set()
         self._dead = False
 
     async def changed(self, recipient: Principal, uri: str) -> None:
@@ -178,28 +201,50 @@ class ResourceChanges:
         Yields at the first ``Resubscribed`` and raises ``PlaceStoreError`` if the subscription
         fails or ends before it. A failure after it logs the cause, ends every open stream and
         turns ``dead``; the block stays entered. The task runs outside the SDK manager's task
-        group, so its failure never reaches one.
+        group, so its failure never reaches one. A second task lapses the streams of the place
+        store that ended, about every ``LAPSE_POLL_SECONDS``; it runs until the block ends.
         """
         confirmed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-        subscription = asyncio.create_task(self._follow(confirmed))
+        tasks = [asyncio.create_task(self._follow(confirmed))]
         try:
             await confirmed
+            tasks.append(asyncio.create_task(self._lapse_ended_streams()))
             yield
         finally:
-            subscription.cancel()
-            await asyncio.wait({subscription})
+            for task in tasks:
+                task.cancel()
+            await asyncio.wait(tasks)
+
+    async def _lapse_ended_streams(self) -> None:
+        failing = False
+        while True:
+            await asyncio.sleep(LAPSE_POLL_SECONDS)
+            try:
+                await self._store.lapse_due(self._origin)
+            except PlaceStoreError as failure:
+                if not failing:
+                    _LOG.warning("the place store did not lapse the ended listens: %r", failure)
+                failing = True
+            else:
+                if failing:
+                    _LOG.info("the place store lapses the ended listens again")
+                failing = False
 
     async def _follow(self, confirmed: asyncio.Future[None]) -> None:
         try:
             async for event in self._store.received():
-                if isinstance(event, Resubscribed):
-                    self._resync()
-                    if confirmed.done():
-                        _LOG.info("the place store re-subscribed and every stream was resynced")
-                    else:
-                        confirmed.set_result(None)
-                else:
-                    self._deliver(event)
+                match event:
+                    case Resubscribed():
+                        self._resync()
+                        self._resynced()
+                        if confirmed.done():
+                            _LOG.info("the place store re-subscribed and every stream was resynced")
+                        else:
+                            confirmed.set_result(None)
+                    case ListeningTurn(principal, uri, listens):
+                        self._signal(principal, uri, listens=listens)
+                    case ResourceChange() | ToolsChange():
+                        self._deliver(event)
             raise PlaceStoreError("the place store's subscription ended")
         except Exception as failure:
             if confirmed.done():
@@ -230,21 +275,25 @@ class ResourceChanges:
             for stream in streams:
                 stream.end()
 
-    def listens_to(self, principal: Principal, uri: str) -> bool:
-        """Whether a stream of the principal honored the URI and is open or ended not yet
-        ``LISTEN_ALLOWANCE_SECONDS`` ago.
+    async def listens_to(self, principal: Principal, uri: str) -> bool:
+        """Whether a stream of the principal on any pod honored the URI and has not lapsed.
 
         A stream not yet acknowledged and one honoring only other URIs do not count; the URI
         asked is compared as it is, so a place window is not the standing, and a stream that honored
-        only the tool list counts for no URI. Runs on the front's event loop, as ``changed``
-        does.
+        only the tool list counts for no URI. A stream lapses ``LISTEN_ALLOWANCE_SECONDS`` after it
+        ends, at the next lapse poll. Raises ``PlaceStoreError`` when the store fails.
         """
-        return any(uri in stream.honored for stream in self._streams.get(principal, ()))
+        return await self._store.listens_to(principal, uri)
 
-    @contextmanager
-    def opened(self, recipient: Principal) -> Generator[_ListenStream, None, None]:
-        """One stream for as long as it is open; one that honored a URI counts on for the
-        allowance after it ends."""
+    async def listeners(self, uri: str) -> frozenset[Principal]:
+        """The principals for whom ``listens_to`` answers yes for the URI. Raises
+        ``PlaceStoreError`` when the store fails."""
+        return await self._store.listeners(uri)
+
+    @asynccontextmanager
+    async def opened(self, recipient: Principal) -> AsyncGenerator[_ListenStream, None]:
+        """One stream for as long as it is open; one that was recorded in the place store is ended
+        there when the block ends, cancelled or not."""
         stream = _ListenStream()
         if self._dead:
             stream.end()
@@ -252,14 +301,11 @@ class ResourceChanges:
         try:
             yield stream
         finally:
-            if stream.honored:
-                asyncio.get_running_loop().call_later(
-                    LISTEN_ALLOWANCE_SECONDS, self._lapsed, recipient, stream
-                )
-            else:
-                self._forget(recipient, stream)
+            self._forget(recipient, stream)
+            if stream.recorded:
+                await self._end_record(stream)
 
-    def acknowledged(
+    async def acknowledged(
         self,
         recipient: Principal,
         stream: _ListenStream,
@@ -267,18 +313,38 @@ class ResourceChanges:
         *,
         tools: bool,
     ) -> None:
-        """The stream's acknowledgement was written: it honors the URIs, and the tool list when
-        ``tools``, from now on."""
-        newly_listened = [uri for uri in honored if not self.listens_to(recipient, uri)]
-        stream.honor(honored, tools=tools)
-        for uri in newly_listened:
-            self._signal(recipient, uri, listens=True)
+        """The stream honors the URIs, and the tool list when ``tools``, from now on: a stream
+        that honored a URI is recorded in the place store first, and the answers it turned to yes
+        are called here, on the request task.
 
-    def _lapsed(self, recipient: Principal, stream: _ListenStream) -> None:
-        self._forget(recipient, stream)
-        for uri in stream.honored:
-            if not self.listens_to(recipient, uri):
-                self._signal(recipient, uri, listens=False)
+        Raises ``PlaceStoreError`` when the store fails; the stream then honors nothing and the
+        record may exist, which its end lapses.
+        """
+        turned: frozenset[str] = frozenset()
+        if honored:
+            stream.recorded = True
+            turned = await self._store.acknowledged(
+                stream.identity, recipient, honored, _HOLDS_OPEN
+            )
+        stream.honor(honored, tools=tools)
+        for uri in honored:
+            if uri in turned:
+                self._signal(recipient, uri, listens=True)
+
+    async def _end_record(self, stream: _ListenStream) -> None:
+        """Ends the stream in the store in a task of its own, so a cancellation of the listen
+        never cuts it; its failure is logged by type."""
+        ending = asyncio.create_task(self._end_in_store(stream))
+        self._ending.add(ending)
+        ending.add_done_callback(self._ending.discard)
+        await asyncio.shield(ending)
+
+    async def _end_in_store(self, stream: _ListenStream) -> None:
+        try:
+            async with asyncio.timeout(_END_CAP_SECONDS):
+                await self._store.ended(stream.identity, _HOLDS_ENDED)
+        except (PlaceStoreError, TimeoutError) as failure:
+            _LOG.warning("a listen's end was not recorded: %s", type(failure).__name__)
 
     def _forget(self, recipient: Principal, stream: _ListenStream) -> None:
         streams = self._streams[recipient]
@@ -287,14 +353,19 @@ class ResourceChanges:
             del self._streams[recipient]
 
     def _signal(self, recipient: Principal, uri: str, *, listens: bool) -> None:
-        if self._listening_changed is None:
-            return
-        try:
-            self._listening_changed(recipient, uri, listens)
-        except Exception as failure:
-            _LOG.error(
-                "the listening_changed callable failed: it raised %s", type(failure).__name__
-            )
+        if (changed := self._listening_changed) is not None:
+            _call_host("listening_changed", lambda: changed(recipient, uri, listens))
+
+    def _resynced(self) -> None:
+        if (resynced := self._listening_resynced) is not None:
+            _call_host("listening_resynced", resynced)
+
+
+def _call_host(name: str, call: Callable[[], None]) -> None:
+    try:
+        call()
+    except Exception as failure:
+        _LOG.error("the %s callable failed: it raised %s", name, type(failure).__name__)
 
 
 def _wanted(uri: str, honored: Collection[str]) -> bool:
@@ -383,19 +454,25 @@ async def on_subscriptions_listen(
     """One stream for the verified principal; it ends at ``LISTEN_BOUND_SECONDS``.
 
     ``toolsListChanged`` is honored when asked and ``announces_tools``; no other list-changed
-    flag is. No exception of the port reaches the SDK; a cancellation propagates.
+    flag is. A stream that honored a URI is recorded in the place store before its
+    acknowledgement is written, and a store that fails answers like a port that fails. No
+    exception of the port reaches the SDK; a cancellation propagates.
     """
     stream = _Stream(context)
-    with changes.opened(principal) as open_stream, anyio.move_on_after(LISTEN_BOUND_SECONDS):
-        if open_stream.ended:
-            return stream.completed()
-        try:
-            readable = await served_uris(resources, principal)
-        except Exception as failure:
-            return failure_answer(LISTEN_METHOD, failure)
-        honored = _honored(params.notifications.resource_subscriptions or (), readable)
-        tools = announces_tools and params.notifications.tools_list_changed is True
-        await stream.acknowledge(honored, tools=tools)
-        changes.acknowledged(principal, open_stream, honored, tools=tools)
-        await _deliver(resources, principal, open_stream, stream)
+    async with changes.opened(principal) as open_stream:
+        with anyio.move_on_after(LISTEN_BOUND_SECONDS):
+            if open_stream.ended:
+                return stream.completed()
+            try:
+                readable = await served_uris(resources, principal)
+            except Exception as failure:
+                return failure_answer(LISTEN_METHOD, failure)
+            honored = _honored(params.notifications.resource_subscriptions or (), readable)
+            tools = announces_tools and params.notifications.tools_list_changed is True
+            try:
+                await changes.acknowledged(principal, open_stream, honored, tools=tools)
+            except PlaceStoreError as failure:
+                return failure_answer(LISTEN_METHOD, failure)
+            await stream.acknowledge(honored, tools=tools)
+            await _deliver(resources, principal, open_stream, stream)
     return stream.completed()

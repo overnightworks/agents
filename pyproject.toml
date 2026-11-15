@@ -21,15 +21,15 @@ mcp-server = [
 ]
 redis = [
     "overnightworks-agents[mcp-server]",
-    "overnightworks-tandem @ git+https://github.com/overnightworks/tandem@v0.1.1",
-    "redis>=8.1,<9",
+    "overnightworks-tandem @ git+https://github.com/overnightworks/tandem@v0.2.0",
 ]
 voice = [
     "syntok>=1.4.4,<2",
 ]
 dev = [
     "overnightworks-agents[backend,mcp-server,redis,voice]",
-    "fakeredis>=2.35,<3",
+    "fakeredis[lua]>=2.35,<3",
+    "redis>=8.1,<9",
     "pyright==1.1.414",
     "pytest>=9.1,<10",
     "pytest-cov>=7.1,<8",

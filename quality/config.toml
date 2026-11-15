@@ -92,3 +92,9 @@ reason = "an adapter-bound suite: it needs the redis extra, so it lives apart fr
 path = "tests/integration/real_redis/test_two_pods.py"
 rule = "test-layout"
 reason = "the two-process tests on a real Redis, run by scripts/run_redis_tests.sh and skipped by default collection"
+
+[[gate.loosened]]
+what = 'import contract "only agents.mcp_server.redis_place_store imports tandem and redis" removed'
+item = "overnightworks/agents#952"
+date = 2026-11-15
+reason = "a protected contract needs its module in the import graph and no agents module imports redis now; the same contract without redis replaces it, and the forbidden contracts keep redis out of agents"

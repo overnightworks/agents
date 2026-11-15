@@ -64,12 +64,18 @@ flowchart TB
   in-memory record of which member hears which speaker ([hearing.md](hearing.md)); `mcp_wire`
   holds what the SDK does not own (the endpoint path, the strict JSON reader, the bearer-reflection
   check) and imports no extra.
-- The **`redis` extra** adds `redis` and `overnightworks-tandem` for
-  `agents.mcp_server.redis_place_store`, the only module that imports either. The place store is
-  what the pods of one app share: `ResourceChanges` publishes an address, never content, through
-  the `PlaceSignals` port of `mcp_server.place_store`, and `RedisPlaceStore` carries it on tandem's
-  wake channel under `<key_prefix>-agents`, apart from the host's own keys. `agents.mcp_server`
-  does not re-export it, so an app without `ResourceChanges` never loads tandem or redis.
+- The **`redis` extra** adds `overnightworks-tandem`, which brings `redis`, for
+  `agents.mcp_server.redis_place_store`, the only module that imports tandem; no agents module
+  imports `redis`. The place store is what the pods of one app share: `ResourceChanges` publishes an
+  address, never content, through the `PlaceStore` port of `mcp_server.place_store`, and
+  `RedisPlaceStore` carries it on tandem's wake channel under `<key_prefix>-agents`, apart from the
+  host's own keys. The same port keeps the listen record: each stream that honored a URI is a tandem
+  deadline, and three scripts, each of which reads and validates everything before its first write
+  because Redis does not roll a script back, record it, shorten it and lapse it, so every pod
+  answers who listens and a pod that dies loses its claim after `claim_for`. A listening turn
+  carries its direction as well as its address, because the answer is the store's and a pod that
+  missed a turn resyncs. `agents.mcp_server` does not re-export `RedisPlaceStore`, so an app without
+  `ResourceChanges` never loads tandem.
 - The **`voice` extra** adds `syntok` for `agents.voice`: the voice loop
   (`voice.loop.run_voice_loop`) on the `AgentBackend` port, its ports `VoiceOut` and `WakeRule`
   and its events. `voice.reply` owns the reply markers, the protocol text composed from them and
@@ -178,8 +184,9 @@ malformed value fails loud.
 against `FakeGateway`'s scripted transport, `load_agent` against files, and the person front
 as an ASGI app driven with real scopes and the SDK's own `Client`. Pure rules (`mcp_wire`, the
 turn vocabulary, the streamed-round reader) are called directly. The suite needs no live
-provider. Two processes of a minimal host on one real Redis prove the wake across pods
-(`scripts/run_redis_tests.sh`); every other test runs in process. `quality / verdict` holds the import contracts, size and clone ratchets, and coverage
+provider. Two processes of a minimal host on one real Redis prove the wake and the listen record across pods,
+and one process proves a claim that runs out (`scripts/run_redis_tests.sh`); every other test runs in
+process. `quality / verdict` holds the import contracts, size and clone ratchets, and coverage
 over the whole suite.
 
 ## Constraints and reasons
