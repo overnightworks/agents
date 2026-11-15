@@ -77,6 +77,8 @@ def released_by(release: SentenceRelease, *texts: str) -> list[str]:
         (a_final("Gut. ", "[silent] Danke."), (), ["Gut.", "[silent] Danke."]),
         (a_final("Gut. ", "[shout]"), (), ["Gut.", "[shout]"]),
         (a_final("Gut. [sil", "ent]"), (), ["Gut."]),
+        (a_final("Gut.\n\n[silent]\n\nDanke."), (), ["Gut.", "Danke."]),
+        (a_final("Gut.\n\n[sil", "ent]\n\nDanke."), (), ["Gut.", "Danke."]),
         (a_final("Gut. [silent]. Danke."), (), ["Gut.", "[silent]. Danke."]),
         (a_final("  ", " Gut. Danke."), (), ["Gut.", "Danke."]),
         (a_final("Das habe ich vergessen."), (), ["Das habe ich vergessen."]),
