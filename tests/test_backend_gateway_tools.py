@@ -579,9 +579,9 @@ def test_a_tool_result_over_the_event_bound_is_replaced_and_the_side_effect_stan
 
     result = events[1]
     ended = log_lines.one("tool_call.ended")
-    assert (ended["outcome"], ended.get("reason")) == (
-        ("ok", None) if reaches_the_model else ("refused", "result_too_large")
-    )
+    expected = ("ok", None) if reaches_the_model else ("refused", "result_too_large")
+    observed = (ended["outcome"], ended.get("reason"))
+    assert observed == expected
     assert (result.content == "a" * MAX_EVENT_BYTES) is reaches_the_model
     assert result.is_error is (not reaches_the_model)
     assert result.content in sent(gateway, 1)["messages"][-1]["content"]
