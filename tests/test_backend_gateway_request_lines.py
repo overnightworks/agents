@@ -10,7 +10,8 @@ from dataclasses import dataclass
 
 import httpx2
 import pytest
-from logline import current_traceparent, unit_trace
+from logline import unit_trace
+from logline.trace import current_trace_id
 
 from agents.backend import TurnStopped
 from agents.backend.fake_gateway import (
@@ -286,9 +287,10 @@ def test_a_deadline_reached_while_the_app_holds_a_piece_is_a_limit_exceeded_line
 @EVERY_REQUEST
 def test_a_line_carries_the_id_of_the_trace_it_is_written_in(scenario, log_lines, request_kind):
     with unit_trace(None):
-        trace_id = (current_traceparent() or "").split("-")[1]
+        trace_id = current_trace_id()
         request_kind.send(scenario, FakeGateway(request_kind.ok))
 
+    assert trace_id is not None
     assert _the_line(log_lines, request_kind)["trace_id"] == trace_id
 
 
