@@ -25,6 +25,11 @@ scenario = gateway_turn_support.scenario
 shop = gateway_turn_support.shop
 
 
+async def _outcome_of(turn):
+    (outcome,) = await asyncio.gather(turn, return_exceptions=True)
+    return outcome
+
+
 def test_a_cookie_the_gateway_sets_is_not_sent_back_over_a_pooled_connection(scenario):
     async def drive():
         async with serving_keep_alive(set_cookie="session=1") as gateway:
@@ -65,12 +70,10 @@ def test_closing_the_backend_ends_its_connection_and_refuses_further_turns(scena
             await _turn(backend, a_request(), scenario.person()[0])
             await backend.aclose()
             await gateway.wait_until_ended(1)
-            refused_turn = _turn(backend, a_request(), scenario.person()[0])
-            with pytest.raises(RuntimeError):
-                await refused_turn
-            return gateway.ended
+            refusal = await _outcome_of(_turn(backend, a_request(), scenario.person()[0]))
+            return isinstance(refusal, RuntimeError), gateway.ended
 
-    assert asyncio.run(drive()) == 1
+    assert asyncio.run(drive()) == (True, 1)
 
 
 @pytest.mark.parametrize(
@@ -104,10 +107,9 @@ def test_closing_the_backend_during_a_turn_refuses_its_next_round(shop):
     backend = GatewayBackend(shop.config(), tools=[tool], transport=gateway)
     holder.append(backend)
 
-    closing_turn = _turn(backend, a_tool_request([tool], 5), a_person())
+    refusal = asyncio.run(_outcome_of(_turn(backend, a_tool_request([tool], 5), a_person())))
 
-    with pytest.raises(RuntimeError):
-        asyncio.run(closing_turn)
+    assert isinstance(refusal, RuntimeError)
     assert len(gateway.requests) == 1
 
 
