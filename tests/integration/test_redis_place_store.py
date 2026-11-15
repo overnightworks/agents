@@ -6,8 +6,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 
 import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
@@ -31,6 +29,7 @@ from tests.support.mcp_server_support import (
     readable_uris,
     resolve_member,
 )
+from tests.support.redis_listen_support import Event, arrived, subscribed
 
 _PREFIX = "notes"
 _ALICE = a_member("alice")
@@ -45,38 +44,6 @@ def a_pod(server: FakeServer, *, key_prefix: str = _PREFIX) -> RedisPlaceStore:
     return RedisPlaceStore(FakeAsyncRedis(server=server), key_prefix=key_prefix)
 
 
-@asynccontextmanager
-async def subscribed(store: RedisPlaceStore) -> AsyncIterator[list[PlaceSignal | Resubscribed]]:
-    """The events one subscription yields, collected until the block ends."""
-    events: list[PlaceSignal | Resubscribed] = []
-    first_event_or_end = asyncio.Event()
-
-    async def collect() -> None:
-        try:
-            async for event in store.received():
-                events.append(event)
-                first_event_or_end.set()
-        finally:
-            first_event_or_end.set()
-
-    task = asyncio.create_task(collect())
-    try:
-        async with asyncio.timeout(5):
-            await first_event_or_end.wait()
-        if task.done():
-            await task
-        yield events
-    finally:
-        task.cancel()
-        await asyncio.wait({task})
-
-
-async def arrived(events: list[PlaceSignal | Resubscribed], count: int) -> None:
-    async with asyncio.timeout(5):
-        while len(events) < count:
-            await asyncio.sleep(0.01)
-
-
 @pytest.mark.parametrize(
     "signal",
     [
@@ -88,7 +55,7 @@ async def arrived(events: list[PlaceSignal | Resubscribed], count: int) -> None:
 def test_a_signal_one_pod_publishes_reaches_the_subscription_of_another(
     server: FakeServer, signal: PlaceSignal
 ) -> None:
-    async def scenario() -> list[PlaceSignal | Resubscribed]:
+    async def scenario() -> list[Event]:
         async with subscribed(a_pod(server)) as events:
             await a_pod(server).publish(signal)
             await arrived(events, 2)
@@ -107,10 +74,11 @@ def test_a_payload_that_is_no_address_is_skipped_and_logged_by_length_only(
         json.dumps({"kind": "resource"}),
         json.dumps(["v2", "resource", "iss", "sub", "uri", "pod"]),
         json.dumps(["v1", "resource", "iss", "sub", None, "pod"]),
+        json.dumps(["v1", "listening-maybe", "iss", "sub", "uri", "pod"]),
     ]
     wake = ResourceChange(_ALICE, STANDING_URI, "pod-a")
 
-    async def scenario() -> list[PlaceSignal | Resubscribed]:
+    async def scenario() -> list[Event]:
         async with subscribed(a_pod(server)) as events:
             raw = FakeAsyncRedis(server=server)
             for payload in foreign:
@@ -140,7 +108,7 @@ def test_a_payload_that_is_no_utf8_is_skipped_and_the_subscription_goes_on(
     wake = ResourceChange(_ALICE, STANDING_URI, "pod-a")
     no_utf8_payload = b"\xff\xfe\xfd"
 
-    async def scenario() -> list[PlaceSignal | Resubscribed]:
+    async def scenario() -> list[Event]:
         async with subscribed(a_pod(server)) as events:
             await FakeAsyncRedis(server=server).publish(
                 "notes-agents:tandem:v1:wake", no_utf8_payload
