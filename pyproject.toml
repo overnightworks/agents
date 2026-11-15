@@ -14,10 +14,12 @@ dependencies = [
 [project.optional-dependencies]
 backend = [
     "httpx2>=2.12,<3",
+    "overnightworks-logline>=0.3,<0.4",
 ]
 mcp-server = [
     "anyio>=4.12,<5",
     "mcp>=2.3,<3",
+    "overnightworks-logline>=0.3,<0.4",
 ]
 redis = [
     "overnightworks-agents[mcp-server]",
@@ -42,6 +44,12 @@ dev = [
 
 [project.urls]
 Repository = "https://github.com/overnightworks/agents"
+
+[dependency-groups]
+dev = ["overnightworks-logline"]
+
+[tool.uv.sources]
+overnightworks-logline = { git = "https://github.com/overnightworks/logline", tag = "v0.3.0", group = "dev" }
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]

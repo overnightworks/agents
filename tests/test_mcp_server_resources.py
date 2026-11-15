@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from typing import Any
 
 import pytest
 from mcp_types import TextResourceContents
 
 from agents.mcp_server import McpPersonFront
-from agents.mcp_server.asgi import LOGGER_NAME as LOGGER
 from agents.member import (
     STANDING_URI,
     MemberStanding,
@@ -23,6 +21,7 @@ from agents.member import (
     place_window_uri,
 )
 from agents.tools import Principal
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import (
     MemberApp,
     a_member,
@@ -39,6 +38,8 @@ from tests.support.mcp_server_support import (
 
 _UNKNOWN_RESOURCE = "Unknown resource"
 _FAILED = "the resource failed"
+
+log_lines = log_lines
 
 
 def a_window(text: str = "hello") -> PlaceWindow:
@@ -217,24 +218,25 @@ def test_without_the_port_resources_list_is_an_unknown_method() -> None:
     ("method", "params"),
     [("resources/list", {}), ("resources/read", {"uri": "marker-uri-91c2"})],
 )
-@pytest.mark.parametrize("level", [logging.DEBUG, logging.INFO])
 def test_a_failing_port_answers_the_fixed_text_and_no_marker_reaches_any_log(
     front: McpPersonFront,
     app: MemberApp,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
     method: str,
     params: dict[str, Any],
-    level: int,
 ) -> None:
-    caplog.set_level(level)
-    caplog.set_level(level, logger=LOGGER)
     app.failure = RuntimeError("marker-failure-5d1e")
 
     reply = answered(front, a_member("marker-principal-3b7a"), method, **params)
 
-    logged = " ".join(record.getMessage() for record in caplog.records)
+    logged = log_lines.everything()
+    failed = log_lines.one("resource_lookup.failed")
     assert (reply["error"]["code"], reply["error"]["message"]) == (-32603, _FAILED)
-    assert "RuntimeError" in logged
+    assert (failed["method"], failed["error_type"], failed["level"]) == (
+        method,
+        "RuntimeError",
+        "error",
+    )
     assert not any(
         marker in logged
         for marker in ("marker-uri-91c2", "marker-principal-3b7a", "marker-failure-5d1e")
@@ -242,18 +244,16 @@ def test_a_failing_port_answers_the_fixed_text_and_no_marker_reaches_any_log(
 
 
 def test_a_view_listed_without_its_window_fails_the_listing_and_names_no_uri(
-    front: McpPersonFront, app: MemberApp, caplog: pytest.LogCaptureFixture
+    front: McpPersonFront, app: MemberApp, log_lines: LogLines
 ) -> None:
-    caplog.set_level(logging.INFO, logger=LOGGER)
     alice = a_member("alice")
     del app.readable[alice][window_uri("p1")]
 
     reply = answered(front, alice, "resources/list")
 
-    logged = " ".join(record.getMessage() for record in caplog.records)
     assert (reply["error"]["code"], reply["error"]["message"]) == (-32603, _FAILED)
-    assert "ViewWithoutWindowError" in logged
-    assert view_uri("p1") not in logged
+    assert log_lines.one("resource_lookup.failed")["error_type"] == "_ViewWithoutWindowError"
+    assert view_uri("p1") not in log_lines.everything()
 
 
 @pytest.mark.parametrize(
@@ -283,20 +283,19 @@ def test_a_cancelled_port_is_not_a_failure_and_propagates(
 def test_a_port_returning_an_unusable_value_answers_the_fixed_text_and_logs_the_type(
     front: McpPersonFront,
     app: MemberApp,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
     method: str,
     params: dict[str, Any],
     unusable: Any,
     raised: str,
 ) -> None:
-    caplog.set_level(logging.INFO, logger=LOGGER)
     app.unusable = unusable
 
     reply = answered(front, a_member("alice"), method, **params)
 
-    logged = " ".join(record.getMessage() for record in caplog.records)
+    failed = log_lines.one("resource_lookup.failed")
     assert (reply["error"]["code"], reply["error"]["message"]) == (-32603, _FAILED)
-    assert f"{method} raised {raised}" in logged
+    assert (failed["method"], failed["error_type"]) == (method, raised)
 
 
 def test_the_sdk_client_lists_and_reads_what_the_front_answers(app: MemberApp) -> None:
@@ -357,9 +356,8 @@ def test_a_repeated_member_is_refused_before_resources_dispatch(
 
 
 def test_an_answer_carrying_the_request_bearer_is_withheld_and_the_log_names_the_method_only(
-    front: McpPersonFront, app: MemberApp, caplog: pytest.LogCaptureFixture
+    front: McpPersonFront, app: MemberApp, log_lines: LogLines
 ) -> None:
-    caplog.set_level(logging.INFO, logger=LOGGER)
     token = "head.payload.sigOfTheRequest"
     alice = a_member("alice")
     app.readable[alice][window_uri("p1")] = a_window(f"debug: {token}")
@@ -373,7 +371,9 @@ def test_an_answer_carrying_the_request_bearer_is_withheld_and_the_log_names_the
 
     sent = asyncio.run(driven())
 
-    logged = " ".join(record.getMessage() for record in caplog.records)
+    withheld = log_lines.one("answer.withheld")
     assert sent[0]["status"] == 500
-    assert "resources/read" in logged
-    assert not any(word in logged for word in ("sigOfTheRequest", "p1", "member://"))
+    assert (withheld["method"], "tool_name" in withheld) == ("resources/read", False)
+    assert not any(
+        word in log_lines.everything() for word in ("sigOfTheRequest", "p1", "member://")
+    )

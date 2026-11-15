@@ -6,12 +6,16 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI, Request
+from logline import current_traceparent, unit_trace
 from pydantic import BaseModel
 
 from agents.mcp_server.asgi import AsgiApp
 from agents.mcp_server.route_call import RouteTarget, call_route
 from agents.tools import ToolOutcome
 from agents.turn import MAX_EVENT_BYTES
+from tests.support.log_lines import LogLines, log_lines
+
+log_lines = log_lines
 
 
 class Note(BaseModel):
@@ -242,6 +246,23 @@ def test_the_inner_request_replays_exactly_the_named_headers(
     ]
 
 
+def test_the_inner_request_carries_the_outer_trace_under_a_new_span(
+    echo_target: RouteTarget, echo_app: FastAPI
+) -> None:
+    incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+    with unit_trace(incoming):
+        own_span = (current_traceparent() or "").split("-")[2]
+        outcome = run(echo_app, echo_target, {"value": "x"})
+
+    (sent,) = [
+        value for name, value in json.loads(outcome.content)["headers"] if name == "traceparent"
+    ]
+    _, trace_id, span_id, _ = sent.split("-")
+    assert (trace_id, span_id) == ("4bf92f3577b34da6a3ce929d0e0e4736", own_span)
+    assert span_id != incoming.split("-")[2]
+
+
 def test_a_post_sends_its_body_fields_as_one_json_object_with_the_body_headers(
     notes_target: RouteTarget,
     echo_app: FastAPI,
@@ -292,18 +313,18 @@ def test_a_2xx_gives_the_body_and_a_4xx_gives_a_failed_result_with_the_routes_bo
 
 
 @pytest.mark.parametrize(
-    "app",
+    ("app", "reason", "status"),
     [
-        replying(302, b"moved"),
-        replying(307, b""),
-        replying(500, b"stack trace with secret"),
-        replying(200, b"x" * (MAX_EVENT_BYTES + 1)),
-        replying(200, b"x" * MAX_EVENT_BYTES, b"y"),
-        replying(404, b"x" * (MAX_EVENT_BYTES + 1)),
-        replying(200, b"\xff\xfe"),
-        replying(200, b"partial", complete=False),
-        replying(200, started=False),
-        replying(200),
+        (replying(302, b"moved"), "status", 302),
+        (replying(307, b""), "status", 307),
+        (replying(500, b"stack trace with secret"), "status", 500),
+        (replying(200, b"x" * (MAX_EVENT_BYTES + 1)), "too_large", 200),
+        (replying(200, b"x" * MAX_EVENT_BYTES, b"y"), "too_large", 200),
+        (replying(404, b"x" * (MAX_EVENT_BYTES + 1)), "too_large", 404),
+        (replying(200, b"\xff\xfe"), "not_text", 200),
+        (replying(200, b"partial", complete=False), "incomplete", 200),
+        (replying(200, started=False), "no_status", None),
+        (replying(200), "incomplete", 200),
     ],
     ids=[
         "redirect",
@@ -320,12 +341,22 @@ def test_a_2xx_gives_the_body_and_a_4xx_gives_a_failed_result_with_the_routes_bo
 )
 def test_an_unusable_response_gives_one_failed_result_that_repeats_nothing_of_the_body(
     echo_target: RouteTarget,
+    log_lines: LogLines,
     app: AsgiApp,
+    reason: str,
+    status: int | None,
 ) -> None:
     outcome = run(app, echo_target, {"value": "x"})
 
+    refused = log_lines.one("route_answer.refused")
     assert outcome.is_error
     assert outcome == run(replying(500, b"other"), echo_target, {"value": "x"})
+    assert (refused["reason"], refused.get("status"), refused["level"]) == (
+        reason,
+        status,
+        "warning",
+    )
+    assert "stack trace with secret" not in log_lines.everything()
 
 
 def test_a_body_exactly_at_the_bound_is_given(

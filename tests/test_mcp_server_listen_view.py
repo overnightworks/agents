@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import json
-import logging
 from collections.abc import Callable
 
 import pytest
 
 from agents.mcp_server import McpPersonFront, ResourceChanges
-from agents.mcp_server.asgi import LOGGER_NAME
 from agents.member import STANDING_URI
 from agents.tools import Principal
 from tests.support import listen_support
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import (
     MemberApp,
     a_view,
@@ -133,14 +132,15 @@ def test_delivery_for_a_view_ends_when_the_member_is_removed_from_the_place(
 
 _FAILED_TEXT = "the resource failed"
 
+log_lines = log_lines
+
 
 def test_a_view_listed_without_its_window_fails_the_acknowledgement_and_names_no_uri(
     front: McpPersonFront,
     app: MemberApp,
     alice: Principal,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
 ) -> None:
-    caplog.set_level(logging.INFO, logger=LOGGER_NAME)
     app.readable[alice] = readable_uris(STANDING_URI, view_uri("first"))
     connection = listen_connection(front, alice, [STANDING_URI])
 
@@ -151,10 +151,9 @@ def test_a_view_listed_without_its_window_fails_the_acknowledgement_and_names_no
     served(scenario())
 
     reply = json.loads(connection.body_bytes)
-    logged = " ".join(record.getMessage() for record in caplog.records)
     assert (reply["error"]["code"], reply["error"]["message"]) == (-32603, _FAILED_TEXT)
-    assert "ViewWithoutWindowError" in logged
-    assert view_uri("first") not in logged
+    assert log_lines.one("resource_lookup.failed")["error_type"] == "_ViewWithoutWindowError"
+    assert view_uri("first") not in log_lines.everything()
 
 
 @pytest.mark.usefixtures("viewing_app")

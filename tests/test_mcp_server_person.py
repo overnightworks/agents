@@ -23,10 +23,10 @@ from mcp_types import (
 from starlette.testclient import TestClient
 
 from agents.mcp_server import McpPersonFront, PersonRequest, PersonTool
-from agents.mcp_server.asgi import LOGGER_NAME as LOGGER
 from agents.mcp_wire import MCP_ENDPOINT_PATH, PROTOCOL_VERSION
 from agents.tools import ToolEffect, ToolOutcome
 from agents.turn import MAX_EVENT_BYTES, MAX_TOOL_INPUT_DEPTH, JsonObject
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_person_support import (
     Person,
     Reply,
@@ -48,6 +48,8 @@ from tests.support.mcp_server_support import (
 )
 
 _MARKER = "credential-marker-7f3a"
+
+log_lines = log_lines
 
 
 @pytest.fixture
@@ -355,9 +357,8 @@ def test_a_call_no_handler_may_receive_is_invalid_params_and_runs_nothing(
 
 
 def test_two_tools_failing_differently_answer_one_failed_result_without_their_messages(
-    front: McpPersonFront, person: Person, caplog: pytest.LogCaptureFixture
+    front: McpPersonFront, person: Person, log_lines: LogLines
 ) -> None:
-    caplog.set_level(logging.INFO, logger=LOGGER)
     failing_calls = [
         ("read_note", RuntimeError("first secret")),
         ("edit_note", KeyError("second secret")),
@@ -370,12 +371,14 @@ def test_two_tools_failing_differently_answer_one_failed_result_without_their_me
     assert results[0] == results[1]
     assert results[0]["isError"] is True
     assert results[0]["content"][0]["text"] != ""
-    logged = [(record.levelname, record.getMessage()) for record in caplog.records]
-    assert not any("secret" in message for _, message in logged)
+    assert "secret" not in log_lines.everything()
     assert not any("secret" in json.dumps(result) for result in results)
-    assert any(
-        level == "ERROR" and "edit_note" in text and "KeyError" in text for level, text in logged
-    )
+    assert [
+        (line["tool_name"], line["error_type"]) for line in log_lines.of("tool_call.ended")
+    ] == [
+        ("read_note", "RuntimeError"),
+        ("edit_note", "KeyError"),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -383,9 +386,8 @@ def test_two_tools_failing_differently_answer_one_failed_result_without_their_me
     ["Bearer {}", "bearer {}", "BEARER {}", "  Bearer {}  ", "\tbearer {}\t", "Bearer  {}"],
 )
 def test_a_result_carrying_the_request_bearer_is_withheld_and_the_log_names_no_caller_text(
-    front: McpPersonFront, person: Person, caplog: pytest.LogCaptureFixture, spelling: str
+    front: McpPersonFront, person: Person, log_lines: LogLines, spelling: str
 ) -> None:
-    caplog.set_level(logging.INFO, logger=LOGGER)
     token = "head.payload.sigOfTheRequest"
     person.outcome = ToolOutcome(f"debug: {token}", is_error=False)
 
@@ -395,10 +397,14 @@ def test_a_result_carrying_the_request_bearer_is_withheld_and_the_log_names_no_c
         (b"authorization", spelling.format(token).encode()),
     )
 
-    logged = " ".join(r.getMessage() for r in caplog.records)
+    withheld = log_lines.one("answer.withheld")
     assert (reply.status, reply.body) == (500, b"")
-    assert any(r.levelno == logging.WARNING for r in caplog.records)
-    assert not any(word in logged for word in ("sigOfTheRequest", "caller text"))
+    assert (withheld["level"], withheld["method"], withheld["tool_name"]) == (
+        "warning",
+        "tools/call",
+        "read_note",
+    )
+    assert not any(word in log_lines.everything() for word in ("sigOfTheRequest", "caller text"))
 
 
 def test_a_handler_rewriting_the_scope_headers_cannot_keep_the_request_bearer_in_its_answer(
@@ -452,20 +458,85 @@ def test_an_outcome_that_cannot_be_written_answers_the_failed_result_and_leaks_n
     assert unwritable == raised
 
 
-@pytest.mark.parametrize("is_error", [False, True])
-def test_one_info_record_names_the_tool_and_whether_the_call_failed(
-    front: McpPersonFront, person: Person, caplog: pytest.LogCaptureFixture, is_error: bool
+@pytest.mark.parametrize(
+    ("outcome", "failure", "expected"),
+    [
+        pytest.param(
+            ToolOutcome("text", is_error=False), None, ("ok", None, "info", None), id="ok"
+        ),
+        pytest.param(
+            ToolOutcome("text", is_error=True),
+            None,
+            ("refused", "tool_error", "info", None),
+            id="returned error",
+        ),
+        pytest.param(
+            ToolOutcome("text", is_error=False),
+            KeyError("a secret"),
+            ("failed", None, "warning", "KeyError"),
+            id="raise",
+        ),
+        pytest.param(
+            ToolOutcome("a" * (MAX_EVENT_BYTES + 1), is_error=False),
+            None,
+            ("refused", "result_too_large", "info", None),
+            id="over the bound",
+        ),
+    ],
+)
+def test_a_tool_call_writes_one_ended_line_with_its_outcome_and_the_tool_name(
+    front: McpPersonFront,
+    person: Person,
+    log_lines: LogLines,
+    outcome: ToolOutcome,
+    failure: Exception | None,
+    expected: tuple[str, str | None, str, str | None],
 ) -> None:
-    caplog.set_level(logging.INFO, logger=LOGGER)
-    person.outcome = ToolOutcome("text", is_error=is_error)
+    person.outcome = outcome
+    person.failure = failure
 
-    post(front, rpc_body("tools/call", call_params("read_note")))
+    post(front, rpc_body("tools/call", call_params("read_note", note="an argument")))
 
-    [record] = [r for r in caplog.records if r.levelno == logging.INFO]
-    assert ("read_note" in record.getMessage(), str(is_error) in record.getMessage()) == (
-        True,
-        True,
+    ended = log_lines.one("tool_call.ended")
+    assert ended["tool_name"] == "read_note"
+    observed = (
+        ended["outcome"],
+        ended.get("reason"),
+        ended["level"],
+        ended.get("error_type"),
     )
+    assert observed == expected
+    assert "tool_call_id" not in ended
+    assert not any(word in log_lines.everything() for word in ("an argument", "a secret", "aaaa"))
+
+
+def test_a_client_that_cancels_a_running_call_leaves_one_cancelled_line(
+    person: Person, log_lines: LogLines
+) -> None:
+    started = asyncio.Event()
+
+    async def stuck(request: PersonRequest, arguments: JsonObject) -> ToolOutcome:
+        started.set()
+        await asyncio.Event().wait()
+        return ToolOutcome("never", is_error=False)
+
+    front = McpPersonFront(
+        [PersonTool(declaration("read_note", ToolEffect.READ_ONLY), stuck)],
+        resolve_person=person.resolve,
+    )
+    body = rpc_body("tools/call", call_params("read_note"))
+
+    async def cancel_while_running() -> None:
+        task = asyncio.create_task(drive_scope(front, http_scope(headers_of(body)), body))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(cancel_while_running())
+
+    ended = log_lines.one("tool_call.ended")
+    assert (ended["tool_name"], ended["outcome"]) == ("read_note", "cancelled")
 
 
 def test_two_tools_of_one_name_are_refused_at_construction(person: Person) -> None:

@@ -23,6 +23,7 @@ from types import TracebackType
 from typing import Final
 
 import httpx2
+from logline import outgoing_headers
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from agents.agent_file import AgentDefinition, TurnRequest
@@ -90,9 +91,6 @@ _MODEL_LIST_DEADLINE_SECONDS: Final = 10
 _TRAILING_READ_SECONDS: Final = 1
 _TRAILING_READ_BYTES: Final = 65536
 _PICTURE_FILE_NAME: Final = "picture"
-# Their records carry the gateway URL and the response headers; an app gets them only by
-# setting these loggers itself.
-_TRANSPORT_LOGGERS: Final = ("httpx2", "httpcore2")
 _MAX_KEY_BYTES: Final = 1024
 _PRINTABLE_ASCII: Final = re.compile(r"[\x21-\x7e]+")
 _MAX_PICTURE_BODY_BYTES: Final = base64_length(MAX_RUN_FILES_BYTES) + MAX_EVENT_BYTES
@@ -128,7 +126,6 @@ class GatewayBackend(AgentBackend):
         tools: Iterable[HandTool] = (),
         transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
-        _quiet_transport_loggers()
         self._config = config
         self._transport = transport
         self._pooled: httpx2.AsyncClient | None = None
@@ -297,7 +294,6 @@ async def list_gateway_models(
     gateway: ChatGateway, *, transport: httpx2.AsyncBaseTransport | None = None
 ) -> GatewayModels:
     """A bare ``GET /v1/models`` with the app's key, under a fixed deadline."""
-    _quiet_transport_loggers()
     try:
         async with asyncio.timeout(_MODEL_LIST_DEADLINE_SECONDS):
             return await _get_models(gateway, transport)
@@ -322,13 +318,6 @@ async def _get_models(
         return await _models_of(response)
 
 
-def _quiet_transport_loggers() -> None:
-    for name in _TRANSPORT_LOGGERS:
-        transport_logger = logging.getLogger(name)
-        if transport_logger.level == logging.NOTSET:
-            transport_logger.setLevel(logging.WARNING)
-
-
 @contextlib.asynccontextmanager
 async def _opened(
     client: httpx2.AsyncClient,
@@ -338,8 +327,11 @@ async def _opened(
     *,
     content: str | None = None,
 ) -> AsyncGenerator[httpx2.Response, None]:
-    """The gateway's 200 response, open while it is read; a connection lost meanwhile is raised."""
-    headers = {"Authorization": f"Bearer {key}"}
+    """The gateway's 200 response, open while it is read; a connection lost meanwhile is raised.
+
+    The request carries the host's ``traceparent`` inside a trace and none outside one.
+    """
+    headers = {"Authorization": f"Bearer {key}", **outgoing_headers()}
     if content is not None:
         headers["Content-Type"] = "application/json"
     try:

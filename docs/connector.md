@@ -336,16 +336,15 @@ request, that the deadline has already passed when its turn comes is not started
 A `ToolOutcome(is_error=True)` goes to the model, which reads it as `Error: ` followed by the
 content, and the turn goes on (`test_an_error_outcome_reaches_the_model_and_the_turn_goes_on`,
 `test_the_model_reads_an_error_outcome_differently_from_a_success_of_the_same_text`). A handler
-that raises is a host defect: the client logs its class name only and tells the model the call
-failed (`test_a_raising_handler_logs_its_class_only_and_the_model_gets_an_error`). The one
-exception is `TurnStopped`: it ends the turn unchanged, with no result event and no further round,
-and `after_side_effect` is true once a side-effecting call started or the handler set it
-(`test_a_handler_that_stops_the_turn_ends_it_with_that_exception_and_no_further_round`,
+that raises is a host defect: the client tells the model the call failed and writes its class name
+only (`test_a_raising_handler_is_a_failed_call_naming_its_class_only_and_the_model_gets_an_error`).
+The one exception is `TurnStopped`: it ends the turn unchanged, with no result event and no
+further round, and `after_side_effect` is true once a side-effecting call started or the handler
+set it (`test_a_handler_that_refuses_the_turn_ends_it_with_that_exception_and_no_further_round`,
 `test_a_handler_that_stops_the_turn_leaves_after_side_effect_as_the_connector_promises`). Task
 cancellation reaches the caller unchanged and no later round runs
 (`test_cancelling_between_a_call_and_its_result_reaches_the_caller_unchanged`). Per started call
-one INFO record carries the tool name, call id and `is_error`, never the arguments or the
-content (`test_each_call_logs_its_name_id_and_error_flag_never_arguments_or_content`). A call
+one `tool_call.ended` line is written, as the section "The log" below says. A call
 that started may have written, and a cancelled `asyncio.to_thread` write may still finish;
 nothing implies it was undone. A blocking tool stays the app's: its handler uses
 `asyncio.to_thread`.
@@ -444,16 +443,45 @@ file's model runs. A name of the wrong kind raises `ValueError` before any reque
 gateway may later withdraw a name an app stored: that turn ends `failed: provider_unavailable`
 and the client does not fall back to the file's model.
 
-`GatewayBackend`'s constructor and every `list_gateway_models` call set the `httpx2` and
-`httpcore2` loggers to WARNING only where the app left their level unset; a level the app set,
-quieter or louder, stands
-(`test_a_transport_logger_the_host_left_unset_is_not_enabled_for_debug_after_a_construction`,
-`test_a_level_the_host_set_on_a_transport_logger_stands_after_a_construction`,
-`test_a_transport_logger_the_host_left_unset_is_not_enabled_for_debug_after_a_list_call`,
-`test_a_level_the_host_set_on_a_transport_logger_stands_after_a_list_call`). The key stays out of
-the log even under DEBUG, because `httpcore2` prints a request by its method only
-(`test_debug_logging_writes_the_key_into_no_record`,
-`test_a_list_call_writes_the_key_into_no_record_under_debug_on_the_transport_loggers`).
+Every request to the gateway (completions, pictures, the model list) carries the host's
+`traceparent` from `logline.outgoing_headers()`, and none outside a trace
+(`test_a_request_inside_a_trace_carries_the_traces_id`,
+`test_a_request_outside_a_trace_carries_no_traceparent`). The client sets no level on the `httpx2`
+or `httpcore2` logger: `logline.configure` caps both at WARNING, so a host without it gets the
+httpx2 INFO line with the gateway URL and httpcore's DEBUG response headers under its own root
+level. The key stays out of the log even under DEBUG, because `httpcore2` prints a request by its
+method only (`test_debug_logging_writes_the_key_into_no_record`,
+`test_a_list_call_writes_the_key_into_no_record_under_debug`).
+
+### The log
+
+The library logs through standard-library loggers named under `agents` and logline's guide
+(`overnightworks-logline`, one JSON line per finished step, no content): a host calls
+`logline.configure` once at its entry point and gets the lines with the running trace id. Without
+`configure` the same records pass through the host's own logging setup. The host pins
+`overnightworks-logline` at one tag itself; the `backend` and `mcp-server` extras declare only the
+version range. A field never holds a prompt, reply, arguments, key, a handler's message or a
+generation; only ids and closed codes.
+
+`tool_call.ended` closes every tool call, with `tool_name`, `duration_ms` and `outcome`; the
+gateway client adds `tool_call_id`, the person front has none
+(`test_a_valid_result_is_one_ok_line`, `test_a_tool_call_writes_one_ended_line_with_its_outcome_and_the_tool_name`):
+
+| Case | `outcome`, `reason`, level |
+|---|---|
+| a valid result | `ok`, INFO |
+| the handler returns `is_error` | `refused`, `tool_error`, INFO |
+| the handler raises | `failed`, `error_type` the class name, WARNING, no traceback |
+| the result is over `MAX_EVENT_BYTES` | `refused`, `result_too_large`, INFO |
+| a handler's `TurnStopped` refusing the turn (client only) | `refused`, its code, INFO |
+| a handler's `TurnStopped` failing the turn (client only) | `failed`, `error_type` `TurnStopped`, WARNING |
+| the deadline, the host's close, a client cancelling | `cancelled`, INFO |
+
+The person front writes single lines for what it holds back: `answer.withheld` (`method` from the
+served methods, and `tool_name` for an offered tool), `listen_stream.cut`, `tool_offer.failed` and
+`resource_lookup.failed` (`method` and `error_type`). The route writes `route_answer.refused` with
+`reason` (`no_status`, `incomplete`, `too_large`, `status`, `not_text`) and `status` when the app
+sent one. The inner route request carries the outer trace id under a new span id.
 
 ## The person front
 
@@ -519,8 +547,8 @@ The SDK answers the rest of the protocol (`Mcp-Method` mismatch `-32020`, missin
 unknown method 404): `test_the_sdk_ladder_answers_a_malformed_request_with_its_standard_error`.
 
 A handler that raises, or returns an outcome that cannot be written, answers a failed tool
-result with one fixed text; the log names the tool and the exception's class, and nothing of its
-message reaches the wire or the log
+result with one fixed text; its `tool_call.ended` line names the tool and the exception's class,
+and nothing of its message reaches the wire or the log
 (`test_two_tools_failing_differently_answer_one_failed_result_without_their_messages`,
 `test_an_outcome_that_cannot_be_written_answers_the_failed_result_and_leaks_nothing`). An answer
 that carries the signature of the request's own bearer is replaced by an empty 500
@@ -1117,8 +1145,9 @@ waits until the response is complete and answers `http.disconnect`
 **Outcomes.** A 2xx gives the body text, never an image, and a 4xx a failed result with the route's body. A 3xx, a
 5xx, a body over `MAX_EVENT_BYTES` (no byte past it is kept), a body that is not UTF-8 and an app
 that returns before its response is complete give a failed result with one fixed text; only the
-status is logged. An exception the app raises propagates to the front, which answers its own
-fixed text and logs the class. Proved by `test_a_2xx_gives_the_body_and_a_4xx_gives_a_failed_result_with_the_routes_body`,
+status and the closed `reason` are logged (`route_answer.refused`). An exception the app raises
+propagates to the front, which answers its own fixed text and writes the tool call's `failed`
+line. Proved by `test_a_2xx_gives_the_body_and_a_4xx_gives_a_failed_result_with_the_routes_body`,
 `test_an_unusable_response_gives_one_failed_result_that_repeats_nothing_of_the_body`,
 `test_a_body_exactly_at_the_bound_is_given` and `test_an_exception_the_app_raises_propagates`.
 

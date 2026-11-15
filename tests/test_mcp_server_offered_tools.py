@@ -9,17 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from typing import Any
 
 import pytest
 from mcp.shared.subscriptions import ToolsListChanged
 
 from agents.mcp_server import McpPersonFront, ResourceChanges
-from agents.mcp_server.asgi import LOGGER_NAME as LOGGER
 from agents.member import STANDING_URI
 from agents.tools import Principal
 from tests.support import listen_support
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_person_support import Person
 from tests.support.mcp_server_support import (
     ListenConnection,
@@ -48,6 +47,8 @@ _TOOLS_CHANGED = "notifications/tools/list_changed"
 _ACKNOWLEDGED = "notifications/subscriptions/acknowledged"
 _NOT_OFFERED_TEXT = "the tool is not offered now"
 _OFFER_FAILED_TEXT = "the tool offer failed"
+
+log_lines = log_lines
 _DECLARED = ("read_note", "edit_note", "bid")
 
 
@@ -154,17 +155,21 @@ def test_a_call_with_arguments_asks_the_offer_exactly_once(
 
 
 @pytest.mark.parametrize(
-    "breakage",
+    ("breakage", "error_type"),
     [
-        pytest.param({"failure": RuntimeError("secret-marker")}, id="raises"),
-        pytest.param({"unusable": ("bid", "never_declared")}, id="undeclared name"),
-        pytest.param({"unusable": "bid"}, id="bare text"),
-        pytest.param({"unusable": b"bid"}, id="bare bytes"),
-        pytest.param({"unusable": 7}, id="no collection"),
-        pytest.param({"unusable": iter(["bid"])}, id="iterator"),
-        pytest.param({"unusable": (name for name in ["bid"])}, id="generator"),
-        pytest.param({"unusable": ("bid", 7)}, id="non-text item"),
-        pytest.param({"unusable": ([],)}, id="unhashable item"),
+        pytest.param({"failure": RuntimeError("secret-marker")}, "RuntimeError", id="raises"),
+        pytest.param(
+            {"unusable": ("bid", "never_declared")}, "_UnusableOfferError", id="undeclared name"
+        ),
+        pytest.param({"unusable": "bid"}, "_UnusableOfferError", id="bare text"),
+        pytest.param({"unusable": b"bid"}, "_UnusableOfferError", id="bare bytes"),
+        pytest.param({"unusable": 7}, "_UnusableOfferError", id="no collection"),
+        pytest.param({"unusable": iter(["bid"])}, "_UnusableOfferError", id="iterator"),
+        pytest.param(
+            {"unusable": (name for name in ["bid"])}, "_UnusableOfferError", id="generator"
+        ),
+        pytest.param({"unusable": ("bid", 7)}, "_UnusableOfferError", id="non-text item"),
+        pytest.param({"unusable": ([],)}, "TypeError", id="unhashable item"),
     ],
 )
 @pytest.mark.parametrize("method", ["tools/list", "tools/call"])
@@ -173,11 +178,11 @@ def test_a_broken_offer_answers_one_fixed_failure_and_logs_only_the_exception_ty
     person: Person,
     offer: ToolOffer,
     alice: Principal,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
     method: str,
     breakage: dict[str, Any],
+    error_type: str,
 ) -> None:
-    caplog.set_level(logging.DEBUG, logger=LOGGER)
     for field_name, value in breakage.items():
         setattr(offer, field_name, value)
     params = call_params("bid") if method == "tools/call" else {}
@@ -186,8 +191,13 @@ def test_a_broken_offer_answers_one_fixed_failure_and_logs_only_the_exception_ty
 
     assert (reply["error"]["code"], reply["error"]["message"]) == (-32603, _OFFER_FAILED_TEXT)
     assert person.calls == []
-    logged = " ".join(record.getMessage() for record in caplog.records)
-    assert method in logged
+    failed = log_lines.one("tool_offer.failed")
+    logged = log_lines.everything()
+    assert (failed["method"], failed["level"], failed["error_type"]) == (
+        method,
+        "error",
+        error_type,
+    )
     assert "secret-marker" not in logged + json.dumps(reply)
     assert "never_declared" not in logged + json.dumps(reply)
 

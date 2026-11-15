@@ -1,8 +1,8 @@
 """Running one tool call of a turn: its handler's outcome as the result event the model is shown.
 
 A handler is the app's code, so what it raises or answers invalidly is a host defect that fails
-the call and not the turn. This module is the one owner of that bound; it logs the call's name,
-id and error flag, never its arguments or content.
+the call and not the turn. This module is the one owner of that bound; it writes the call's one
+``tool_call.ended`` line with its name and id, never its arguments, content or a handler's message.
 """
 
 from __future__ import annotations
@@ -11,9 +11,11 @@ import logging
 from dataclasses import dataclass
 from typing import Final
 
-from agents.backend import TurnPerson, TurnStopped
+from logline import StepTimer
+
+from agents.backend import TurnPerson, TurnStopKind, TurnStopped
 from agents.tools import HandToolHandler, JsonObject, ToolOutcome
-from agents.turn import is_within_event_bound
+from agents.turn import ToolRefusal, is_within_event_bound
 from agents.turn_events import ToolResultEvent
 
 __all__ = ["RequestedCall", "serve"]
@@ -36,26 +38,38 @@ async def serve(
     """Run one handler; an outcome that is no valid result event is a host defect like a raise.
 
     The one raise that is no defect is ``TurnStopped``: the handler ends the turn, so it passes.
+    A refusing stop is the call's ``refused`` line, a failing one its ``failed`` line.
     """
-    # unset for a call the deadline, a cancellation or a handler's TurnStopped cut off
-    is_error: bool | None = None
     try:
-        event = _result_event(call, await handler(person.principal, call.arguments))
+        async with StepTimer(
+            "tool_call.ended", _LOGGER, tool_name=call.name, tool_call_id=call.id
+        ) as step:
+            step.handled()
+            served = await _run(step, handler, person, call)
     except TurnStopped:
         raise
-    except Exception as error:  # a handler is the app's code; its failure is a host defect
-        _LOGGER.error("tool %s raised %s", call.name, type(error).__qualname__)
-        event = _failed_event(call, _HANDLER_FAILED_TEXT)
-        is_error = True
-        return event
-    else:
-        is_error = event.is_error
-        return event
-    finally:
-        _LOGGER.info("tool %s call %r ended, is_error=%s", call.name, call.id, is_error)
+    except Exception:  # a handler is the app's code; its failure is a host defect
+        return _failed_event(call, _HANDLER_FAILED_TEXT)
+    if isinstance(served, TurnStopped):
+        raise served
+    return served
 
 
-def _result_event(call: RequestedCall, outcome: ToolOutcome) -> ToolResultEvent:
+async def _run(
+    step: StepTimer, handler: HandToolHandler, person: TurnPerson, call: RequestedCall
+) -> ToolResultEvent | TurnStopped:
+    """The result, or a refusing stop handed back so the line closes before it is raised."""
+    try:
+        outcome = await handler(person.principal, call.arguments)
+    except TurnStopped as stopped:
+        if stopped.kind is not TurnStopKind.REFUSED:
+            raise
+        step.refuse(stopped.code.value)
+        return stopped
+    return _result_event(step, call, outcome)
+
+
+def _result_event(step: StepTimer, call: RequestedCall, outcome: ToolOutcome) -> ToolResultEvent:
     event = ToolResultEvent.model_validate(
         {
             "tool_use_id": call.id,
@@ -66,7 +80,10 @@ def _result_event(call: RequestedCall, outcome: ToolOutcome) -> ToolResultEvent:
         strict=True,
     )
     if not is_within_event_bound(event.content, event.image):
+        step.refuse(ToolRefusal.RESULT_TOO_LARGE)
         return _failed_event(call, _RESULT_TOO_LARGE_TEXT)
+    if event.is_error:
+        step.refuse(ToolRefusal.TOOL_ERROR)
     return event
 
 

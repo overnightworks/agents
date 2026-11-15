@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
-import logging
 from collections import UserString
 from types import SimpleNamespace
 
@@ -46,17 +45,15 @@ from tests.support.gateway_turn_support import (
     sent,
     shop_turn,
 )
+from tests.support.log_lines import log_lines
 from tests.support.tool_images import a_tool_image
 
 shop = gateway_turn_support.shop
+log_lines = log_lines
 
 PROVIDER_ERROR = (TurnStopKind.FAILED, FailureCode.PROVIDER_ERROR)
 LIMIT_EXCEEDED = (TurnStopKind.FAILED, FailureCode.LIMIT_EXCEEDED)
 BUSY = (TurnStopKind.REFUSED, RejectionCode.BUSY)
-
-
-def call_records(caplog) -> list[logging.LogRecord]:
-    return [r for r in caplog.records if r.levelno == logging.INFO and "lookup" in r.getMessage()]
 
 
 def a_look(text: str, image, *, is_error: bool = False):
@@ -74,12 +71,6 @@ def read_data_url(url: str) -> tuple[str, bytes]:
     media_type, encoding = head.split(";")
     assert encoding == "base64"
     return media_type, base64.b64decode(payload, validate=True)
-
-
-def logged_flag(caplog) -> str:
-    """The is_error state the one INFO record of the call states, as printed."""
-    (record,) = call_records(caplog)
-    return record.getMessage().rsplit("is_error=", 1)[1]
 
 
 def test_one_round_runs_the_call_then_the_answer_follows(shop):
@@ -266,12 +257,13 @@ def test_an_unusable_outcome_of_a_side_effecting_handler_is_an_error_and_the_tur
     assert stopped.after_side_effect
 
 
-def test_a_raising_handler_logs_its_class_only_and_the_model_gets_an_error(shop, caplog):
+def test_a_raising_handler_is_a_failed_call_naming_its_class_only_and_the_model_gets_an_error(
+    shop, log_lines
+):
     async def raising() -> ToolOutcome:
         raise KeyError("secret-note-title")
 
     shop.add_tool("lookup", answer=raising)
-    caplog.set_level(logging.DEBUG)
 
     events, stopped, gateway = shop.run(
         tool_round(tool_call("c1", "lookup", {})), completion("Sorry.")
@@ -279,17 +271,22 @@ def test_a_raising_handler_logs_its_class_only_and_the_model_gets_an_error(shop,
 
     assert stopped is None
     assert events[1].is_error
-    assert logged_flag(caplog) == "True"
+    ended = log_lines.one("tool_call.ended")
+    assert (ended["outcome"], ended["level"], ended["error_type"]) == (
+        "failed",
+        "warning",
+        "KeyError",
+    )
+    assert (ended["tool_name"], ended["tool_call_id"]) == ("lookup", "c1")
     assert "secret-note-title" not in events[1].content
     assert "secret-note-title" not in gateway.requests[1].content.decode()
-    assert "KeyError" in caplog.text
-    assert "secret-note-title" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert "secret-note-title" not in log_lines.everything()
+    assert "Traceback" not in log_lines.everything()
+    assert "exception" not in ended
 
 
-def test_a_handler_that_stops_the_turn_ends_it_with_that_exception_and_no_further_round(
-    shop, caplog
+def test_a_handler_that_refuses_the_turn_ends_it_with_that_exception_and_no_further_round(
+    shop, log_lines
 ):
     ran = []
     refusal = TurnStopped(
@@ -305,7 +302,6 @@ def test_a_handler_that_stops_the_turn_ends_it_with_that_exception_and_no_furthe
 
     shop.add_tool("lookup", answer=refusing)
     shop.add_tool("other", answer=later)
-    caplog.set_level(logging.INFO)
 
     events, stopped, gateway = shop.run(
         tool_round(tool_call("c1", "lookup", {}), tool_call("c2", "other", {})),
@@ -318,7 +314,31 @@ def test_a_handler_that_stops_the_turn_ends_it_with_that_exception_and_no_furthe
     assert [type(event) for event in events] == [ToolCallEvent]
     assert ran == []
     assert len(gateway.requests) == 1
-    assert logged_flag(caplog) == "None"
+    ended = log_lines.one("tool_call.ended")
+    assert (ended["outcome"], ended["reason"], ended["level"]) == ("refused", "busy", "info")
+
+
+def test_a_handler_that_fails_the_turn_is_a_failed_call_at_warning_and_ends_the_turn(
+    shop, log_lines
+):
+    failure = TurnStopped(TurnStopKind.FAILED, FailureCode.PROVIDER_ERROR, detail="credentials")
+
+    async def failing() -> ToolOutcome:
+        raise failure
+
+    shop.add_tool("lookup", answer=failing)
+
+    _, stopped, gateway = shop.run(tool_round(tool_call("c1", "lookup", {})), completion("never"))
+
+    assert stopped is failure
+    assert len(gateway.requests) == 1
+    ended = log_lines.one("tool_call.ended")
+    assert (ended["outcome"], ended["error_type"], ended["level"]) == (
+        "failed",
+        "TurnStopped",
+        "warning",
+    )
+    assert "credentials" not in log_lines.everything()
 
 
 @pytest.mark.parametrize(
@@ -345,21 +365,32 @@ def test_a_handler_that_stops_the_turn_leaves_after_side_effect_as_the_connector
 
 
 @pytest.mark.parametrize("image", [None, a_tool_image()], ids=["text", "image"])
-def test_each_call_logs_its_name_id_and_error_flag_never_arguments_or_content(shop, caplog, image):
+def test_a_returned_error_is_one_refused_line_with_the_name_and_id_never_arguments_or_content(
+    shop, log_lines, image
+):
     shop.add_tool("lookup", answer=a_look("content-canary", image, is_error=True))
-    caplog.set_level(logging.DEBUG)
 
     shop.run(tool_round(tool_call("c1", "lookup", {"k": "argument-canary"})), completion("ok"))
 
-    calls = call_records(caplog)
-    assert len(calls) == 1
-    assert "c1" in calls[0].getMessage()
-    assert "True" in calls[0].getMessage()
-    assert "argument-canary" not in caplog.text
-    assert "content-canary" not in caplog.text
+    ended = log_lines.one("tool_call.ended")
+    assert (ended["tool_name"], ended["tool_call_id"]) == ("lookup", "c1")
+    assert (ended["outcome"], ended["reason"], ended["level"]) == ("refused", "tool_error", "info")
+    written = log_lines.everything()
+    assert "argument-canary" not in written
+    assert "content-canary" not in written
     if image is not None:
-        assert base64.b64encode(image.content).decode("ascii") not in caplog.text
-        assert repr(image.content) not in caplog.text
+        assert base64.b64encode(image.content).decode("ascii") not in written
+        assert repr(image.content) not in written
+
+
+def test_a_valid_result_is_one_ok_line(shop, log_lines):
+    shop.add_tool("lookup")
+
+    shop.run(tool_round(tool_call("c1", "lookup", {})), completion("ok"))
+
+    ended = log_lines.one("tool_call.ended")
+    assert (ended["outcome"], ended["level"]) == ("ok", "info")
+    assert "reason" not in ended
 
 
 @pytest.mark.parametrize(
@@ -387,7 +418,7 @@ def test_crossing_max_tool_calls_fails_with_limit_exceeded(shop, replies, calls_
 
 @pytest.mark.parametrize("effect", list(ToolEffect))
 def test_a_deadline_during_a_handler_cancels_it_and_keeps_the_side_effect_state(
-    shop, effect, caplog
+    shop, effect, log_lines
 ):
     cancelled = []
 
@@ -401,7 +432,6 @@ def test_a_deadline_during_a_handler_cancels_it_and_keeps_the_side_effect_state(
         return ToolOutcome("never", is_error=False)
 
     shop.add_tool("lookup", effect=effect, answer=stuck)
-    caplog.set_level(logging.INFO)
 
     events, stopped, gateway = shop.run(
         tool_round(tool_call("c1", "lookup", {})), completion("never")
@@ -412,12 +442,13 @@ def test_a_deadline_during_a_handler_cancels_it_and_keeps_the_side_effect_state(
     assert cancelled == [True]
     assert [type(event) for event in events] == [ToolCallEvent]
     assert len(gateway.requests) == 1
-    assert logged_flag(caplog) == "None"
+    assert log_lines.one("tool_call.ended")["outcome"] == "cancelled"
 
 
-def test_a_call_event_taken_past_the_deadline_starts_no_handler_and_leaves_no_record(shop, caplog):
+def test_a_call_event_taken_past_the_deadline_starts_no_handler_and_leaves_no_record(
+    shop, log_lines
+):
     shop.add_tool("write", effect=ToolEffect.SIDE_EFFECTING)
-    caplog.set_level(logging.INFO)
 
     events, stopped, gateway = shop.run(
         tool_round(tool_call("c1", "write", {})),
@@ -432,7 +463,7 @@ def test_a_call_event_taken_past_the_deadline_starts_no_handler_and_leaves_no_re
         [ToolCallEvent],
         1,
     )
-    assert [r for r in caplog.records if "write" in r.getMessage()] == []
+    assert log_lines.of("tool_call.ended") == []
 
 
 def test_a_deadline_that_passed_while_the_app_took_the_result_event_sends_no_next_request(shop):
@@ -498,7 +529,7 @@ def test_a_busy_gateway_at_round_two_reports_whether_a_call_may_have_written(
     assert stopped.retry_after_s == 7
 
 
-def test_cancelling_between_a_call_and_its_result_reaches_the_caller_unchanged(shop, caplog):
+def test_cancelling_between_a_call_and_its_result_reaches_the_caller_unchanged(shop, log_lines):
     started = asyncio.Event()
 
     async def stuck() -> ToolOutcome:
@@ -510,7 +541,6 @@ def test_cancelling_between_a_call_and_its_result_reaches_the_caller_unchanged(s
     gateway = FakeGateway(tool_round(tool_call("c1", "lookup", {})), completion("never"))
     backend = GatewayBackend(shop.config(), tools=shop.tools, transport=gateway)
     events: list = []
-    caplog.set_level(logging.INFO)
 
     async def consume() -> None:
         request = a_tool_request(shop.tools, 3)
@@ -529,17 +559,15 @@ def test_cancelling_between_a_call_and_its_result_reaches_the_caller_unchanged(s
 
     assert [type(event) for event in events] == [ToolCallEvent]
     assert len(gateway.requests) == 1
-    assert logged_flag(caplog) == "None"
+    assert log_lines.one("tool_call.ended")["outcome"] == "cancelled"
 
 
 @pytest.mark.parametrize(
     ("extra_bytes", "reaches_the_model"), [(0, True), (1, False)], ids=["at-bound", "one-over"]
 )
 def test_a_tool_result_over_the_event_bound_is_replaced_and_the_side_effect_stands(
-    shop, caplog, extra_bytes, reaches_the_model
+    shop, log_lines, extra_bytes, reaches_the_model
 ):
-    caplog.set_level(logging.INFO)
-
     async def big() -> ToolOutcome:
         return ToolOutcome("a" * (MAX_EVENT_BYTES + extra_bytes), is_error=False)
 
@@ -550,8 +578,10 @@ def test_a_tool_result_over_the_event_bound_is_replaced_and_the_side_effect_stan
     )
 
     result = events[1]
-    logged = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
-    assert [f"is_error={result.is_error}" in line for line in logged] == [True]
+    ended = log_lines.one("tool_call.ended")
+    expected = ("ok", None) if reaches_the_model else ("refused", "result_too_large")
+    observed = (ended["outcome"], ended.get("reason"))
+    assert observed == expected
     assert (result.content == "a" * MAX_EVENT_BYTES) is reaches_the_model
     assert result.is_error is (not reaches_the_model)
     assert result.content in sent(gateway, 1)["messages"][-1]["content"]

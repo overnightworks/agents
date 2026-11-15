@@ -277,6 +277,13 @@ def is_within_event_bound(text: str, image: ToolImage | None) -> bool:
     return len(text.encode("utf-8")) + image_bytes <= MAX_EVENT_BYTES
 
 
+class ToolRefusal(StrEnum):
+    """Why a tool call ended ``refused``: the one owner of the ``reason`` values of its line."""
+
+    TOOL_ERROR = "tool_error"
+    RESULT_TOO_LARGE = "result_too_large"
+
+
 class TurnRole(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"

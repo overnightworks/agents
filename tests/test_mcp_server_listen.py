@@ -22,6 +22,7 @@ from agents.mcp_server.asgi import LOGGER_NAME as LOGGER
 from agents.member import LISTEN_BOUND_SECONDS, STANDING_URI
 from agents.tools import Principal
 from tests.support import listen_support
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import (
     ListenConnection,
     MemberApp,
@@ -57,6 +58,8 @@ served = listen_support.served
 _SUBSCRIPTION_ID = "io.modelcontextprotocol/subscriptionId"
 _FAILED_TEXT = "the resource failed"
 _ACKNOWLEDGED = "notifications/subscriptions/acknowledged"
+
+log_lines = log_lines
 
 
 def open_and_leave(
@@ -414,21 +417,19 @@ def test_a_client_that_stalls_past_the_bound_still_gets_the_completion_the_handl
 def test_a_bearer_signature_in_the_request_id_answers_an_empty_500_with_no_frame(
     front: McpPersonFront,
     alice: Principal,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
     bearer: str,
     signature: str,
 ) -> None:
-    caplog.set_level(logging.INFO, logger=LOGGER)
     connection = listen_connection(
         front, alice, [STANDING_URI], request_id=signature, bearer=bearer
     )
 
     open_and_leave(front, connection)
 
-    logged = " ".join(record.getMessage() for record in caplog.records)
     assert (connection.status, connection.body_bytes) == (500, b"")
-    assert "subscriptions/listen" in logged
-    assert signature not in logged
+    assert log_lines.one("listen_stream.cut")["level"] == "warning"
+    assert signature not in log_lines.everything()
 
 
 def test_a_bearer_signature_in_a_later_frame_cuts_the_stream_before_that_frame(
@@ -436,9 +437,8 @@ def test_a_bearer_signature_in_a_later_frame_cuts_the_stream_before_that_frame(
     app: MemberApp,
     alice: Principal,
     changes: ResourceChanges,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
 ) -> None:
-    caplog.set_level(logging.INFO, logger=LOGGER)
     carrying = window_uri("sigOfTheStream")
     app.readable[alice][carrying] = an_empty_record()
     connection = listen_connection(
@@ -453,11 +453,10 @@ def test_a_bearer_signature_in_a_later_frame_cuts_the_stream_before_that_frame(
 
     served(scenario())
 
-    logged = " ".join(record.getMessage() for record in caplog.records)
     assert [frame.get("method") for frame in connection.frames] == [_ACKNOWLEDGED]
     assert b"sigOfTheStream" not in connection.body_bytes
-    assert "subscriptions/listen" in logged
-    assert "sigOfTheStream" not in logged
+    assert log_lines.one("listen_stream.cut")["level"] == "warning"
+    assert "sigOfTheStream" not in log_lines.everything()
 
 
 def test_a_port_raising_at_the_acknowledgement_answers_the_fixed_text(
@@ -490,18 +489,14 @@ def test_a_port_raising_during_delivery_sends_no_frame_and_completes(
     assert "result" in connection.frames[-1]
 
 
-@pytest.mark.parametrize("level", [logging.DEBUG, logging.INFO])
 @pytest.mark.parametrize("raises_at", ["acknowledgement", "delivery"])
 def test_no_marker_from_a_uri_a_principal_or_a_failure_reaches_any_log(
     front: McpPersonFront,
     app: MemberApp,
     changes: ResourceChanges,
-    caplog: pytest.LogCaptureFixture,
-    level: int,
+    log_lines: LogLines,
     raises_at: str,
 ) -> None:
-    caplog.set_level(level)
-    caplog.set_level(level, logger=LOGGER)
     member = a_member("marker-principal-3b7a")
     uri = window_uri("marker-uri-91c2")
     app.readable[member] = readable_uris(STANDING_URI, uri)
@@ -518,8 +513,10 @@ def test_no_marker_from_a_uri_a_principal_or_a_failure_reaches_any_log(
 
     served(scenario())
 
-    logged = " ".join(record.getMessage() for record in caplog.records)
-    assert "RuntimeError" in logged
+    logged = log_lines.everything()
+    assert {line["error_type"] for line in log_lines.of("resource_lookup.failed")} == {
+        "RuntimeError"
+    }
     assert not any(
         marker in logged
         for marker in ("marker-uri-91c2", "marker-principal-3b7a", "marker-failure-5d1e")
