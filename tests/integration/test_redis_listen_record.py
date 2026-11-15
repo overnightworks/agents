@@ -25,7 +25,13 @@ from agents.turn import Principal
 from tests.support import redis_listen_support
 from tests.support.faulty_redis import EvalshaStopsAfter, LostReplyRedis, retrying
 from tests.support.mcp_server_support import a_member, window_uri
-from tests.support.redis_listen_support import RedisClock, delivered_up_to, subscribed
+from tests.support.redis_listen_support import (
+    UNUSUAL_PRINCIPALS,
+    UNUSUAL_URIS,
+    RedisClock,
+    delivered_up_to,
+    subscribed,
+)
 
 redis_clock = redis_listen_support.redis_clock
 
@@ -360,17 +366,8 @@ def test_a_principal_turns_to_no_for_a_uri_only_when_its_last_stream_of_it_lapse
     ]
 
 
-@pytest.mark.parametrize(
-    "principal",
-    [
-        pytest.param(_ALICE, id="plain"),
-        pytest.param(a_member("alice", iss="https://id.example/realms/one"), id="a slash in iss"),
-        pytest.param(a_member("subé", iss="https://id.example/ü"), id="non-ASCII"),
-    ],
-)
-@pytest.mark.parametrize(
-    "uri", [STANDING_URI, "place://\U0001f600/standing"], ids=["plain", "non-BMP"]
-)
+@pytest.mark.parametrize("principal", UNUSUAL_PRINCIPALS)
+@pytest.mark.parametrize("uri", UNUSUAL_URIS)
 def test_a_lapsed_stream_leaves_no_key_and_no_member_whatever_its_principal_and_uri_hold(
     server: FakeServer, redis_clock: RedisClock, principal: Principal, uri: str
 ) -> None:

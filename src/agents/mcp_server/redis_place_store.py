@@ -243,7 +243,7 @@ class RedisPlaceStore:
         ]
         self._acknowledged = Script(redis, _ACKNOWLEDGED)
         self._ended = Script(redis, _ENDED)
-        self._lapsed = Script(redis, _LAPSED)
+        self._lapse = Script(redis, _LAPSED)
         self._members = Script(redis, _MEMBERS)
 
     async def publish(self, signal: PlaceSignal) -> None:
@@ -299,7 +299,7 @@ class RedisPlaceStore:
             claims = await self._deadlines.claim_due(claimer=claimer, limit=_LAPSE_BATCH)
         for due in claims:
             try:
-                await self._lapsed.run(self._keys, [due.key, self._origin, self._wake_channel])
+                await self._lapse.run(self._keys, [due.key, self._origin, self._wake_channel])
                 await self._deadlines.done(due)
             except StoreError as failure:
                 _LOG.warning(

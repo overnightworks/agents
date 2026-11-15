@@ -688,12 +688,14 @@ call for a principal with no open stream on any pod does nothing. `server/discov
 with the port, `resources.subscribe` true with `changes`, and `tools.listChanged` true only with
 `offered_tools`; `resources.listChanged` is always false.
 
-**The place store.** `store` is a `PlaceSignals` (exported by `agents.mcp_server`) shared by every
+**The place store.** `store` is a `PlaceStore` (exported by `agents.mcp_server`) shared by every
 pod of the app; `RedisPlaceStore(redis, *, key_prefix)`, imported from
 `agents.mcp_server.redis_place_store` and installed with the `redis` extra, is the one
 implementation. `changed` and `tools_changed` publish an address, never content, and every pod's
 front, the publishing one included, delivers it to its open streams, which read the app's own
-truth. Pass `RedisPlaceStore` your app's `redis.asyncio` client and its key prefix: its repository
+truth; a listening turn carries its direction as well, and the store holds the listen record that
+**Whether a member listens** below describes. Pass `RedisPlaceStore` your app's
+`redis.asyncio` client, the `tandem.Client` of its parameter, and its key prefix: its repository
 name, the one segment (`[a-z0-9][a-z0-9-]*`) your app gives its own tandem. agents keeps everything
 it stores, tandem's channel included, under `<prefix>-agents`, so its keys and wakes never meet
 your app's; it refuses a prefix ending in `-agents`. The client carries a `Retry` and sets
@@ -718,7 +720,7 @@ is logged by its length and skipped, one that is no UTF-8 included. If the subsc
 startup, the front logs the cause, ends its open listens and answers every request with 503 until
 the pod restarts.
 Proved by `tests/test_mcp_server_place_wake.py`, `tests/integration/test_redis_place_store.py` and
-the two-process tests of `tests/integration/real_redis`, which `scripts/run_redis_tests.sh` runs.
+the tests of `tests/integration/real_redis`, which `scripts/run_redis_tests.sh` runs.
 
 **The answers.** `resources/list` answers exactly `current`, sorted (a view only beside its
 window, see [a place's view](#the-member-module)), each entry with the URI as its
@@ -753,29 +755,52 @@ revocation, not on the absence of a pulse. A port that raises at the acknowledge
 `-32603` with one fixed text, one that raises later ends the stream with the completion, and both
 log only the exception's type. Proved by `tests/test_mcp_server_listen.py`.
 
-**Whether a member listens.** `changes.listens_to(principal, uri)` answers whether that principal
-holds a stream whose acknowledgement honored the URI and which is open or ended less than
-`LISTEN_ALLOWANCE_SECONDS` ago; an app that offers an agent only while it can answer an invitation
-asks for `STANDING_URI`. The allowance lets a runner that listens again at once (the connection and
-one `current` call, a few milliseconds plus the port's latency) keep the answer yes. The answer is
-no before the acknowledgement, after the allowance of the last such stream and for a stream that
-honored only a place window, because the URI is compared as asked and not widened to the places a
-standing subscriber also receives. Several streams of one principal count while any of them
-counts. It reads this pod's streams only and runs on the front's event loop.
+**Whether a member listens.** `await changes.listens_to(principal, uri)` answers, on every pod
+alike, whether that principal holds a stream, on any pod, whose acknowledgement honored the URI and
+whose lapse has not yet run; `await changes.listeners(uri)` lists those principals. A stream lapses
+`LISTEN_ALLOWANCE_SECONDS` after it ends, at the next lapse poll (about a second), or `claim_for`
+later if the pod that claimed its lapse died. Both read the place store on Redis time and raise
+`PlaceStoreError` when it fails; a host that gets the error does not offer the agent. An app that
+offers an agent only while it can answer an invitation asks for `STANDING_URI`. The allowance lets a
+runner that listens again at once (the connection and one `current` call, a few milliseconds plus the
+port's latency) keep the answer yes. The answer is no before the acknowledgement, after the allowance
+of the last such stream and for a stream that honored only a place window, because the URI is
+compared as asked and not widened to the places a standing subscriber also receives. Several streams
+of one principal count while any of them counts. A stream that honored only `toolsListChanged`
+touches no store.
 
 The answer reads what the stream's acknowledgement honored; it does not re-check the member's
 current resources, so a removal turns it no only once the stream has ended and the allowance has
 passed. The standing is every admitted member's own resource, and whether the member still holds
 its account and its places is the app's own record: an app combines the answer with that record.
 
-`ResourceChanges(store, listening_changed=...)` takes one optional callable, `(principal, uri, listens) ->
-None`, called when the answer for a principal and URI changes: with `True` on the request task
-that wrote the first acknowledgement honoring the URI, and with `False` on the event loop once the
-last such stream ended and the allowance passed. It must not block (a host schedules its own work
-from it), and an exception from it is logged by type and never reaches a listen. The call is made
-for every URI the acknowledgement honored, so a host picks the ones it offers on. The read and the
-call come from one rule, so they never disagree. Proved by
-`tests/test_mcp_server_listen_liveness.py`.
+`ResourceChanges(store, listening_changed=..., listening_resynced=...)` takes two optional
+callables. `listening_changed(principal, uri, listens)` reports each turn of the answer for a
+principal and URI. The pod whose acknowledgement turned it to yes calls it with `True` on that
+request task, with request context; every pod, that one included, calls it with the turn's
+direction on its signal task, without request context. On every pod the signal-task calls follow
+the store's turns in order and miss none while the subscription stands; a resync covers a gap. The
+`True` on the acknowledging request task is an early copy for request context and may come before an
+older `False` on the signal task. A host's state follows the signal-task calls, a `True` without
+request context included. `listening_changed` may repeat a direction, so a host applies it
+idempotently: a `True` for a principal it already lists and a `False` for one it does not list
+change nothing. The call is made for every URI the acknowledgement honored, so a host picks the
+ones it offers on. `listening_resynced()` is called after every confirmed subscription, the first
+one included, because a turn sent while the subscription was down is lost; the host rebuilds its
+view from `listeners(uri)` and applies the `listening_changed` calls that arrive during the rebuild
+after it, so a `False` is not overwritten by an older read. Neither callable may block (a host
+schedules its own work from it), and an exception from either is logged by type and never reaches a
+listen.
+
+The record keeps each stream that honored a URI as a tandem deadline, so a stream lapses once its
+deadline passes whichever pod opened it. A pod that dies leaves a stale yes for at most
+`LISTEN_BOUND_SECONDS` plus `LISTEN_ALLOWANCE_SECONDS`, plus the lapse's latency; after a Redis
+restart without persistence every answer is no until each runner's next listen, which is at most
+`LISTEN_BOUND_SECONDS` away. When the store fails at a listen's acknowledgement the listen answers
+`-32603` with one fixed text and calls nothing on the request task; the record may still hold the
+stream, which then lapses after the allowance. Proved by `tests/test_mcp_server_listen_liveness.py`,
+`tests/integration/test_redis_listen_record.py` and the real-Redis tests of
+`tests/integration/real_redis`.
 
 **The tools of the moment.** A host that offers a member only the tools it can use now passes
 `offered_tools=`, an `OfferedTools` (exported by `agents.mcp_server`): `(principal) ->

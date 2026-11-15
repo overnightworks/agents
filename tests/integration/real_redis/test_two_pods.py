@@ -1,4 +1,5 @@
-"""Two pods of one host on one real Redis: a write on one wakes a listen on the other.
+"""Two pods of one host on one real Redis: a write on one wakes a listen on the other, and what
+one pod's listen records is listed and heard by the other.
 
 ``scripts/run_redis_tests.sh`` runs this directory against a throwaway Redis and passes its URL in
 ``AGENTS_TEST_REDIS_URL``. Each pod is its own uvicorn process; pod A connects as its own Redis
@@ -8,13 +9,12 @@ user, so a test can take away what that user may do.
 from __future__ import annotations
 
 import json
-import os
 import signal
 import socket
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,11 +23,20 @@ from typing import Any
 import httpx2
 import pytest
 from redis import Redis
+from tandem.keys import deadline_keys
 
+from agents.mcp_server.listen import LAPSE_POLL_SECONDS
+from agents.mcp_server.redis_place_store import CLAIM_FOR
 from agents.mcp_wire import MCP_ENDPOINT_PATH
-from agents.member import STANDING_URI
+from agents.member import LISTEN_ALLOWANCE_SECONDS, STANDING_URI
 from tests.support.mcp_server_support import member_scope, rpc_body
-from tests.support.real_redis_pod import WRITE_PATH, WRITES_KEY, WRITTEN_MEMBER
+from tests.support.real_redis_pod import (
+    LISTENERS_PATH,
+    LISTENING_CHANGES_PATH,
+    WRITE_PATH,
+    WRITES_KEY,
+    WRITTEN_MEMBER,
+)
 
 _REPOSITORY = Path(__file__).resolve().parents[3]
 _PREFIX = "notes"
@@ -36,6 +45,8 @@ _POD_A_PASSWORD = "pod-a-secret"
 _ACKNOWLEDGED = "notifications/subscriptions/acknowledged"
 _UPDATED = "notifications/resources/updated"
 _WAIT_SECONDS = 20
+_YES = [WRITTEN_MEMBER.iss, WRITTEN_MEMBER.sub, STANDING_URI, True]
+_NO = [WRITTEN_MEMBER.iss, WRITTEN_MEMBER.sub, STANDING_URI, False]
 
 
 @dataclass
@@ -59,25 +70,6 @@ class Pod:
             self.process.kill()
             self.process.wait()
             raise
-
-
-@pytest.fixture(scope="session")
-def redis_url() -> str:
-    url = os.environ.get("AGENTS_TEST_REDIS_URL")
-    if url is None:
-        pytest.fail("AGENTS_TEST_REDIS_URL is unset; run scripts/run_redis_tests.sh")
-    return url
-
-
-@pytest.fixture
-def admin(redis_url: str) -> Iterator[Redis]:
-    """The runner's own client: a different user from either pod."""
-    client = Redis.from_url(redis_url, decode_responses=True)
-    client.flushall()
-    yield client
-    client.acl_deluser(_POD_A_USER)
-    client.flushall()
-    client.close()
 
 
 def as_user(redis_url: str, user: str, password: str) -> str:
@@ -128,15 +120,18 @@ def pods(tmp_path: Path, redis_url: str, admin: Redis) -> Iterator[tuple[Pod, Po
         channels=["*"],
         commands=["+@all"],
     )
-    pod_a = started(tmp_path, as_user(redis_url, _POD_A_USER, _POD_A_PASSWORD))
     try:
-        pod_b = started(tmp_path, redis_url)
+        pod_a = started(tmp_path, as_user(redis_url, _POD_A_USER, _POD_A_PASSWORD))
         try:
-            yield pod_a, pod_b
+            pod_b = started(tmp_path, redis_url)
+            try:
+                yield pod_a, pod_b
+            finally:
+                pod_b.kill()
         finally:
-            pod_b.kill()
+            pod_a.kill()
     finally:
-        pod_a.kill()
+        admin.acl_deluser(_POD_A_USER)
 
 
 def request_of(body: bytes) -> tuple[bytes, dict[str, str]]:
@@ -180,6 +175,32 @@ def write_on(pod: Pod) -> int:
     return httpx2.post(pod.url + WRITE_PATH, timeout=_WAIT_SECONDS, trust_env=False).json()[
         "writes"
     ]
+
+
+def listeners_of(pod: Pod) -> list[list[str]]:
+    return httpx2.get(pod.url + LISTENERS_PATH, timeout=_WAIT_SECONDS, trust_env=False).json()
+
+
+def listening_changes_heard_by(pod: Pod) -> list[list[str | bool]]:
+    return httpx2.get(
+        pod.url + LISTENING_CHANGES_PATH, timeout=_WAIT_SECONDS, trust_env=False
+    ).json()
+
+
+def wait_until(check: Callable[[], bool], *, seconds: float) -> None:
+    deadline = time.monotonic() + seconds
+    while not check():
+        assert time.monotonic() < deadline, "the awaited state never came"
+        time.sleep(0.1)
+
+
+def stream_shortened_to_the_allowance(admin: Redis) -> bool:
+    """Whether the one stream on record comes due within the allowance, which ``ended`` arms."""
+    due = deadline_keys(f"{_PREFIX}-agents", "listen").due
+    seconds, microseconds = admin.time()
+    now_ms = seconds * 1000 + microseconds // 1000
+    waiting = admin.zrange(due, 0, 0, withscores=True)
+    return bool(waiting) and waiting[0][1] - now_ms <= LISTEN_ALLOWANCE_SECONDS * 1000
 
 
 def status_of_a_request_to(pod: Pod) -> int:
@@ -251,3 +272,35 @@ def test_a_subscription_redis_refuses_ends_the_listen_and_answers_503_while_the_
     assert status_of_a_request_to(pod_a) == 503
     assert status_of_a_request_to(pod_b) == 200
     assert write_on(pod_b) == 1
+
+
+def test_a_listen_on_one_pod_is_listed_by_the_other_and_its_host_hears_the_yes(
+    pods: tuple[Pod, Pod],
+) -> None:
+    pod_a, pod_b = pods
+
+    with listening_on(pod_a) as frames:
+        assert frames.next_method() == _ACKNOWLEDGED
+
+        assert listeners_of(pod_b) == [[WRITTEN_MEMBER.iss, WRITTEN_MEMBER.sub]]
+        wait_until(lambda: listening_changes_heard_by(pod_b) == [_YES], seconds=_WAIT_SECONDS)
+
+
+def test_after_the_runner_closed_its_stream_and_its_pod_was_killed_the_other_pod_hears_one_no(
+    pods: tuple[Pod, Pod], admin: Redis
+) -> None:
+    pod_a, pod_b = pods
+
+    with listening_on(pod_a) as frames:
+        assert frames.next_method() == _ACKNOWLEDGED
+        wait_until(lambda: listening_changes_heard_by(pod_b) == [_YES], seconds=_WAIT_SECONDS)
+    wait_until(lambda: stream_shortened_to_the_allowance(admin), seconds=_WAIT_SECONDS)
+    pod_a.kill()
+
+    wait_until(
+        lambda: listening_changes_heard_by(pod_b) == [_YES, _NO],
+        seconds=LISTEN_ALLOWANCE_SECONDS + CLAIM_FOR.total_seconds() + LAPSE_POLL_SECONDS + 5,
+    )
+    time.sleep(2 * LAPSE_POLL_SECONDS)
+    assert listening_changes_heard_by(pod_b) == [_YES, _NO]
+    assert listeners_of(pod_b) == []

@@ -13,10 +13,23 @@ import pytest
 
 from agents.mcp_server.place_store import ListeningTurn, PlaceSignal, Resubscribed
 from agents.mcp_server.redis_place_store import RedisPlaceStore
+from agents.member import STANDING_URI
+from tests.support.mcp_server_support import a_member
 
 type Event = PlaceSignal | ListeningTurn | Resubscribed
 
 _WAIT_SECONDS = 5
+
+# What a member of the record holds verbatim: a principal and a URI no script may re-encode.
+UNUSUAL_PRINCIPALS = [
+    pytest.param(a_member("alice"), id="plain"),
+    pytest.param(a_member("alice", iss="https://id.example/realms/one"), id="a slash in iss"),
+    pytest.param(a_member("sub\u00e9", iss="https://id.example/\u00fc"), id="non-ASCII"),
+]
+UNUSUAL_URIS = [
+    pytest.param(STANDING_URI, id="plain"),
+    pytest.param("place://\U0001f600/standing", id="non-BMP"),
+]
 
 
 @dataclass
