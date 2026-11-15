@@ -1,8 +1,0 @@
-claim_id = "1224ccb57acf490388d1bfd56a213cb0"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "f615b3ccb0a5cf97953212b0ae2fd2a0c0812bbc"
-branch = "claude/issue-947-pod-wake"
-scope = [".github/workflows/ci.yml", ".importlinter", "AGENTS.md", "README.md", "docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "pyproject.toml", "quality/config.toml", "scripts/run_redis_tests.sh", "src/agents/mcp_server", "tests", "uv.lock"]
-opened_commit = "cd389cbfc7fd78a56bea844a0858f013855649c1"
-whole_reason = "The wake port, its tandem adapter, the front's readiness and dead state and their two-process proof only work together; about 200 production lines."
