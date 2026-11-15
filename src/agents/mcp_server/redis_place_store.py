@@ -80,23 +80,17 @@ class RedisPlaceStore:
             raise PlaceStoreError(str(failure)) from failure
 
     async def received(self) -> AsyncIterator[PlaceSignal | Resubscribed]:
-        while True:
-            try:
-                async for event in self._channel.received():
-                    if isinstance(event, TandemResubscribed):
-                        yield Resubscribed()
-                        continue
-                    signal = _decoded(event.address)
-                    if signal is None:
-                        _LOG.warning(
-                            "a payload of %d characters is no address: skipped", len(event.address)
-                        )
-                    else:
-                        yield signal
-                return
-            except UnicodeDecodeError as malformed:
-                # Tandem decodes the payload before it yields, so the bytes end its iterator;
-                # the next one subscribes again, which the front answers with a resync.
-                _LOG.warning("a payload of %d bytes is no UTF-8: skipped", len(malformed.object))
-            except StoreError as failure:
-                raise PlaceStoreError(str(failure)) from failure
+        try:
+            async for event in self._channel.received():
+                if isinstance(event, TandemResubscribed):
+                    yield Resubscribed()
+                    continue
+                signal = _decoded(event.address)
+                if signal is None:
+                    _LOG.warning(
+                        "a payload of %d characters is no address: skipped", len(event.address)
+                    )
+                else:
+                    yield signal
+        except StoreError as failure:
+            raise PlaceStoreError(str(failure)) from failure

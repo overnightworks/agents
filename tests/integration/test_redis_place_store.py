@@ -145,12 +145,11 @@ def test_a_payload_that_is_no_utf8_is_skipped_and_the_subscription_goes_on(
             await FakeAsyncRedis(server=server).publish(
                 "notes-agents:tandem:v1:wake", no_utf8_payload
             )
-            await arrived(events, 2)
             await a_pod(server).publish(wake)
-            await arrived(events, 3)
+            await arrived(events, 2)
             return list(events)
 
-    assert asyncio.run(scenario()) == [Resubscribed(), Resubscribed(), wake]
+    assert asyncio.run(scenario()) == [Resubscribed(), wake]
     (warning,) = caplog.records
     assert warning.levelno == logging.WARNING
     assert str(len(no_utf8_payload)) in warning.getMessage()
