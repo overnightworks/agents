@@ -239,22 +239,21 @@ def test_fragments_that_do_not_assemble_are_malformed(fragments):
 @pytest.mark.parametrize(
     "error",
     [
+        {"message": "secret-message", "type": "api_error", "code": "500"},
         {"message": "secret-message", "type": "API ERROR", "code": "500"},
-        {"message": "secret-message", "type": "api_error", "code": 500},
         {"message": "secret-message"},
         "secret-message",
     ],
-    ids=["type-fails-the-rule", "code-not-text", "message-only", "plain-text"],
+    ids=["well-formed", "type-fails-the-rule", "message-only", "plain-text"],
 )
 @pytest.mark.parametrize("done", [False, True], ids=["alone", "then-done"])
-def test_an_error_event_whose_type_or_code_fails_the_rule_carries_neither(error, done):
+def test_an_error_event_ends_the_read_and_carries_none_of_it(error, done):
     stream = an_event_stream(a_chunk("a"), {"error": error}, done=done)
 
     with pytest.raises(RoundErrorEvent) as raised:
         read(stream)
 
-    assert raised.value.kind == "no error type given"
-    assert "secret-message" not in str(raised.value)
+    assert "secret-message" not in f"{raised.value!s}{raised.value!r}"
 
 
 @pytest.mark.parametrize(

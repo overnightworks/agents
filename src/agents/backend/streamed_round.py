@@ -30,11 +30,7 @@ class MalformedRound(Exception):
 
 
 class RoundErrorEvent(Exception):
-    """The gateway sent an error event; ``kind`` is its checked type and code, never its message."""
-
-    def __init__(self, kind: str) -> None:
-        super().__init__(kind)
-        self.kind = kind
+    """The gateway sent an error event; the exception carries nothing of it."""
 
 
 class AssembledFunction(TypedDict):
@@ -170,14 +166,6 @@ def checked_error_of(error: JsonValue) -> CheckedError | None:
     return None
 
 
-def error_kind_of(error: JsonValue) -> str:
-    """The text a log gives for the error's checked ``type`` and ``code``."""
-    checked = checked_error_of(error)
-    if checked is None:
-        return "no error type given"
-    return f"error type {checked.error_type}, code {checked.code}"
-
-
 async def read_round(
     chunks: AsyncIterable[bytes], *, round_limit_bytes: int
 ) -> AsyncGenerator[str | StreamedRound, None]:
@@ -245,7 +233,7 @@ def _take(assembly: _Assembly, data: str) -> str | None:
     """Add one event's chunk to the round; its text piece, if it carries one."""
     event = _parsed(data)
     if "error" in event:
-        raise RoundErrorEvent(error_kind_of(event["error"]))
+        raise RoundErrorEvent
     usage = event.get("usage")
     if usage is not None:
         assembly.usage = _usage_of(usage)

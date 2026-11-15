@@ -14,16 +14,17 @@ import http.cookiejar
 import logging
 import re
 import ssl
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Iterable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
+from functools import partial
 from http import HTTPStatus
 from pathlib import Path
 from types import TracebackType
 from typing import Final
 
 import httpx2
-from logline import outgoing_headers
+from logline import StepTimer, outgoing_headers
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from agents.agent_file import AgentDefinition, TurnRequest
@@ -50,7 +51,6 @@ from agents.backend.streamed_round import (
     RoundErrorEvent,
     StreamedRound,
     checked_error_of,
-    error_kind_of,
     read_round,
 )
 from agents.backend.tool_result import RequestedCall, serve
@@ -86,6 +86,9 @@ _LOGGER: Final = logging.getLogger(__name__)
 _COMPLETIONS_PATH: Final = "/v1/chat/completions"
 _PICTURES_PATH: Final = "/v1/images/generations"
 _MODELS_PATH: Final = "/v1/models"
+_MODEL_REQUEST_EVENT: Final = "model_request.ended"
+_PICTURE_REQUEST_EVENT: Final = "picture_request.ended"
+_MODEL_LIST_REQUEST_EVENT: Final = "model_list_request.ended"
 _BUDGET_EXCEEDED: Final = "budget_exceeded"
 _MODEL_LIST_DEADLINE_SECONDS: Final = 10
 _TRAILING_READ_SECONDS: Final = 1
@@ -108,7 +111,7 @@ _NOT_RUN_CONTENT: Final = "not run: one call per reply"
 
 
 class GatewayDetail(StrEnum):
-    """Why a turn or a model list stopped: logged for a turn, public on a list's exception."""
+    """Why a request stopped: the reason of its line, and public on a model list's exception."""
 
     KEY_UNUSABLE = "key_unusable"
     GATEWAY_REFUSED = "gateway_refused"
@@ -194,9 +197,7 @@ class GatewayBackend(AgentBackend):
             raise _GatewayStop(TurnStopKind.REFUSED, RejectionCode.FORBIDDEN)
         deadline = asyncio.get_running_loop().time() + request.max_duration_seconds
         if request.picture_size is not None:
-            yield await _before(
-                deadline, self._picture(request, request.picture_size, person, deadline)
-            )
+            yield await self._picture(request, request.picture_size, person, deadline)
             return
         progress = _Progress(request.max_tool_calls or 0)
         try:
@@ -208,11 +209,10 @@ class GatewayBackend(AgentBackend):
             while True:
                 _refuse_after(deadline)
                 body = bounded(request_body(request, messages, user), _limit_exceeded)
-                opened = self._post(_COMPLETIONS_PATH, body, key)
+                opened = partial(self._post, _COMPLETIONS_PATH, body, key)
                 async with contextlib.aclosing(_streamed_round(opened, offered, deadline)) as parts:
                     while isinstance(part := await anext(parts), str):
                         yield AssistantTextEvent(text=part)
-                        _refuse_after(deadline)
                     reply = part
                 usages.append(reply.usage)
                 if reply.message is None:
@@ -251,23 +251,27 @@ class GatewayBackend(AgentBackend):
     async def _picture(
         self, request: TurnRequest, size: str, person: TurnPerson, deadline: float
     ) -> FinalEvent:
-        key = await self._authorise(person)
+        key = await _before(deadline, self._authorise(person))
         _refuse_after(deadline)
         body = bounded(
             picture_body(request, size, person_fingerprint(person.principal)), _limit_exceeded
         )
-        async with self._post(_PICTURES_PATH, body, key) as response:
-            file = await _picture_of(response)
+        async with _request_line(_PICTURE_REQUEST_EVENT) as step:
+            file = await _before(deadline, self._generated(body, key, step))
         return FinalEvent(text="", files=(file,))
 
+    async def _generated(self, body: str, key: str, step: StepTimer) -> RunFile:
+        async with self._post(_PICTURES_PATH, body, key, step) as response:
+            return await _picture_of(response)
+
     def _post(
-        self, path: str, body: str, key: str
+        self, path: str, body: str, key: str, step: StepTimer
     ) -> contextlib.AbstractAsyncContextManager[httpx2.Response]:
         if self._closed:
             raise RuntimeError("the gateway backend is closed")
         if self._pooled is None:
             self._pooled = _client(self._config.gateway, self._transport)
-        return _opened(self._pooled, "POST", path, key, content=body)
+        return _opened(self._pooled, "POST", path, key, step, content=body)
 
 
 @dataclass(frozen=True)
@@ -295,13 +299,10 @@ async def list_gateway_models(
 ) -> GatewayModels:
     """A bare ``GET /v1/models`` with the app's key, under a fixed deadline."""
     try:
-        async with asyncio.timeout(_MODEL_LIST_DEADLINE_SECONDS):
-            return await _get_models(gateway, transport)
+        return await _get_models(gateway, transport)
     except TurnStopped as stopped:
         # A 429 and a spent budget carry no detail; for a list each refuses like any other 4xx.
         detail = GatewayDetail(stopped.detail or GatewayDetail.GATEWAY_REFUSED)
-    except TimeoutError:
-        detail = GatewayDetail.TIMED_OUT
     # Raised outside the handlers, so no underlying exception stays in __context__, and in a
     # frame that never held the key, so its traceback shows none.
     raise ModelListUnavailable(detail)
@@ -312,10 +313,17 @@ async def _get_models(
 ) -> GatewayModels:
     key = _read_key(gateway.key_file)
     async with (
+        _request_line(_MODEL_LIST_REQUEST_EVENT) as step,
         _client(gateway, transport) as client,
-        _opened(client, "GET", _MODELS_PATH, key) as response,
     ):
-        return await _models_of(response)
+        try:
+            async with (
+                asyncio.timeout(_MODEL_LIST_DEADLINE_SECONDS),
+                _opened(client, "GET", _MODELS_PATH, key, step) as response,
+            ):
+                return await _models_of(response)
+        except TimeoutError:
+            raise _unavailable(GatewayDetail.TIMED_OUT) from None
 
 
 @contextlib.asynccontextmanager
@@ -324,12 +332,14 @@ async def _opened(
     method: str,
     path: str,
     key: str,
+    step: StepTimer,
     *,
     content: str | None = None,
 ) -> AsyncGenerator[httpx2.Response, None]:
     """The gateway's 200 response, open while it is read; a connection lost meanwhile is raised.
 
-    The request carries the host's ``traceparent`` inside a trace and none outside one.
+    The request carries the host's ``traceparent`` inside a trace and none outside one, and the
+    response's status goes on the request's line.
     """
     headers = {"Authorization": f"Bearer {key}", **outgoing_headers()}
     if content is not None:
@@ -337,6 +347,7 @@ async def _opened(
     try:
         # ssl.SSLError is an OSError.
         async with client.stream(method, path, content=content, headers=headers) as response:
+            step.add(status=response.status_code)
             await _raise_unless_ok(response)
             yield response
     except httpx2.HTTPError, httpx2.InvalidURL, OSError:
@@ -488,9 +499,7 @@ async def _raise_unless_ok(response: httpx2.Response) -> None:
     if status == HTTPStatus.TOO_MANY_REQUESTS:
         wait = _wait_seconds(response.headers.get("Retry-After"))
         raise _GatewayStop(TurnStopKind.REFUSED, RejectionCode.BUSY, retry_after_s=wait)
-    error = await _error_of(response)
-    _LOGGER.warning("the gateway answered with status %d, %s", status, error_kind_of(error))
-    if status == HTTPStatus.UNPROCESSABLE_CONTENT and _is_spent_budget(error):
+    if status == HTTPStatus.UNPROCESSABLE_CONTENT and _is_spent_budget(await _error_of(response)):
         raise _GatewayStop(TurnStopKind.REFUSED, RejectionCode.BUDGET_SPENT)
     is_refusal = HTTPStatus.BAD_REQUEST <= status < HTTPStatus.INTERNAL_SERVER_ERROR
     detail = GatewayDetail.GATEWAY_REFUSED if is_refusal else GatewayDetail.GATEWAY_FAILED
@@ -523,36 +532,77 @@ async def _read_body(response: httpx2.Response, limit: int) -> bytes:
     return bytes(body)
 
 
+@contextlib.asynccontextmanager
+async def _request_line(event: str) -> AsyncGenerator[StepTimer, None]:
+    """One request's ``.ended`` line, written when the block ends and then any stop is raised.
+
+    A stop inside the block is the line's outcome and reason; the host's close or a cancellation
+    makes it ``cancelled``. The turn reports a stop itself, so a failed line is a warning.
+    """
+    stopped: TurnStopped | None = None
+    async with StepTimer(event, _LOGGER) as step:
+        step.handled()
+        try:
+            yield step
+        except TurnStopped as caught:
+            _end_line_as(step, caught)
+            stopped = caught
+    if stopped is not None:
+        raise stopped
+
+
+def _end_line_as(step: StepTimer, stopped: TurnStopped) -> None:
+    if stopped.kind is TurnStopKind.REFUSED:
+        step.refuse(stopped.code.value)
+    else:
+        step.fail(stopped.detail or stopped.code.value)
+
+
+def _add_usage(step: StepTimer, usage: TurnUsage | None) -> None:
+    if usage is not None:
+        step.add(
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cached_input_tokens=usage.cached_input_tokens,
+            cache_write_tokens=usage.cache_write_tokens,
+        )
+
+
 async def _streamed_round(
-    opened: contextlib.AbstractAsyncContextManager[httpx2.Response],
+    open_request: Callable[[StepTimer], contextlib.AbstractAsyncContextManager[httpx2.Response]],
     offered: frozenset[str],
     deadline: float,
 ) -> AsyncGenerator[str | _Round, None]:
     """Each text piece of a round as it streams, then the round, judged whole.
 
     Opening the request and each read run under the deadline, and no timeout spans a yield. A
-    failure is raised after its handler ends.
+    deadline reached while the app holds a piece fails the round's line when the app pulls on. The
+    round's one line is written when the request ends, and a failure, the round's judgement
+    included, is raised after its handler ends.
     """
     failure: TurnStopped | None = None
     completed: list[StreamedRound] = []
-    async with contextlib.AsyncExitStack() as stack:
-        response = await _before(deadline, stack.enter_async_context(opened))
+    async with _request_line(_MODEL_REQUEST_EVENT) as step, contextlib.AsyncExitStack() as stack:
+        response = await _before(deadline, stack.enter_async_context(open_request(step)))
         chunks = await stack.enter_async_context(contextlib.aclosing(_chunks(response, deadline)))
         reading = read_round(chunks, round_limit_bytes=MAX_REQUEST_BYTES)
         try:
             async with contextlib.aclosing(reading) as parts:
                 while not isinstance(part := await anext(parts), StreamedRound):
+                    step.first_output()
                     yield part
+                    _refuse_after(deadline)
                 completed.append(part)
         except httpx2.DecodingError, MalformedRound:
             failure = _malformed_reply()
-        except RoundErrorEvent as event:
-            _LOGGER.warning("the gateway sent an error event, %s", event.kind)
+        except RoundErrorEvent:
             failure = _unavailable(GatewayDetail.GATEWAY_FAILED)
         if failure is not None:
             raise failure
+        _add_usage(step, completed[0].usage)
         await _read_to_the_end(chunks)
-    yield _judged(completed[0], offered)
+        judged = _judged(completed[0], offered)
+    yield judged
 
 
 async def _chunks(response: httpx2.Response, deadline: float) -> AsyncGenerator[bytes, None]:

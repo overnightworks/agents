@@ -38,7 +38,8 @@ async def serve(
     """Run one handler; an outcome that is no valid result event is a host defect like a raise.
 
     The one raise that is no defect is ``TurnStopped``: the handler ends the turn, so it passes.
-    A refusing stop is the call's ``refused`` line, a failing one its ``failed`` line.
+    A refusing stop is the call's ``refused`` line, a failing one its ``failed`` line with the
+    stop's code as the reason.
     """
     try:
         async with StepTimer(
@@ -46,8 +47,6 @@ async def serve(
         ) as step:
             step.handled()
             served = await _run(step, handler, person, call)
-    except TurnStopped:
-        raise
     except Exception:  # a handler is the app's code; its failure is a host defect
         return _failed_event(call, _HANDLER_FAILED_TEXT)
     if isinstance(served, TurnStopped):
@@ -58,13 +57,14 @@ async def serve(
 async def _run(
     step: StepTimer, handler: HandToolHandler, person: TurnPerson, call: RequestedCall
 ) -> ToolResultEvent | TurnStopped:
-    """The result, or a refusing stop handed back so the line closes before it is raised."""
+    """The result, or a stop handed back so the line closes before it is raised."""
     try:
         outcome = await handler(person.principal, call.arguments)
     except TurnStopped as stopped:
-        if stopped.kind is not TurnStopKind.REFUSED:
-            raise
-        step.refuse(stopped.code.value)
+        if stopped.kind is TurnStopKind.REFUSED:
+            step.refuse(stopped.code.value)
+        else:
+            step.fail(stopped.code.value)
         return stopped
     return _result_event(step, call, outcome)
 

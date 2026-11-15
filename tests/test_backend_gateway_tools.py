@@ -333,11 +333,12 @@ def test_a_handler_that_fails_the_turn_is_a_failed_call_at_warning_and_ends_the_
     assert stopped is failure
     assert len(gateway.requests) == 1
     ended = log_lines.one("tool_call.ended")
-    assert (ended["outcome"], ended["error_type"], ended["level"]) == (
+    assert (ended["outcome"], ended["reason"], ended["level"]) == (
         "failed",
-        "TurnStopped",
+        "provider_error",
         "warning",
     )
+    assert "error_type" not in ended
     assert "credentials" not in log_lines.everything()
 
 
