@@ -26,8 +26,8 @@ from redis import Redis
 
 from agents.mcp_wire import MCP_ENDPOINT_PATH
 from agents.member import STANDING_URI
-from tests.support.real_redis_pod import WRITE_PATH, WRITES_KEY, WRITTEN_MEMBER
 from tests.support.mcp_server_support import member_scope, rpc_body
+from tests.support.real_redis_pod import WRITE_PATH, WRITES_KEY, WRITTEN_MEMBER
 
 _REPOSITORY = Path(__file__).resolve().parents[3]
 _PREFIX = "notes"
