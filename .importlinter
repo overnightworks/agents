@@ -43,6 +43,7 @@ source_modules =
     agents.backend
     agents.backend.fake_gateway
     agents.backend.gateway
+    agents.backend.gateway_request
     agents.backend.streamed_round
     agents.backend.tool_result
     agents.config
@@ -74,6 +75,7 @@ source_modules =
     agents.backend
     agents.backend.fake_gateway
     agents.backend.gateway
+    agents.backend.gateway_request
     agents.backend.streamed_round
     agents.backend.tool_result
     agents.config
@@ -128,6 +130,18 @@ name = backend.streamed_round imports no HTTP library and not backend.gateway
 type = forbidden
 source_modules =
     agents.backend.streamed_round
+forbidden_modules =
+    httpx2
+    httpx
+    agents.backend.gateway
+
+# The request builder is pure the same way: it builds a body, so it imports no HTTP library, and
+# gateway.py calls it, never the reverse.
+[importlinter:contract:gateway-request-stays-pure]
+name = backend.gateway_request imports no HTTP library and not backend.gateway
+type = forbidden
+source_modules =
+    agents.backend.gateway_request
 forbidden_modules =
     httpx2
     httpx

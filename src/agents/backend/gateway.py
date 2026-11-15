@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import http.cookiejar
-import json
 import logging
 import re
 import ssl
@@ -21,7 +20,7 @@ from enum import StrEnum
 from http import HTTPStatus
 from pathlib import Path
 from types import TracebackType
-from typing import Final, Literal, NotRequired, Required, TypedDict
+from typing import Final
 
 import httpx2
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -35,9 +34,17 @@ from agents.backend import (
     TurnStopKind,
     TurnStopped,
 )
+from agents.backend.gateway_request import (
+    MAX_REQUEST_BYTES,
+    Message,
+    bounded,
+    opening_messages,
+    picture_body,
+    request_body,
+    result_message,
+)
 from agents.backend.streamed_round import (
     AssembledMessage,
-    AssembledToolCall,
     MalformedRound,
     RoundErrorEvent,
     StreamedRound,
@@ -56,7 +63,6 @@ from agents.tools import (
 from agents.turn import (
     MAX_EVENT_BYTES,
     MAX_RUN_FILES_BYTES,
-    TOOL_IMAGE_MEDIA_TYPE,
     FailureCode,
     GatewayModelName,
     ModelKind,
@@ -67,7 +73,6 @@ from agents.turn import (
     loaded_json,
     model_kind_of,
     person_fingerprint,
-    written_base64,
 )
 from agents.turn_events import (
     AssistantTextEvent,
@@ -90,7 +95,6 @@ _PICTURE_FILE_NAME: Final = "picture"
 _TRANSPORT_LOGGERS: Final = ("httpx2", "httpcore2")
 _MAX_KEY_BYTES: Final = 1024
 _PRINTABLE_ASCII: Final = re.compile(r"[\x21-\x7e]+")
-_MAX_REQUEST_BYTES: Final = 4 * MAX_EVENT_BYTES
 _MAX_PICTURE_BODY_BYTES: Final = base64_length(MAX_RUN_FILES_BYTES) + MAX_EVENT_BYTES
 _UNREADABLE_REPLY: Final = (
     ValueError,
@@ -102,8 +106,6 @@ _UNREADABLE_REPLY: Final = (
 )
 _ARGUMENTS: Final = TypeAdapter(JsonObject)
 _MODEL_NAME: Final = TypeAdapter(GatewayModelName)
-# The chat format has no error flag on a tool message, so the text carries it to the model.
-_ERROR_PREFIX: Final = "Error: "
 _NOT_RUN_CONTENT: Final = "not run: one call per reply"
 
 
@@ -203,12 +205,12 @@ class GatewayBackend(AgentBackend):
         try:
             key = await _before(deadline, self._authorise(person))
             offered = frozenset(tools)
-            messages = _opening_messages(request)
+            messages = opening_messages(request)
             user = person_fingerprint(person.principal)
             usages: list[TurnUsage | None] = []
             while True:
                 _refuse_after(deadline)
-                body = _bounded(_body(request, messages, user))
+                body = bounded(request_body(request, messages, user), _limit_exceeded)
                 opened = self._post(_COMPLETIONS_PATH, body, key)
                 async with contextlib.aclosing(_streamed_round(opened, offered, deadline)) as parts:
                     while isinstance(part := await anext(parts), str):
@@ -228,9 +230,9 @@ class GatewayBackend(AgentBackend):
                     progress.wrote |= tools[call.name].effect is ToolEffect.SIDE_EFFECTING
                     handler = self._tools[call.name].handler
                     result = await _before(deadline, serve(handler, person, call))
-                    messages.append(_result_message(result))
+                    messages.append(result_message(result))
                     yield result
-                messages += [_result_message(_not_run(call)) for call in reply.calls[len(served) :]]
+                messages += [result_message(_not_run(call)) for call in reply.calls[len(served) :]]
         except TurnStopped as stopped:
             stopped.after_side_effect = stopped.after_side_effect or progress.wrote
             raise
@@ -254,7 +256,9 @@ class GatewayBackend(AgentBackend):
     ) -> FinalEvent:
         key = await self._authorise(person)
         _refuse_after(deadline)
-        body = _bounded(_picture_body(request, size, person_fingerprint(person.principal)))
+        body = bounded(
+            picture_body(request, size, person_fingerprint(person.principal)), _limit_exceeded
+        )
         async with self._post(_PICTURES_PATH, body, key) as response:
             file = await _picture_of(response)
         return FinalEvent(text="", files=(file,))
@@ -371,66 +375,13 @@ def _client(
         raise _unavailable(GatewayDetail.CONNECTION_FAILED) from None
 
 
-class _TextPart(TypedDict):
-    type: Literal["text"]
-    text: str
-
-
-class _ImageUrl(TypedDict):
-    url: str
-
-
-class _ImagePart(TypedDict):
-    type: Literal["image_url"]
-    image_url: _ImageUrl
-
-
-class _Message(TypedDict):
-    role: Required[str]
-    content: NotRequired[str | list[_ImagePart | _TextPart] | None]
-    tool_call_id: NotRequired[str]
-    tool_calls: NotRequired[list[AssembledToolCall]]
-
-
-class _FunctionSpec(TypedDict):
-    name: str
-    description: str
-    parameters: JsonObject
-
-
-class _FunctionTool(TypedDict):
-    type: str
-    function: _FunctionSpec
-
-
-class _PictureBody(TypedDict):
-    model: str
-    prompt: str
-    size: str
-    user: str
-
-
-class _StreamOptions(TypedDict):
-    include_usage: bool
-
-
-class _Body(TypedDict):
-    model: str
-    messages: list[_Message]
-    user: str
-    stream: bool
-    stream_options: _StreamOptions
-    tools: NotRequired[list[_FunctionTool]]
-    parallel_tool_calls: NotRequired[bool]
-
-
 @dataclass(frozen=True)
 class _Round:
     """One judged reply: the answer when the model stopped, else the calls it asked for."""
 
     text: str
     calls: tuple[RequestedCall, ...]
-    message: _Message | None
+    message: Message | None
     usage: TurnUsage | None = None
 
 
@@ -475,54 +426,8 @@ def _limit_exceeded() -> TurnStopped:
     return _GatewayStop(TurnStopKind.FAILED, FailureCode.LIMIT_EXCEEDED)
 
 
-def _opening_messages(request: TurnRequest) -> list[_Message]:
-    messages: list[_Message] = [{"role": "system", "content": request.turn.system}]
-    messages += [
-        _Message(role=message.role.value, content=message.text) for message in request.turn.messages
-    ]
-    return messages
-
-
 def _not_run(call: RequestedCall) -> ToolResultEvent:
     return ToolResultEvent(tool_use_id=call.id, content=_NOT_RUN_CONTENT, is_error=True)
-
-
-def _result_message(result: ToolResultEvent) -> _Message:
-    text = _ERROR_PREFIX + result.content if result.is_error else result.content
-    if result.image is None:
-        return {"role": "tool", "tool_call_id": result.tool_use_id, "content": text}
-    # a text part the provider would refuse as blank is left out; the image goes first
-    url = f"data:{TOOL_IMAGE_MEDIA_TYPE};base64,{written_base64(result.image.content)}"
-    parts: list[_ImagePart | _TextPart] = [{"type": "image_url", "image_url": {"url": url}}]
-    if text.strip():
-        parts.append({"type": "text", "text": text})
-    return {"role": "tool", "tool_call_id": result.tool_use_id, "content": parts}
-
-
-def _body(request: TurnRequest, messages: list[_Message], user: str) -> str:
-    body: _Body = {
-        "model": request.model,
-        "messages": messages,
-        "user": user,
-        "stream": True,
-        "stream_options": {"include_usage": True},
-    }
-    if request.tools:
-        # ``effect`` is for the client, so the projection names its fields.
-        body["tools"] = [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
-            }
-            for tool in request.tools
-        ]
-        if request.one_call_per_reply:
-            body["parallel_tool_calls"] = False
-    return json.dumps(body)
 
 
 def _summed(usages: list[TurnUsage | None]) -> TurnUsage | None:
@@ -533,24 +438,6 @@ def _summed(usages: list[TurnUsage | None]) -> TurnUsage | None:
             return None
         total = usage if total is None else total + usage
     return total
-
-
-def _picture_body(request: TurnRequest, size: str, user: str) -> str:
-    prompt = f"{request.turn.system}\n\n{request.turn.messages[0].text}"
-    body: _PictureBody = {
-        "model": request.model,
-        "prompt": prompt,
-        "size": size,
-        "user": user,
-    }
-    return json.dumps(body)
-
-
-def _bounded(body: str) -> str:
-    """A request over the one bound is not sent."""
-    if len(body.encode("utf-8")) > _MAX_REQUEST_BYTES:
-        raise _limit_exceeded()
-    return body
 
 
 def _read_key(key_file: Path) -> str:
@@ -582,9 +469,10 @@ def _plain(stopped: TurnStopped) -> TurnStopped:
 def _beyond_the_gateway_path(trace: TracebackType | None) -> TracebackType | None:
     """The traceback without the gateway path's frames: they hold the key, the reply and the calls.
 
-    The path is this module and ``tool_result``, whose ``serve`` frame holds the call's arguments.
+    The path is this module, ``gateway_request`` and ``tool_result``, whose ``serve`` frame holds
+    the call's arguments.
     """
-    path = (globals(), serve.__globals__)
+    path = (globals(), serve.__globals__, bounded.__globals__)
     kept: TracebackType | None = None
     outside: list[TracebackType] = []
     while trace is not None:
@@ -658,7 +546,7 @@ async def _streamed_round(
     async with contextlib.AsyncExitStack() as stack:
         response = await _before(deadline, stack.enter_async_context(opened))
         chunks = await stack.enter_async_context(contextlib.aclosing(_chunks(response, deadline)))
-        reading = read_round(chunks, round_limit_bytes=_MAX_REQUEST_BYTES)
+        reading = read_round(chunks, round_limit_bytes=MAX_REQUEST_BYTES)
         try:
             async with contextlib.aclosing(reading) as parts:
                 while not isinstance(part := await anext(parts), StreamedRound):
@@ -775,7 +663,7 @@ def _calls_of(
             raise _malformed_reply()
         arguments = _ARGUMENTS.validate_json(function["arguments"])
         calls.append(RequestedCall(id=call_id, name=name, arguments=arguments))
-    reply: _Message = {
+    reply: Message = {
         "role": "assistant",
         "content": message["content"],
         "tool_calls": raw_calls,
