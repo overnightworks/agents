@@ -20,7 +20,7 @@ from agents.mcp_server.place_store import (
     LeaseStanding,
     PlaceStoreError,
 )
-from agents.mcp_server.redis_place_store import RedisPlaceStore
+from agents.mcp_server.redis_place_store import CLAIM_FOR, RedisPlaceStore
 from agents.member import LEASE_SECONDS
 from agents.turn import Principal
 from tests.support import redis_listen_support
@@ -50,12 +50,17 @@ async def a_settled_namespace(pod: RedisPlaceStore, clock: RedisClock) -> None:
 
 
 @asynccontextmanager
-async def serving(pod: RedisPlaceStore) -> AsyncIterator[list[tuple[Principal, str]]]:
-    """The lapses the pod's lapse service hands over, collected until the block ends."""
+async def serving(
+    pod: RedisPlaceStore, *, refusals: int = 0
+) -> AsyncIterator[list[tuple[Principal, str]]]:
+    """Every lapse the pod's lapse service hands over, collected until the block ends; the handler
+    raises on its first ``refusals`` calls."""
     handled: list[tuple[Principal, str]] = []
 
     async def handle(principal: Principal, generation: str) -> None:
         handled.append((principal, generation))
+        if len(handled) <= refusals:
+            raise RuntimeError("the host failed")
 
     task = asyncio.create_task(pod.serve_lapses(handle, claimer="pod"))
     try:
@@ -230,6 +235,24 @@ def test_every_key_a_lease_writes_lies_under_the_agents_namespace(
     assert {key.decode() for key in every_key} == set(namespaced)
     assert all(key.startswith(f"{_PREFIX}-agents:") for key in namespaced)
 
+
+def test_a_lapse_whose_handler_raised_returns_with_the_same_generation_after_the_claim_ran_out(
+    server: FakeServer, redis_clock: RedisClock
+) -> None:
+    async def scenario() -> tuple[str, list[tuple[Principal, str]]]:
+        pod = a_pod(server)
+        await a_settled_namespace(pod, redis_clock)
+        renewal = await pod.renew(_ALICE)
+        redis_clock.advance(LEASE_SECONDS)
+        async with serving(a_pod(server), refusals=1) as handled:
+            await handed_over(handled, 1)
+            redis_clock.advance(CLAIM_FOR.total_seconds() + 1)
+            await handed_over(handled, 2)
+            return renewal.generation, list(handled)
+
+    generation, handled = asyncio.run(scenario())
+
+    assert handled == [(_ALICE, generation)] * 2
 
 
 def test_a_claim_that_runs_out_under_a_running_handler_is_not_logged_with_the_generation(
