@@ -699,7 +699,12 @@ it stores, tandem's channel included, under `<prefix>-agents`, so its keys and w
 your app's; it refuses a prefix ending in `-agents`. The client carries a `Retry` and sets
 `socket_timeout` and `socket_connect_timeout`: without the timeouts a publish to a silent Redis
 waits for ever, and without the `Retry` the first re-read after a Redis restart can fail on a
-stale pooled connection (tandem's README names both duties).
+stale pooled connection (tandem's README names both duties). The client is built without
+`decode_responses=True`: on a decoding client redis-py drops the connection on a payload that is no
+UTF-8, so each one costs a resync (an open gap on overnightworks/tandem#2). The first `changed` or
+`tools_changed` after a Redis restart may raise `PlaceStoreError`, because tandem never resends a
+`PUBLISH` and a stale pooled connection fails it; the host expects that and relies on the listen's
+read within `LISTEN_BOUND_SECONDS`.
 
 `running()` yields at the first confirmed subscription, so a pod turns ready only once it hears
 changes; while Redis is unreachable it stays not ready, and a subscription the store refuses
@@ -709,8 +714,7 @@ honored that, and the front logs one line, because a change sent while the subsc
 is lost. When a publish fails, `changed` raises `PlaceStoreError` (a host never imports tandem or
 redis to catch it) and retries nothing: delivery is uncertain, and a member sees the change by its
 next listen's read within `LISTEN_BOUND_SECONDS`. A payload on agents' channel that is no address
-is logged by its length and skipped; one that is no UTF-8 also resubscribes, so every open stream
-gets the resync pulse and the front logs its resync line. If the subscription fails for good after
+is logged by its length and skipped, one that is no UTF-8 included. If the subscription fails for good after
 startup, the front logs the cause, ends its open listens and answers every request with 503 until
 the pod restarts.
 Proved by `tests/test_mcp_server_place_wake.py`, `tests/integration/test_redis_place_store.py` and

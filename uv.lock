@@ -495,7 +495,7 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'mcp-server'", specifier = ">=2.3,<3" },
     { name = "overnightworks-agents", extras = ["backend", "mcp-server", "redis", "voice"], marker = "extra == 'dev'" },
     { name = "overnightworks-agents", extras = ["mcp-server"], marker = "extra == 'redis'" },
-    { name = "overnightworks-tandem", marker = "extra == 'redis'", git = "https://github.com/overnightworks/tandem?rev=v0.1.0" },
+    { name = "overnightworks-tandem", marker = "extra == 'redis'", git = "https://github.com/overnightworks/tandem?rev=v0.1.1" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = "==1.1.414" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1,<10" },
@@ -511,8 +511,8 @@ provides-extras = ["backend", "mcp-server", "redis", "voice", "dev"]
 
 [[package]]
 name = "overnightworks-tandem"
-version = "0.1.0"
-source = { git = "https://github.com/overnightworks/tandem?rev=v0.1.0#a1209c759a257ac080e150bb9f6b0228e4f5a75d" }
+version = "0.1.1"
+source = { git = "https://github.com/overnightworks/tandem?rev=v0.1.1#4aa4db65bd4ec35d431bfc1f925d0f381b758a9a" }
 dependencies = [
     { name = "redis" },
 ]
