@@ -22,7 +22,7 @@ The base depends on `pydantic` and `ruamel.yaml` only. Four extras are optional:
 |---|---|---|
 | `backend` | `httpx2`, `overnightworks-logline` | `GatewayBackend`, the one backend, and `FakeGateway`, its scripted transport for tests |
 | `mcp-server` | `anyio`, the official MCP SDK (`mcp`), `overnightworks-logline` | `agents.mcp_server`, an app's MCP endpoint on revision 2026-07-28 |
-| `redis` | `mcp-server`, `overnightworks-tandem` 0.6 (which brings `redis`) | `RedisPlaceStore`, the place store and the member leases of an app that runs more than one pod |
+| `redis` | `mcp-server`, `overnightworks-tandem` 0.7 (which brings `redis`) | `RedisPlaceStore`, the place store and the member leases of an app that runs more than one pod |
 | `voice` | `syntok` | `agents.voice`, the voice loop: an agent hears a place's lines and answers sentence by sentence, as text |
 
 The `backend` and `mcp-server` extras name `overnightworks-logline` by version range only, and it is
@@ -31,7 +31,7 @@ not on PyPI either: a host using either extra pins it by git tag itself
 the extra declares), calls `logline.configure` once and ignores `overnightworks-*` in its
 Dependabot entry. The library writes its steps as logline lines and sends the host's `traceparent`
 to its gateway; `docs/connector.md` ("The log") lists them. The `redis` extra names
-`overnightworks-tandem` by range only as well (tag v0.6.0, which writes logline lines too): the host pins the tag itself.
+`overnightworks-tandem` by range only as well (tag v0.7.1, which writes logline lines too): the host pins the tag itself.
 
 ## Use
 

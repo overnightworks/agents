@@ -14,16 +14,16 @@ dependencies = [
 [project.optional-dependencies]
 backend = [
     "httpx2>=2.12,<3",
-    "overnightworks-logline>=0.3,<0.4",
+    "overnightworks-logline>=0.3,<0.5",
 ]
 mcp-server = [
     "anyio>=4.12,<5",
     "mcp>=2.3,<3",
-    "overnightworks-logline>=0.3,<0.4",
+    "overnightworks-logline>=0.3,<0.5",
 ]
 redis = [
     "overnightworks-agents[mcp-server]",
-    "overnightworks-tandem>=0.6,<0.7",
+    "overnightworks-tandem>=0.7,<0.8",
 ]
 voice = [
     "syntok>=1.4.4,<2",
@@ -49,8 +49,8 @@ Repository = "https://github.com/overnightworks/agents"
 dev = ["overnightworks-logline", "overnightworks-tandem"]
 
 [tool.uv.sources]
-overnightworks-logline = { git = "https://github.com/overnightworks/logline", tag = "v0.3.0", group = "dev" }
-overnightworks-tandem = { git = "https://github.com/overnightworks/tandem", tag = "v0.6.0", group = "dev" }
+overnightworks-logline = { git = "https://github.com/overnightworks/logline", tag = "v0.4.0", group = "dev" }
+overnightworks-tandem = { git = "https://github.com/overnightworks/tandem", tag = "v0.7.1", group = "dev" }
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
