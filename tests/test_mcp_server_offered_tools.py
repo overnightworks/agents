@@ -155,17 +155,21 @@ def test_a_call_with_arguments_asks_the_offer_exactly_once(
 
 
 @pytest.mark.parametrize(
-    "breakage",
+    ("breakage", "error_type"),
     [
-        pytest.param({"failure": RuntimeError("secret-marker")}, id="raises"),
-        pytest.param({"unusable": ("bid", "never_declared")}, id="undeclared name"),
-        pytest.param({"unusable": "bid"}, id="bare text"),
-        pytest.param({"unusable": b"bid"}, id="bare bytes"),
-        pytest.param({"unusable": 7}, id="no collection"),
-        pytest.param({"unusable": iter(["bid"])}, id="iterator"),
-        pytest.param({"unusable": (name for name in ["bid"])}, id="generator"),
-        pytest.param({"unusable": ("bid", 7)}, id="non-text item"),
-        pytest.param({"unusable": ([],)}, id="unhashable item"),
+        pytest.param({"failure": RuntimeError("secret-marker")}, "RuntimeError", id="raises"),
+        pytest.param(
+            {"unusable": ("bid", "never_declared")}, "_UnusableOfferError", id="undeclared name"
+        ),
+        pytest.param({"unusable": "bid"}, "_UnusableOfferError", id="bare text"),
+        pytest.param({"unusable": b"bid"}, "_UnusableOfferError", id="bare bytes"),
+        pytest.param({"unusable": 7}, "_UnusableOfferError", id="no collection"),
+        pytest.param({"unusable": iter(["bid"])}, "_UnusableOfferError", id="iterator"),
+        pytest.param(
+            {"unusable": (name for name in ["bid"])}, "_UnusableOfferError", id="generator"
+        ),
+        pytest.param({"unusable": ("bid", 7)}, "_UnusableOfferError", id="non-text item"),
+        pytest.param({"unusable": ([],)}, "TypeError", id="unhashable item"),
     ],
 )
 @pytest.mark.parametrize("method", ["tools/list", "tools/call"])
@@ -177,6 +181,7 @@ def test_a_broken_offer_answers_one_fixed_failure_and_logs_only_the_exception_ty
     log_lines: LogLines,
     method: str,
     breakage: dict[str, Any],
+    error_type: str,
 ) -> None:
     for field_name, value in breakage.items():
         setattr(offer, field_name, value)
@@ -188,7 +193,11 @@ def test_a_broken_offer_answers_one_fixed_failure_and_logs_only_the_exception_ty
     assert person.calls == []
     failed = log_lines.one("tool_offer.failed")
     logged = log_lines.everything()
-    assert (failed["method"], failed["level"]) == (method, "error")
+    assert (failed["method"], failed["level"], failed["error_type"]) == (
+        method,
+        "error",
+        error_type,
+    )
     assert "secret-marker" not in logged + json.dumps(reply)
     assert "never_declared" not in logged + json.dumps(reply)
 
