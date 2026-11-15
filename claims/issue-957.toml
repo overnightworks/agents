@@ -1,8 +1,0 @@
-claim_id = "6649b0c3b0f14b9f96f77810aec675cf"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "02b48e73d66c7b80b462ae79bba9b988815da1d1"
-branch = "claude/issue-957-talked-over-hold"
-scope = ["docs/connector.md", "docs/hearing.md", "src/agents/member.py", "tests"]
-opened_commit = "e113e49674b23e6d02d40d6ae7e877f328b5a427"
-whole_reason = "The held state, the continue, the stop by id and its new answer, the speak with the id and the held refusal only work together for the caller; about 85 production lines in one module."
