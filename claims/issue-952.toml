@@ -1,0 +1,8 @@
+claim_id = "29e5482539b64857b83a844ddf1c4bbc"
+agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
+role = "builder"
+base = "4d1d9ecd7ea34c43cf8e1d3c306a14230981ed8e"
+branch = "claude/issue-952-listen-record"
+scope = [".importlinter", "AGENTS.md", "README.md", "docs/ARCHITECTURE.md", "docs/calling.md", "docs/connector.md", "pyproject.toml", "src/agents/mcp_server/__init__.py", "src/agents/mcp_server/listen.py", "src/agents/mcp_server/place_store.py", "src/agents/mcp_server/redis_place_store.py", "tests", "uv.lock"]
+opened_commit = "363eae0618ed2fa0e67271815e1d96816494d23c"
+whole_reason = "The listen record port, its three tandem scripts, the core's turns and lapse loop and their real-Redis proof only work together; about 325 added and 55 deleted production lines in six files."
