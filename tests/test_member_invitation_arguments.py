@@ -299,10 +299,12 @@ def test_accept_invitation_arguments_refuse_voices_outside_the_form(
 def test_a_host_side_voices_type_refuses_what_the_accept_arguments_refuse(
     voices: list[str],
 ) -> None:
+    wire_text = json.dumps(ACCEPT_WIRE | {"voices": voices})
+
     with pytest.raises(ValidationError):
         TypeAdapter(Voices).validate_python(voices)
     with pytest.raises(ValidationError):
-        AcceptInvitationArguments.model_validate_json(json.dumps(ACCEPT_WIRE | {"voices": voices}))
+        AcceptInvitationArguments.model_validate_json(wire_text)
 
 
 def test_a_figure_takes_a_clip_for_each_base_gesture_and_reads_them_back() -> None:

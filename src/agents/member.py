@@ -244,6 +244,7 @@ VoiceName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,64}$")]
 ``.``, ``_`` or ``-``. The name is passed through unchanged; the app's speech service decides
 whether it offers that voice."""
 
+
 def _name_no_voice_twice(voices: tuple[str, ...]) -> tuple[str, ...]:
     if len(set(voices)) != len(voices):
         raise ValueError("a voice is named at most once")
