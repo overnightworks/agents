@@ -225,8 +225,11 @@ def test_a_stop_answer_reads_stopped_and_dropped_each_as_its_own_record(
     ids=["both", "neither"],
 )
 def test_a_stop_answer_that_is_both_or_neither_is_refused(wire: dict[str, Any]) -> None:
+    answer_adapter = TypeAdapter(StopSpeakingAnswer)
+    payload = json.dumps(wire)
+
     with pytest.raises(ValidationError):
-        TypeAdapter(StopSpeakingAnswer).validate_json(json.dumps(wire))
+        answer_adapter.validate_json(payload)
 
 
 def test_a_window_reads_its_hold_back_from_its_json_unchanged() -> None:
