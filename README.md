@@ -20,10 +20,17 @@ The base depends on `pydantic` and `ruamel.yaml` only. Four extras are optional:
 
 | Extra | Adds | For |
 |---|---|---|
-| `backend` | `httpx2` | `GatewayBackend`, the one backend, and `FakeGateway`, its scripted transport for tests |
-| `mcp-server` | `anyio`, the official MCP SDK (`mcp`) | `agents.mcp_server`, an app's MCP endpoint on revision 2026-07-28 |
+| `backend` | `httpx2`, `overnightworks-logline` | `GatewayBackend`, the one backend, and `FakeGateway`, its scripted transport for tests |
+| `mcp-server` | `anyio`, the official MCP SDK (`mcp`), `overnightworks-logline` | `agents.mcp_server`, an app's MCP endpoint on revision 2026-07-28 |
 | `redis` | `mcp-server`, `overnightworks-tandem` (which brings `redis`) | `RedisPlaceStore`, the place store and the member leases of an app that runs more than one pod |
 | `voice` | `syntok` | `agents.voice`, the voice loop: an agent hears a place's lines and answers sentence by sentence, as text |
+
+The `backend` and `mcp-server` extras name `overnightworks-logline` by version range only, and it is
+not on PyPI either: a host using either extra pins it by git tag itself
+(`overnightworks-logline @ git+https://github.com/overnightworks/logline@v<version>`, inside the range
+the extra declares), calls `logline.configure` once and ignores `overnightworks-*` in its
+Dependabot entry. The library writes its steps as logline lines and sends the host's `traceparent`
+to its gateway; `docs/connector.md` ("The log") lists them.
 
 ## Use
 
