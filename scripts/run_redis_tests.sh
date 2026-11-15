@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the two-process tests against a throwaway Redis: scripts/run_redis_tests.sh [pytest argument...]
+# Runs the tests of tests/integration/real_redis against a throwaway Redis: scripts/run_redis_tests.sh [pytest argument...]
 #
 # The tests find the server in AGENTS_TEST_REDIS_URL. The container goes when the run ends, is stopped
 # or the caller dies; an image this run pulled goes with it. Keep the image and the server arguments
