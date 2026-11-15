@@ -82,14 +82,16 @@ jobs:
           python3 -I -m zipfile -e dist/overnightworks_agents-*-py3-none-any.whl "$licence"
           cmp LICENSE "$licence"/overnightworks_agents-*.dist-info/licenses/LICENSE
 
-      - name: The logline source a host supplies
+      - name: The git sources a host supplies
         run: |
           python3 -I -c '
           import tomllib
 
           with open("pyproject.toml", "rb") as pyproject:
-              source = tomllib.load(pyproject)["tool"]["uv"]["sources"]["overnightworks-logline"]
-          print("LOGLINE_SOURCE=overnightworks-logline @ git+" + source["git"] + "@" + source["tag"])
+              sources = tomllib.load(pyproject)["tool"]["uv"]["sources"]
+          for name in ("logline", "tandem"):
+              source = sources["overnightworks-" + name]
+              print(name.upper() + "_SOURCE=overnightworks-" + name + " @ git+" + source["git"] + "@" + source["tag"])
           ' >> "$GITHUB_ENV"
 
       - name: The client wheel imports alone, without its extras
@@ -140,7 +142,7 @@ jobs:
           proof="$(mktemp -d "$RUNNER_TEMP/client-redis.XXXXXX")"
           uv venv "$proof/venv"
           client_wheel="$(ls "$GITHUB_WORKSPACE"/dist/overnightworks_agents-*-py3-none-any.whl)"
-          uv pip install --python "$proof/venv/bin/python" "$client_wheel[redis]" "$LOGLINE_SOURCE"
+          uv pip install --python "$proof/venv/bin/python" "$client_wheel[redis]" "$LOGLINE_SOURCE" "$TANDEM_SOURCE"
           cd "$proof"
           "$proof/venv/bin/python" -I -c '
           import agents.mcp_server.redis_place_store
