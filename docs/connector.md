@@ -200,6 +200,13 @@ Proved by `tests/test_backend_gateway_tools.py`: `test_two_tools_with_one_name_a
 `test_a_selected_tool_without_a_handler_raises_before_any_request`,
 `test_a_request_declaration_that_differs_from_its_handler_s_raises_before_any_request`.
 
+The backend owns one pooled `httpx2` client, built on its first request and reused across
+rounds, pictures and turns, so a later request skips the TCP and TLS handshake. The host closes
+it: `async with GatewayBackend(...)` or `await backend.aclose()`; a `run` after that raises
+`RuntimeError`. A pooled connection the gateway closed while idle is dropped before reuse and a
+fresh one serves the turn; the client adds no retry, so a close that lands between that check
+and the write fails the turn as `provider_unavailable: connection_failed`.
+
 **Admission,** in order, before any request: a `person.role` outside `request.roles` is
 `refused: forbidden`; `person.groups()` runs once and a refusal it raises reaches the app
 unchanged; an `api_group` the person lacks is `refused: not_enabled`. Proved by
@@ -236,15 +243,20 @@ What the client sends for a text turn, and nothing else:
 
 | Part | Value |
 | --- | --- |
-| Request | `POST <origin>/v1/chat/completions`, no redirect followed, no cookie kept, no proxy variable read; HTTPS trusts `ca_file` alone |
+| Request | `POST <origin>/v1/chat/completions`, no redirect followed, no cookie stored or sent (the client's jar allows no domain), no proxy variable read; HTTPS trusts `ca_file` alone |
 | Headers | `Authorization: Bearer <key>`, `Content-Type: application/json`, and the transport's own defaults; no `x-litellm-*` or `anthropic-*` header |
 | Body | exactly `model` (the request's `text/<model>` name), `messages` (the system prompt, then the turn's messages, then the round's calls and results), `user`, `stream` (`true`), `stream_options` (`{"include_usage": true}`, on every round) and, when the agent has tools, `tools` (OpenAI function tools of each declaration's `name`, `description` and `parameters`) and, when the agent has tools and `one_call_per_reply` is on, `parallel_tool_calls` (`false`); no `max_tokens`, `metadata`, `tags`, `fallbacks`, `num_retries`, `mock_response`, `api_key` or cache marker |
 | `user` | `"fp-" + sha256(json.dumps([iss, sub], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()`, 67 characters |
 
 Proved by `tests/test_backend_gateway.py`: `test_the_request_is_one_post_with_the_system_prompt_and_the_messages`,
 `test_no_header_beyond_the_transports_own_defaults_is_sent`, `test_no_pinned_absent_field_is_sent`,
-`test_a_redirect_is_not_followed_and_a_cookie_is_not_kept`, `test_the_proxy_environment_is_ignored`
-and `test_https_is_trusted_through_the_configured_ca_file_alone`.
+`test_the_proxy_environment_is_ignored`
+and `test_https_is_trusted_through_the_configured_ca_file_alone`; and by `tests/test_backend_gateway_pooling.py`:
+`test_a_redirect_is_not_followed_and_a_cookie_is_not_kept`,
+`test_a_cookie_the_gateway_sets_is_not_sent_back_over_a_pooled_connection`,
+`test_consecutive_turns_share_one_connection`,
+`test_a_connection_the_gateway_closed_while_idle_still_serves_the_next_turn` and
+`test_closing_the_backend_ends_its_connection_and_refuses_further_turns`.
 
 The same values in the same order give the same bytes, and within a turn a round's body begins
 with the round before: its `model`, its `tools` and its messages up to that round's last message
@@ -401,7 +413,7 @@ exist is the gateway's: the client checks the size's shape only.
 
 `await list_gateway_models(config.gateway, *, transport=None)` (in
 `agents.backend.gateway`) answers a `GatewayModels` for an admin page, which has no
-turn. It sends a bare `GET <origin>/v1/models` with a text turn's client rules and
+turn. It sends a bare `GET <origin>/v1/models` with a text turn's client rules, on a client of its own that it closes, and
 `Authorization: Bearer <key>` alone. The key file is read per call. The whole call has one
 deadline of 10 seconds and a reply body bound of `MAX_EVENT_BYTES`. Proved by
 `tests/test_backend_gateway_models.py`: `test_the_request_is_a_bare_get_with_the_key_and_nothing_else`,

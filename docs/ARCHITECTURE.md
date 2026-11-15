@@ -77,7 +77,8 @@ A turn runs inside the app's process. `GatewayBackend.run` admits the person, re
 file and streams one chat completion per round: the round's text reaches the app as the model
 writes it, and when the round asks for tools the app's handlers run in order once the round is
 complete and judged whole, before the next request. One deadline bounds the whole turn. Nothing
-persists: the client holds no state between turns, except that the voice loop holds one running
+persists: the client holds no state between turns, except the gateway backend's pooled connections,
+which the host closes, and that the voice loop holds one running
 conversation in memory for as long as it runs. The gateway holds the budget.
 
 The voice loop runs in the host's process too. Lines come in from the host's hearing port; the

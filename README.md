@@ -37,12 +37,14 @@ from agents.agent_file import load_agent
 from agents.backend.gateway import GatewayBackend
 
 agent = load_agent(files("my_app") / "agents" / "assistant.md", declarations)
-backend = GatewayBackend(settings.agent, tools=hand_tools)
 
-async with aclosing(backend.run(agent.request(messages), person)) as events:
-    async for event in events:
-        ...
+async with GatewayBackend(settings.agent, tools=hand_tools) as backend:
+    async with aclosing(backend.run(agent.request(messages), person)) as events:
+        async for event in events:
+            ...
 ```
+
+The backend keeps its gateway connections open between turns; leaving the `async with` closes them.
 
 `person` is a `TurnPerson`, always the verified person. A turn that ends short of its answer raises
 `TurnStopped`, which says whether it was refused or failed and whether a side-effecting tool had
