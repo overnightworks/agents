@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import signal
 import socket
 import subprocess
@@ -30,6 +31,7 @@ from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 from tandem.keys import deadline_keys
 
+from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.listen import LAPSE_POLL_SECONDS
 from agents.mcp_server.place_store import ListeningTurn, ResourceChange, Resubscribed
 from agents.mcp_server.redis_place_store import CLAIM_FOR, RedisPlaceStore
@@ -50,6 +52,8 @@ from tests.support.redis_listen_support import (
     UNUSUAL_URIS,
     delivered_up_to,
     eventually,
+    namespace_of,
+    snapshots_around_evalsha,
     subscribed,
 )
 
@@ -392,3 +396,51 @@ def test_a_lapsed_stream_leaves_no_member_whatever_its_principal_and_uri_hold(
     ]
     assert (listens, listeners) == (False, frozenset())
     assert admin.keys("*") == []
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        pytest.param("no json", id="a record that is no json"),
+        pytest.param(
+            json.dumps(["no json", [STANDING_URI]]), id="a principal text that is no json"
+        ),
+    ],
+)
+def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_logs(
+    redis_url: str, admin: Redis, record: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """``cjson.decode`` raises on text that is no JSON; the fake Redis raises a Python error there
+    that no real server shows."""
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    alice = a_member("alice")
+
+    async def scenario() -> tuple[tuple[object, object], list[object]]:
+        client = AsyncRedis.from_url(redis_url)
+        watcher = AsyncRedis.from_url(redis_url)
+        around_scripts = snapshots_around_evalsha(client, lambda: namespace_of(watcher, _PREFIX))
+        store = RedisPlaceStore(client, key_prefix=_PREFIX)
+        async with subscribed(store) as events:
+            await store.acknowledged("held", alice, [STANDING_URI], timedelta(milliseconds=1))
+            await delivered_up_to(store, events, _FIRST_BARRIER)
+            admin.hset(f"{_PREFIX}-agents:v1:streams", "held", record)
+
+            async def claimed() -> bool:
+                await store.lapse_due("pod")
+                return bool(
+                    admin.zscore(deadline_keys(f"{_PREFIX}-agents", "listen").claimed, "held")
+                )
+
+            await eventually(claimed, seconds=_WAIT_SECONDS)
+            return around_scripts[-1], await delivered_up_to(store, events, _SECOND_BARRIER)
+
+    (before, after), seen = asyncio.run(scenario())
+
+    assert after == before
+    assert seen == [
+        Resubscribed(),
+        ListeningTurn(alice, STANDING_URI, listens=True),
+        _FIRST_BARRIER,
+        _SECOND_BARRIER,
+    ]
+    assert caplog.records
