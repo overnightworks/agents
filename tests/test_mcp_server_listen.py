@@ -50,6 +50,7 @@ alice = listen_support.alice
 bob = listen_support.bob
 app = listen_support.app
 changes = listen_support.changes
+place_signals = listen_support.place_signals
 front = listen_support.front
 served = listen_support.served
 
@@ -122,7 +123,7 @@ def test_an_empty_honored_set_is_acknowledged_and_then_silent_until_the_bound(
 
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
-            changes.changed(alice, STANDING_URI)
+            await changes.changed(alice, STANDING_URI)
             await asyncio.sleep(LISTEN_BOUND_SECONDS * 2)
 
     served(scenario())
@@ -171,8 +172,8 @@ def test_a_parent_subscription_receives_a_new_place_only_when_the_principal_may_
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
             app.readable[alice][new_place] = an_empty_record()
-            changes.changed(alice, window_uri("foreign"))
-            changes.changed(alice, new_place)
+            await changes.changed(alice, window_uri("foreign"))
+            await changes.changed(alice, new_place)
             await settled()
 
     served(scenario())
@@ -187,9 +188,9 @@ def test_an_exact_place_subscriber_gets_that_place_and_no_standing(
 
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
-            changes.changed(alice, STANDING_URI)
-            changes.changed(alice, window_uri("second"))
-            changes.changed(alice, window_uri("first"))
+            await changes.changed(alice, STANDING_URI)
+            await changes.changed(alice, window_uri("second"))
+            await changes.changed(alice, window_uri("first"))
             await settled()
 
     served(scenario())
@@ -204,7 +205,7 @@ def test_a_pulse_queued_before_a_removal_is_not_delivered(
 
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
-            changes.changed(alice, window_uri("first"))
+            await changes.changed(alice, window_uri("first"))
             del app.readable[alice][window_uri("first")]
             await settled()
 
@@ -223,7 +224,7 @@ def test_a_removal_under_backpressure_leaves_at_most_the_two_already_checked_fra
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
             for place in places:
-                changes.changed(alice, place)
+                await changes.changed(alice, place)
             await settled()
             for place in places:
                 del app.readable[alice][place]
@@ -245,11 +246,11 @@ def test_a_repeated_pending_uri_is_delivered_once_at_its_first_arrival(
 
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
-            changes.changed(alice, second)
-            changes.changed(alice, first)
-            changes.changed(alice, second)
-            changes.changed(alice, STANDING_URI)
-            changes.changed(alice, first)
+            await changes.changed(alice, second)
+            await changes.changed(alice, first)
+            await changes.changed(alice, second)
+            await changes.changed(alice, STANDING_URI)
+            await changes.changed(alice, first)
             await settled()
 
     served(scenario())
@@ -281,7 +282,7 @@ def test_one_principals_streams_each_receive_a_change_and_no_other_member_does(
             open_stream(streams["bob"]),
             open_stream(streams["alice at another issuer"]),
         ):
-            changes.changed(alice, STANDING_URI)
+            await changes.changed(alice, STANDING_URI)
             await settled()
 
     served(scenario())
@@ -317,7 +318,7 @@ def test_a_clients_disconnect_frees_its_stream_with_no_completion_frame(
         async with front.running(), open_stream(connection):
             pass
         asked_before = len(app.current_asked)
-        changes.changed(alice, STANDING_URI)
+        await changes.changed(alice, STANDING_URI)
         await settled()
         assert len(app.current_asked) == asked_before
 
@@ -349,7 +350,7 @@ def test_a_disconnect_while_the_port_answers_is_no_failure_and_writes_no_complet
         async with front.running(), open_stream(connection):
             if port_answers == "during delivery":
                 app.current_seconds = LISTEN_BOUND_SECONDS * 2
-                changes.changed(alice, STANDING_URI)
+                await changes.changed(alice, STANDING_URI)
                 await settled()
 
     served(scenario())
@@ -377,7 +378,7 @@ def test_a_stalled_client_cannot_hold_the_call_past_the_cap(
 
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
-            changes.changed(alice, STANDING_URI)
+            await changes.changed(alice, STANDING_URI)
             await asyncio.sleep(LISTEN_BOUND_SECONDS * 2)
 
     served(scenario())
@@ -393,7 +394,7 @@ def test_a_client_that_stalls_past_the_bound_still_gets_the_completion_the_handl
 
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
-            changes.changed(alice, STANDING_URI)
+            await changes.changed(alice, STANDING_URI)
             await asyncio.sleep(LISTEN_BOUND_SECONDS + 1)
             connection.release()
             await settled()
@@ -446,7 +447,7 @@ def test_a_bearer_signature_in_a_later_frame_cuts_the_stream_before_that_frame(
 
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
-            changes.changed(alice, carrying)
+            await changes.changed(alice, carrying)
             await settled()
             assert connection.returned_after is not None
 
@@ -479,7 +480,7 @@ def test_a_port_raising_during_delivery_sends_no_frame_and_completes(
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
             app.failure = RuntimeError("marker")
-            changes.changed(alice, STANDING_URI)
+            await changes.changed(alice, STANDING_URI)
             await settled()
             assert connection.returned_after is not None
 
@@ -512,7 +513,7 @@ def test_no_marker_from_a_uri_a_principal_or_a_failure_reaches_any_log(
             app.failure = failure
         async with front.running(), open_stream(connection):
             app.failure = failure
-            changes.changed(member, uri)
+            await changes.changed(member, uri)
             await settled()
 
     served(scenario())
@@ -685,15 +686,15 @@ def test_the_sdk_client_is_acknowledged_receives_changes_and_ends_at_the_gracefu
             async with client.listen(resource_subscriptions=[STANDING_URI, foreign]) as stream:
                 honored = stream.honored.resource_subscriptions
                 app.readable[alice][new_place] = an_empty_record()
-                changes.changed(alice, foreign)
-                changes.changed(alice, new_place)
-                changes.changed(alice, STANDING_URI)
+                await changes.changed(alice, foreign)
+                await changes.changed(alice, new_place)
+                await changes.changed(alice, STANDING_URI)
                 delivered: list[str] = []
                 async for event in stream:
                     delivered.append(event.uri)
                     if event.uri == STANDING_URI:
                         app.failure = RuntimeError("the port ends the stream")
-                        changes.changed(alice, STANDING_URI)
+                        await changes.changed(alice, STANDING_URI)
             app.failure = None
             async with client.listen(resource_subscriptions=[STANDING_URI]) as again:
                 honored_again = again.honored.resource_subscriptions
@@ -710,7 +711,7 @@ def test_a_change_signalled_from_a_worker_thread_reaches_the_open_stream(
     front: McpPersonFront, alice: Principal, changes: ResourceChanges
 ) -> None:
     def signal_from_the_worker() -> None:
-        anyio.from_thread.run_sync(changes.changed, alice, STANDING_URI)
+        anyio.from_thread.run(changes.changed, alice, STANDING_URI)
 
     async def through_a_socket() -> str | None:
         async with loopback_client(loopback_server(front), alice) as client:
@@ -755,7 +756,7 @@ def test_an_abrupt_cut_raises_subscription_lost_at_the_sdk_client_and_a_relisten
             loopback_server(front), alice, bearer="head.payload.sigOfTheStream"
         ) as client:
             async with client.listen(resource_subscriptions=[STANDING_URI]) as stream:
-                changes.changed(alice, carrying)
+                await changes.changed(alice, carrying)
                 with pytest.raises(SubscriptionLost):
                     async for _event in stream:
                         pass

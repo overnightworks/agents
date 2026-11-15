@@ -14,6 +14,7 @@ from agents.mcp_server.person import (
     PersonToolHandler,
     ResolvePerson,
 )
+from agents.mcp_server.place_store import PlaceSignals, PlaceStoreError
 from agents.mcp_server.resources import MemberResources
 from agents.mcp_server.routes import RouteProfileError, RouteTools, route_tools
 
@@ -26,6 +27,8 @@ __all__ = [
     "PersonRequest",
     "PersonTool",
     "PersonToolHandler",
+    "PlaceSignals",
+    "PlaceStoreError",
     "ResolvePerson",
     "ResourceChanges",
     "RouteProfileError",

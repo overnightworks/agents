@@ -2,9 +2,11 @@
 
 A notification only says that something changed: the client reads the resource or the tool list
 afterwards, so a lost, repeated or late one leaves no stale state. An app calls
-``ResourceChanges.changed`` or ``tools_changed`` only after the change is visible to a read. Every
-open stream keeps its own pending pulses, coalesced and in arrival order, which is why several
-streams of one principal each receive a change and no overflow policy exists.
+``ResourceChanges.changed`` or ``tools_changed`` only after the change is visible to a read. Both
+publish an address through the place store; every pod, the publishing one included, delivers it
+from its subscription to its open streams. Every open stream keeps its own pending pulses,
+coalesced and in arrival order, which is why several streams of one principal each receive a change
+and no overflow policy exists.
 
 The SDK's ``ListenHandler`` checks no principal, so this module owns the handler. It registers
 its stream first, so a change while the acknowledgement is being built is kept, and it checks
@@ -16,10 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Collection, Generator, Sequence
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Callable, Collection, Generator, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from typing import Any, Final
+from uuid import uuid4
 
 import anyio
 from mcp.server.context import ServerRequestContext
@@ -40,6 +43,14 @@ from mcp_types import (
 )
 
 from agents.mcp_server.asgi import LISTEN_METHOD, LOGGER_NAME
+from agents.mcp_server.place_store import (
+    PlaceSignal,
+    PlaceSignals,
+    PlaceStoreError,
+    ResourceChange,
+    Resubscribed,
+    ToolsChange,
+)
 from agents.mcp_server.resources import MemberResources, failure_answer, served_uris
 from agents.member import (
     LISTEN_ALLOWANCE_SECONDS,
@@ -64,18 +75,37 @@ class _ListenStream:
         self._arrived = anyio.Event()
         self._honored: dict[str, None] = {}
         self._honors_tools = False
+        self._ended = False
 
     def add(self, pulse: _Pulse) -> None:
         self._pulses[pulse] = None
         self._arrived.set()
 
-    async def next(self) -> _Pulse:
-        while not self._pulses:
+    def end(self) -> None:
+        self._ended = True
+        self._arrived.set()
+
+    @property
+    def ended(self) -> bool:
+        return self._ended
+
+    async def next(self) -> _Pulse | None:
+        """The oldest pending pulse, or ``None`` once the stream was ended."""
+        while not self._pulses and not self._ended:
             await self._arrived.wait()
             self._arrived = anyio.Event()
+        if self._ended:
+            return None
         pulse = next(iter(self._pulses))
         del self._pulses[pulse]
         return pulse
+
+    def resync(self) -> None:
+        """Pulses everything the stream honored: each URI, and the tool list if it honored that."""
+        for uri in self._honored:
+            self.add(ResourceUpdated(uri))
+        if self._honors_tools:
+            self.add(ToolsListChanged())
 
     @property
     def honored(self) -> Collection[str]:
@@ -94,6 +124,11 @@ class ResourceChanges:
     """How an app says that a member's resource or tool offer changed; no argument of a request
     reaches it.
 
+    ``changed`` and ``tools_changed`` publish through the place store and raise
+    ``PlaceStoreError`` when it fails; the change is then uncertain to have reached the other pods,
+    and a member sees it at the next listen's read. The front enters ``following`` in its own
+    ``running()``.
+
     ``listening_changed`` is called with the principal, the URI and the new answer of
     ``listens_to`` whenever that answer changes: to yes on the request task that wrote the first
     acknowledgement honoring the URI, to no on the event loop once the last such stream ended and
@@ -102,30 +137,98 @@ class ResourceChanges:
     """
 
     def __init__(
-        self, listening_changed: Callable[[Principal, str, bool], None] | None = None
+        self,
+        store: PlaceSignals,
+        *,
+        listening_changed: Callable[[Principal, str, bool], None] | None = None,
     ) -> None:
+        self._store = store
+        self._origin = uuid4().hex
         self._streams: dict[Principal, set[_ListenStream]] = {}
         self._listening_changed = listening_changed
+        self._dead = False
 
-    def changed(self, recipient: Principal, uri: str) -> None:
-        """Signal every registered stream of the recipient; a stream that has ended and waits out
-        its allowance never reads the pulse.
+    async def changed(self, recipient: Principal, uri: str) -> None:
+        """Signal every registered stream of the recipient on every pod; a stream that has ended
+        and waits out its allowance never reads the pulse.
 
-        Runs on the front's event loop or through ``anyio.from_thread.run_sync``, and only after
-        the change is visible to the read.
+        Runs on the front's event loop or through ``anyio.from_thread.run``, and only after the
+        change is visible to the read.
         """
-        for pending in self._streams.get(recipient, ()):
-            pending.add(ResourceUpdated(uri))
+        await self._store.publish(ResourceChange(recipient, uri, self._origin))
 
-    def tools_changed(self, recipient: Principal) -> None:
-        """Signal every registered stream of the recipient that the tools offered to it changed;
-        only a stream that honored ``toolsListChanged`` writes it.
+    async def tools_changed(self, recipient: Principal) -> None:
+        """Signal every registered stream of the recipient on every pod that the tools offered to
+        it changed; only a stream that honored ``toolsListChanged`` writes it.
 
-        Runs on the front's event loop or through ``anyio.from_thread.run_sync``, and only after
-        the new offer is visible to ``offered_tools``.
+        Runs on the front's event loop or through ``anyio.from_thread.run``, and only after the new
+        offer is visible to ``offered_tools``.
         """
-        for pending in self._streams.get(recipient, ()):
-            pending.add(ToolsListChanged())
+        await self._store.publish(ToolsChange(recipient, self._origin))
+
+    @property
+    def dead(self) -> bool:
+        """Whether the subscription failed for good: no change arrives any more."""
+        return self._dead
+
+    @asynccontextmanager
+    async def following(self) -> AsyncGenerator[None, None]:
+        """The store's subscription as a task of its own, for as long as the block runs.
+
+        Yields at the first ``Resubscribed`` and raises ``PlaceStoreError`` if the subscription
+        fails or ends before it. A failure after it logs the cause, ends every open stream and
+        turns ``dead``; the block stays entered. The task runs outside the SDK manager's task
+        group, so its failure never reaches one.
+        """
+        confirmed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        subscription = asyncio.create_task(self._follow(confirmed))
+        try:
+            await confirmed
+            yield
+        finally:
+            subscription.cancel()
+            await asyncio.wait({subscription})
+
+    async def _follow(self, confirmed: asyncio.Future[None]) -> None:
+        try:
+            async for event in self._store.received():
+                if isinstance(event, Resubscribed):
+                    self._resync()
+                    if confirmed.done():
+                        _LOG.info("the place store re-subscribed and every stream was resynced")
+                    else:
+                        confirmed.set_result(None)
+                else:
+                    self._deliver(event)
+            raise PlaceStoreError("the place store's subscription ended")
+        except Exception as failure:
+            if confirmed.done():
+                self._die(failure)
+            else:
+                unconfirmed = PlaceStoreError("the place store did not confirm its subscription")
+                unconfirmed.__cause__ = failure
+                confirmed.set_exception(unconfirmed)
+
+    def _deliver(self, signal: PlaceSignal) -> None:
+        pulse: _Pulse
+        if isinstance(signal, ResourceChange):
+            pulse = ResourceUpdated(signal.uri)
+        else:
+            pulse = ToolsListChanged()
+        for stream in self._streams.get(signal.principal, ()):
+            stream.add(pulse)
+
+    def _resync(self) -> None:
+        for streams in self._streams.values():
+            for stream in streams:
+                stream.resync()
+
+    def _die(self, failure: Exception) -> None:
+        self._dead = True
+        _LOG.error("the place store's subscription failed for good: %s", failure)
+        for streams in self._streams.values():
+            for stream in streams:
+                stream.end()
 
     def listens_to(self, principal: Principal, uri: str) -> bool:
         """Whether a stream of the principal honored the URI and is open or ended not yet
@@ -143,6 +246,8 @@ class ResourceChanges:
         """One stream for as long as it is open; one that honored a URI counts on for the
         allowance after it ends."""
         stream = _ListenStream()
+        if self._dead:
+            stream.end()
         self._streams.setdefault(recipient, set()).add(stream)
         try:
             yield stream
@@ -249,9 +354,8 @@ async def _deliver(
     stream: _Stream,
 ) -> None:
     """Writes each wanted pulse, a resource's only while the principal may still read it, until a
-    port failure ends it."""
-    while True:
-        pulse = await open_stream.next()
+    port failure or the end of the stream ends it."""
+    while (pulse := await open_stream.next()) is not None:
         if isinstance(pulse, ToolsListChanged):
             if open_stream.honors_tools:
                 await stream.pulse(pulse)
@@ -283,6 +387,8 @@ async def on_subscriptions_listen(
     """
     stream = _Stream(context)
     with changes.opened(principal) as open_stream, anyio.move_on_after(LISTEN_BOUND_SECONDS):
+        if open_stream.ended:
+            return stream.completed()
         try:
             readable = await served_uris(resources, principal)
         except Exception as failure:

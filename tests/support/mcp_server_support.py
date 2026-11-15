@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
-from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -106,6 +106,10 @@ def a_person_tool() -> PersonTool:
     return PersonTool(declaration("read_note"), answer_note)
 
 
+async def do_nothing() -> None:
+    return None
+
+
 @dataclass
 class MemberApp:
     """The host's truth behind the resources port: per member, what is readable by URI.
@@ -124,12 +128,12 @@ class MemberApp:
     asked: list[tuple[Principal, str]] = field(default_factory=list)
     current_seconds: float = 0
     current_asked: list[Principal] = field(default_factory=list)
-    before_current: Callable[[], None] = lambda: None
+    before_current: Callable[[], Awaitable[None]] = do_nothing
 
     async def current(self, principal: Principal) -> Collection[str]:
         await asyncio.sleep(self.current_seconds)
         self.current_asked.append(principal)
-        self.before_current()
+        await self.before_current()
         if self.failure is not None:
             raise self.failure
         if self.unusable is not None:

@@ -6,7 +6,7 @@ answers which members hear a finished utterance and returns the line to append; 
 ``seq``, appends the line to those members' windows and signals the change. Seeing is read with
 ``allows`` and ``sensing``, and an end deletes its entries as it deletes hearing's. The record
 lives in memory, in one process, and is called on the front's event loop or through
-``anyio.from_thread.run_sync``, as ``ResourceChanges`` is.
+``anyio.from_thread.run_sync``.
 
 A member hears an utterance only if the member's entry exists when ``heard`` runs and was switched
 on no later than the utterance began. An end deletes entries, so no utterance finishing after it

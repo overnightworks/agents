@@ -20,6 +20,7 @@ from tests.support.mcp_server_support import (
     settled,
     window_uri,
 )
+from tests.support.place_store_support import PlaceSignalsFake
 
 alice = listen_support.alice
 bob = listen_support.bob
@@ -27,6 +28,7 @@ app = listen_support.app
 changes = listen_support.changes
 front = listen_support.front
 served = listen_support.served
+place_signals = listen_support.place_signals
 
 type Signal = tuple[Principal, str, bool]
 _PAST_THE_ALLOWANCE = LISTEN_ALLOWANCE_SECONDS + 1
@@ -38,9 +40,14 @@ def signals() -> list[Signal]:
 
 
 @pytest.fixture
-def signalling_changes(signals: list[Signal]) -> ResourceChanges:
+def signalling_changes(
+    place_signals: PlaceSignalsFake, signals: list[Signal]
+) -> ResourceChanges:
     return ResourceChanges(
-        lambda principal, uri, listens: signals.append((principal, uri, listens))
+        place_signals,
+        listening_changed=lambda principal, uri, listens: signals.append(
+            (principal, uri, listens)
+        ),
     )
 
 
@@ -260,14 +267,17 @@ def test_a_stream_signals_only_once_acknowledged(
 
 
 def test_a_callable_that_raises_leaves_the_listen_unharmed_and_is_logged_by_type_only(
-    app: MemberApp, alice: Principal, caplog: pytest.LogCaptureFixture
+    app: MemberApp,
+    alice: Principal,
+    place_signals: PlaceSignalsFake,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level(logging.ERROR, logger=LOGGER_NAME)
 
     def raises(_principal: Principal, _uri: str, _listens: bool) -> None:
         raise RuntimeError("the host's secret detail")
 
-    changes = ResourceChanges(raises)
+    changes = ResourceChanges(place_signals, listening_changed=raises)
     front = McpPersonFront([], resolve_person=resolve_member, resources=app, changes=changes)
     connection = listen_connection(front, alice, [STANDING_URI])
 
@@ -276,7 +286,7 @@ def test_a_callable_that_raises_leaves_the_listen_unharmed_and_is_logged_by_type
         async with front.running():
             async with open_stream(connection):
                 answers.append(changes.listens_to(alice, STANDING_URI))
-                changes.changed(alice, STANDING_URI)
+                await changes.changed(alice, STANDING_URI)
                 await settled()
             await asyncio.sleep(_PAST_THE_ALLOWANCE)
             answers.append(changes.listens_to(alice, STANDING_URI))
@@ -300,14 +310,14 @@ def test_a_callable_that_raises_leaves_the_listen_unharmed_and_is_logged_by_type
     ],
 )
 def test_the_answer_equals_the_signal_at_every_signal(
-    app: MemberApp, alice: Principal, requested: list[str]
+    app: MemberApp, alice: Principal, place_signals: PlaceSignalsFake, requested: list[str]
 ) -> None:
     seen: list[tuple[bool, bool]] = []
 
     def records_the_answer(principal: Principal, uri: str, listens: bool) -> None:
         seen.append((listens, changes.listens_to(principal, uri)))
 
-    changes = ResourceChanges(records_the_answer)
+    changes = ResourceChanges(place_signals, listening_changed=records_the_answer)
     front = McpPersonFront([], resolve_person=resolve_member, resources=app, changes=changes)
     connection = listen_connection(front, alice, requested)
 

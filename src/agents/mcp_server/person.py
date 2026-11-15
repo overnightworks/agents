@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Mapping, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import partial
@@ -282,6 +282,7 @@ class McpPersonFront:
         }
         self._listing = ListToolsResult(tools=list(self._tool_listings.values()))
         self._offered_tools = offered_tools
+        self._changes = changes
         self._resolve_person = resolve_person
         self._server: Server[Any] = Server(
             _SERVER_NAME,
@@ -317,6 +318,11 @@ class McpPersonFront:
     async def running(self) -> AsyncGenerator[None, None]:
         """The SDK's manager for the host's lifespan; a request outside it fails loud.
 
+        With ``ResourceChanges`` it yields at the first confirmed subscription of the place store
+        and raises ``PlaceStoreError`` if that fails first. A subscription that fails later
+        leaves it entered: the front logs the cause, ends its open listens and answers every
+        request with 503 until the pod restarts.
+
         The SDK logs request methods and handler failures with their content, so each of its
         server loggers the host left unset is held above any record's level from here on: a
         host's DEBUG on the root logger never reaches it, and a level the host sets on it wins.
@@ -333,7 +339,10 @@ class McpPersonFront:
             stateless=True,
             security_settings=TransportSecuritySettings(enable_dns_rebinding_protection=False),
         )
-        async with manager.run():
+        async with AsyncExitStack() as stack:
+            if self._changes is not None:
+                await stack.enter_async_context(self._changes.following())
+            await stack.enter_async_context(manager.run())
             self._manager = manager
             try:
                 yield
@@ -341,6 +350,9 @@ class McpPersonFront:
                 self._manager = None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if self._changes is not None and self._changes.dead:
+            await write(send, HttpAnswer(HTTPStatus.SERVICE_UNAVAILABLE, None, b""))
+            return
         principal = self._resolve_person(scope)
         # A host without a type checker can return anything from its callback.
         if not isinstance(principal, Principal):  # pyright: ignore[reportUnnecessaryIsInstance]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 import pytest
@@ -14,12 +14,14 @@ from tests.support.mcp_server_support import (
     ListenConnection,
     MemberApp,
     a_member,
+    do_nothing,
     open_stream,
     readable_uris,
     resolve_member,
     settled,
     window_uri,
 )
+from tests.support.place_store_support import PlaceSignalsFake
 from tests.support.virtual_time import in_virtual_time
 
 
@@ -44,8 +46,13 @@ def app(alice: Principal, bob: Principal) -> MemberApp:
 
 
 @pytest.fixture
-def changes() -> ResourceChanges:
-    return ResourceChanges()
+def place_signals() -> PlaceSignalsFake:
+    return PlaceSignalsFake()
+
+
+@pytest.fixture
+def changes(place_signals: PlaceSignalsFake) -> ResourceChanges:
+    return ResourceChanges(place_signals)
 
 
 @pytest.fixture
@@ -57,21 +64,21 @@ async def signalled_around_acknowledgement(
     front: McpPersonFront,
     app: MemberApp,
     connection: ListenConnection,
-    signal: Callable[[], None],
+    signal: Callable[[], Awaitable[None]],
     *,
     while_the_port_answers: bool,
 ) -> None:
     """Opens the stream and signals once, while the port answers the acknowledgement or after it."""
 
-    def signal_once() -> None:
-        app.before_current = lambda: None
-        signal()
+    async def signal_once() -> None:
+        app.before_current = do_nothing
+        await signal()
 
     if while_the_port_answers:
         app.before_current = signal_once
     async with front.running(), open_stream(connection):
         if not while_the_port_answers:
-            signal_once()
+            await signal_once()
         await settled()
 
 
