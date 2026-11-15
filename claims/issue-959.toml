@@ -1,0 +1,8 @@
+claim_id = "18c831280bac4e5fa9c4aad7c75d3a4b"
+agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
+role = "builder"
+base = "02b48e73d66c7b80b462ae79bba9b988815da1d1"
+branch = "claude/issue-959-voice-reply-words"
+scope = ["docs/connector.md", "src/agents/voice/reply.py", "tests"]
+opened_commit = "67259a67a285341a5af26e01e1ffa4f6e49dd20f"
+whole_reason = "one protocol sentence and one reader rule, with their test and doc; tests is the reader test only"
