@@ -211,9 +211,10 @@ def test_a_failing_store_raises_place_store_error_from_each_lease_call(
     server: FakeServer, call: Callable[[RedisPlaceStore], Awaitable[object]]
 ) -> None:
     server.connected = False
+    lease_call = call(a_pod(server))
 
     with pytest.raises(PlaceStoreError):
-        asyncio.run(call(a_pod(server)))
+        asyncio.run(lease_call)
 
 
 def test_every_key_a_lease_writes_lies_under_the_agents_namespace(
