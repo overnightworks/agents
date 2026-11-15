@@ -34,7 +34,6 @@ from tests.support.mcp_server_support import (
 
 _PREFIX = "notes"
 _ALICE = a_member("alice")
-_NO_UTF8_PAYLOAD = b"\xff\xfe\xfd"
 
 
 @pytest.fixture
@@ -139,11 +138,12 @@ def test_a_payload_that_is_no_utf8_is_skipped_and_the_subscription_goes_on(
 ) -> None:
     caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
     wake = ResourceChange(_ALICE, STANDING_URI, "pod-a")
+    no_utf8_payload = b"\xff\xfe\xfd"
 
     async def scenario() -> list[PlaceSignal | Resubscribed]:
         async with subscribed(a_pod(server)) as events:
             await FakeAsyncRedis(server=server).publish(
-                "notes-agents:tandem:v1:wake", _NO_UTF8_PAYLOAD
+                "notes-agents:tandem:v1:wake", no_utf8_payload
             )
             await arrived(events, 2)
             await a_pod(server).publish(wake)
@@ -153,7 +153,7 @@ def test_a_payload_that_is_no_utf8_is_skipped_and_the_subscription_goes_on(
     assert asyncio.run(scenario()) == [Resubscribed(), Resubscribed(), wake]
     (warning,) = caplog.records
     assert warning.levelno == logging.WARNING
-    assert str(len(_NO_UTF8_PAYLOAD)) in warning.getMessage()
+    assert str(len(no_utf8_payload)) in warning.getMessage()
     assert not any(part in warning.getMessage() for part in ("xff", "xfe", "xfd", "\xff"))
 
 
