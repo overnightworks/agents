@@ -149,7 +149,11 @@ class GatewayBackend(AgentBackend):
         await self.aclose()
 
     async def aclose(self) -> None:
-        """Close the pooled connections; a ``run`` after this raises ``RuntimeError``."""
+        """Close the pooled connections; a ``run`` or a round after this raises ``RuntimeError``.
+
+    The pooled client is bound to the event loop of its first request: drive one backend from
+    one loop.
+    """
         self._closed = True
         if self._pooled is not None:
             pooled, self._pooled = self._pooled, None

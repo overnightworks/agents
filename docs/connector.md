@@ -205,7 +205,11 @@ rounds, pictures and turns, so a later request skips the TCP and TLS handshake. 
 it: `async with GatewayBackend(...)` or `await backend.aclose()`; a `run` after that raises
 `RuntimeError`. A pooled connection the gateway closed while idle is dropped before reuse and a
 fresh one serves the turn; the client adds no retry, so a close that lands between that check
-and the write fails the turn as `provider_unavailable: connection_failed`.
+and the write fails the turn as `provider_unavailable: connection_failed`. After `[DONE]` a
+round reads the rest of the reply, up to 1 second and 64 KiB, so the connection can be reused; a
+longer or slower tail closes the connection instead and costs the turn at most that second. The
+pooled client belongs to the event loop of its first request, so a host drives one backend from
+one loop (`asyncio.run` once) and not across several.
 
 **Admission,** in order, before any request: a `person.role` outside `request.roles` is
 `refused: forbidden`; `person.groups()` runs once and a refusal it raises reaches the app
@@ -413,8 +417,8 @@ exist is the gateway's: the client checks the size's shape only.
 
 `await list_gateway_models(config.gateway, *, transport=None)` (in
 `agents.backend.gateway`) answers a `GatewayModels` for an admin page, which has no
-turn. It sends a bare `GET <origin>/v1/models` with a text turn's client rules, on a client of its own that it closes, and
-`Authorization: Bearer <key>` alone. The key file is read per call. The whole call has one
+turn. It sends a bare `GET <origin>/v1/models` with a text turn's client rules, on a client of its
+own that it closes, and `Authorization: Bearer <key>` alone. The key file is read per call. The whole call has one
 deadline of 10 seconds and a reply body bound of `MAX_EVENT_BYTES`. Proved by
 `tests/test_backend_gateway_models.py`: `test_the_request_is_a_bare_get_with_the_key_and_nothing_else`,
 `test_the_key_is_read_again_for_each_call` and `test_a_body_at_its_bound_passes`.
