@@ -5,12 +5,15 @@ run on a real Redis in ``real_redis``."""
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
 
+from agents.mcp_server import redis_place_store
 from agents.mcp_server.place_store import (
     LeaseRenewal,
     LeaseRoster,
@@ -226,3 +229,45 @@ def test_every_key_a_lease_writes_lies_under_the_agents_namespace(
     assert every_key
     assert {key.decode() for key in every_key} == set(namespaced)
     assert all(key.startswith(f"{_PREFIX}-agents:") for key in namespaced)
+
+
+
+def test_a_claim_that_runs_out_under_a_running_handler_is_not_logged_with_the_generation(
+    server: FakeServer,
+    redis_clock: RedisClock,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(redis_place_store, "CLAIM_FOR", timedelta(milliseconds=300))
+    caplog.set_level(logging.WARNING)
+
+    async def scenario() -> str:
+        pod = a_pod(server)
+        await a_settled_namespace(pod, redis_clock)
+        renewal = await pod.renew(_ALICE)
+        redis_clock.advance(LEASE_SECONDS)
+        running = asyncio.Event()
+        release = asyncio.Event()
+
+        async def handle(_principal: Principal, _generation: str) -> None:
+            running.set()
+            await release.wait()
+
+        service = asyncio.create_task(pod.serve_lapses(handle, claimer="pod"))
+        try:
+            async with asyncio.timeout(_WAIT_SECONDS):
+                await running.wait()
+                redis_clock.advance(1)
+                while not caplog.records:
+                    await asyncio.sleep(0.01)
+        finally:
+            release.set()
+            service.cancel()
+            await asyncio.wait({service})
+        return renewal.generation
+
+    generation = asyncio.run(scenario())
+
+    logged = " ".join(entry.getMessage() for entry in caplog.records)
+    assert _ALICE.sub in logged
+    assert generation not in logged

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Generator
 from contextlib import contextmanager
 from datetime import timedelta
@@ -41,6 +42,7 @@ from tandem import (
     wake_channel,
 )
 from tandem import Resubscribed as TandemResubscribed
+from tandem import leases as tandem_leases
 
 from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.place_store import (
@@ -58,6 +60,28 @@ from agents.member import LEASE_SECONDS
 from agents.turn import Principal
 
 _LOG: Final = logging.getLogger(LOGGER_NAME)
+
+# A lapse's key is its lease's generation, 32 hex digits, a colon and the holder; tandem logs the
+# whole key when a claim runs out under a running handler.
+_GENERATION_PREFIX: Final = re.compile(r"[0-9a-f]{32}:")
+
+
+class _WithoutGenerations(logging.Filter):
+    """Cuts the generation off every text argument of a record of tandem's lease logger, so that
+    a generation, which only the host's atomic step may see, never reaches a log."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _GENERATION_PREFIX.sub("", argument, count=1)
+                if isinstance(argument, str)
+                else argument
+                for argument in record.args
+            )
+        return True
+
+
+_WITHOUT_GENERATIONS: Final = _WithoutGenerations()
 _NAMESPACE_SUFFIX: Final = "-agents"
 CLAIM_FOR: Final = timedelta(seconds=5)
 _LEASE_FAMILY: Final = "member"
@@ -282,6 +306,7 @@ class RedisPlaceStore:
         self._channel = WakeChannel(redis, key_prefix=namespace)
         self._wake_channel = wake_channel(namespace)
         self._deadlines = Deadlines(redis, key_prefix=namespace, kind="listen", claim_for=CLAIM_FOR)
+        tandem_leases.logger.addFilter(_WITHOUT_GENERATIONS)
         self._leases = Leases(
             redis,
             key_prefix=namespace,
