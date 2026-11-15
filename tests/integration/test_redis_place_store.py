@@ -150,8 +150,8 @@ def test_a_payload_that_is_no_utf8_is_skipped_and_the_subscription_goes_on(
     assert asyncio.run(scenario()) == [Resubscribed(), wake]
     (warning,) = caplog.records
     assert warning.levelno == logging.WARNING
-    assert str(len(no_utf8_payload)) in warning.getMessage()
-    assert not any(part in warning.getMessage() for part in ("xff", "xfe", "xfd", "\xff"))
+    assert warning.payload_bytes == len(no_utf8_payload)  # type: ignore[attr-defined]
+    assert no_utf8_payload not in vars(warning).values()
 
 
 @pytest.mark.parametrize(
