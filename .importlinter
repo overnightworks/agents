@@ -59,6 +59,7 @@ forbidden_modules =
     anyio
     mcp
     mcp_types
+    redis
     tandem
 
 # The voice extra stays an extra the same way: the package __init__ is a source, the voice
@@ -175,9 +176,12 @@ forbidden_modules =
     syntok
 
 # The place store's Redis half stays an extra: only agents.mcp_server.redis_place_store imports
-# tandem, and no other mcp_server module, the package __init__ included, reaches it, so an app
-# without ResourceChanges never loads it. as_packages = False keeps the package __init__ a source
-# without making the modules beside it one; the wildcard covers every other mcp_server module.
+# tandem, and no other mcp_server module, the package __init__ included, reaches it or redis, so an
+# app without ResourceChanges never loads either. A protected contract needs its module in the
+# import graph, and redis is imported by no agents module, so it names tandem alone; the forbidden
+# contracts below hold redis out. as_packages = False keeps the package __init__ a source without
+# making the modules beside it one; the wildcard covers every other mcp_server module, and the
+# ignored import is the store's own.
 [importlinter:contract:only-the-redis-place-store-imports-tandem]
 name = only agents.mcp_server.redis_place_store imports tandem
 type = protected
@@ -187,7 +191,7 @@ allowed_importers =
     agents.mcp_server.redis_place_store
 
 [importlinter:contract:mcp-server-reaches-the-redis-place-store-nowhere]
-name = no other mcp_server module imports the Redis place store or tandem
+name = no other mcp_server module imports the Redis place store, tandem or redis
 type = forbidden
 as_packages = False
 source_modules =
@@ -196,10 +200,12 @@ source_modules =
 forbidden_modules =
     agents.mcp_server.redis_place_store
     tandem
+    redis
 ignore_imports =
     agents.mcp_server.redis_place_store -> tandem
 
-# redis reaches agents through tandem's Client alone: no agents module imports it.
+# redis reaches agents through tandem's Client alone: no agents module imports it, the place store
+# included.
 [importlinter:contract:agents-imports-no-redis-library]
 name = agents imports no redis library
 type = forbidden
