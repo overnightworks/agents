@@ -19,11 +19,17 @@ mcp-server = [
     "anyio>=4.12,<5",
     "mcp>=2.3,<3",
 ]
+redis = [
+    "overnightworks-agents[mcp-server]",
+    "overnightworks-tandem @ git+https://github.com/overnightworks/tandem@v0.1.0",
+    "redis>=8.1,<9",
+]
 voice = [
     "syntok>=1.4.4,<2",
 ]
 dev = [
-    "overnightworks-agents[backend,mcp-server,voice]",
+    "overnightworks-agents[backend,mcp-server,redis,voice]",
+    "fakeredis>=2.35,<3",
     "pyright==1.1.414",
     "pytest>=9.1,<10",
     "pytest-cov>=7.1,<8",
@@ -63,5 +69,6 @@ pythonVersion = "3.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}", "real_redis"]
 addopts = ["--import-mode=importlib"]
 pythonpath = ["."]

@@ -35,11 +35,13 @@ from tests.support.mcp_server_support import (
     resolve_member,
     settled,
 )
+from tests.support.place_store_support import PlaceSignalsFake
 
 alice = listen_support.alice
 bob = listen_support.bob
 app = listen_support.app
 changes = listen_support.changes
+place_signals = listen_support.place_signals
 served = listen_support.served
 
 _TOOLS_CHANGED = "notifications/tools/list_changed"
@@ -256,7 +258,7 @@ def test_a_tools_change_reaches_each_stream_of_its_member_that_honored_it_and_no
 
     async def scenario() -> None:
         async with front.running(), open_streams(*streams.values()):
-            changes.tools_changed(alice)
+            await changes.tools_changed(alice)
             await settled()
 
     served(scenario())
@@ -305,9 +307,9 @@ def test_repeated_tools_changes_are_written_once_beside_resource_changes_in_arri
 
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
-            changes.tools_changed(alice)
-            changes.changed(alice, STANDING_URI)
-            changes.tools_changed(alice)
+            await changes.tools_changed(alice)
+            await changes.changed(alice, STANDING_URI)
+            await changes.tools_changed(alice)
             await settled()
             connection.release()
             await settled()
@@ -322,10 +324,14 @@ def test_repeated_tools_changes_are_written_once_beside_resource_changes_in_arri
 
 
 def test_a_stream_honoring_only_tools_counts_for_no_uri_and_signals_no_listening(
-    app: MemberApp, person: Person, offer: ToolOffer, alice: Principal
+    app: MemberApp,
+    person: Person,
+    offer: ToolOffer,
+    alice: Principal,
+    place_signals: PlaceSignalsFake,
 ) -> None:
     heard: list[tuple[Principal, str, bool]] = []
-    changes = ResourceChanges(lambda *args: heard.append(args))
+    changes = ResourceChanges(place_signals, listening_changed=lambda *args: heard.append(args))
     front = McpPersonFront(
         [person.tool("bid")],
         resolve_person=resolve_member,
@@ -358,7 +364,7 @@ def test_the_sdk_client_hears_the_change_lists_the_new_offer_and_is_refused_the_
             ) as stream:
                 honored = stream.honored.tools_list_changed
                 offer.offered[alice] = ("edit_note",)
-                changes.tools_changed(alice)
+                await changes.tools_changed(alice)
                 async for event in stream:
                     assert isinstance(event, ToolsListChanged)
                     break

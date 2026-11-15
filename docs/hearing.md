@@ -104,8 +104,7 @@ switched on in the middle of a running utterance included, who does not yet hear
 ## The record's life
 
 **HEARING-12 (A).** The record lives in one process. The app calls it on the front's event loop
-or through `anyio.from_thread.run_sync`, as it does `ResourceChanges`; a call from another thread
-is not safe.
+or through `anyio.from_thread.run_sync`; a call from another thread is not safe.
 
 **HEARING-13 (L).** The record is in memory only: nothing is persisted, an utterance's text and
 name pass through `heard` and are kept nowhere, and no call logs. Proved by

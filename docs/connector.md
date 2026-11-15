@@ -465,7 +465,8 @@ the host registers as the exact route `MCP_ENDPOINT_PATH` (in `agents.mcp_wire`)
 never a `Mount`, which redirects `/mcp` to `/mcp/`, and behind the middleware that admits the
 caller: the host's gate answers every 401 and 403 before routing, so the front answers no challenge.
 The host enters `async with front.running():` once in its own lifespan, the one thing the SDK's
-session manager needs; a request outside it raises `RuntimeError`. The front runs on `asyncio`:
+session manager needs and, with `ResourceChanges`, the place store's subscription; a request
+outside it raises `RuntimeError`. The front runs on `asyncio`:
 the allowance timer of a listen uses the running loop, which `anyio` alone does not offer. Proved by
 `tests/test_mcp_server_person.py`:
 `test_an_exact_starlette_route_serves_discovery_list_and_call_without_a_redirect`,
@@ -680,12 +681,40 @@ and what a runner may rely on.
 every URI that principal may read now, and `read(principal, uri)` returns the app's current
 `MemberStanding`, `PlaceWindow` or `PlaceView` for it, or `None` when it is not that principal's. The principal
 is always the request's verified one and no argument names a recipient. `changes` is one
-`ResourceChanges` (exported by `agents.mcp_server`), without the port a `ValueError`:
-the host calls `changes.changed(recipient, uri)` for the recipient's `Principal` only after the
-change is visible to a read, on the front's event loop or through `anyio.from_thread.run_sync`; a
-call for a principal with no open stream does nothing. `server/discover` advertises `resources`
+`ResourceChanges(store)` (exported by `agents.mcp_server`), without the port a `ValueError`:
+the host awaits `changes.changed(recipient, uri)` for the recipient's `Principal` only after the
+change is visible to a read, on the front's event loop or through `anyio.from_thread.run`; a
+call for a principal with no open stream on any pod does nothing. `server/discover` advertises `resources`
 with the port, `resources.subscribe` true with `changes`, and `tools.listChanged` true only with
 `offered_tools`; `resources.listChanged` is always false.
+
+**The place store.** `store` is a `PlaceSignals` (exported by `agents.mcp_server`) shared by every
+pod of the app; `RedisPlaceStore(redis, *, key_prefix)`, imported from
+`agents.mcp_server.redis_place_store` and installed with the `redis` extra, is the one
+implementation. `changed` and `tools_changed` publish an address, never content, and every pod's
+front, the publishing one included, delivers it to its open streams, which read the app's own
+truth. Pass `RedisPlaceStore` your app's `redis.asyncio` client and its key prefix: its repository
+name, the one segment (`[a-z0-9][a-z0-9-]*`) your app gives its own tandem. agents keeps everything
+it stores, tandem's channel included, under `<prefix>-agents`, so its keys and wakes never meet
+your app's; it refuses a prefix ending in `-agents`. The client carries a `Retry` and sets
+`socket_timeout` and `socket_connect_timeout`: without the timeouts a publish to a silent Redis
+waits for ever, and without the `Retry` the first re-read after a Redis restart can fail on a
+stale pooled connection (tandem's README names both duties).
+
+`running()` yields at the first confirmed subscription, so a pod turns ready only once it hears
+changes; while Redis is unreachable it stays not ready, and a subscription the store refuses
+before that raises `PlaceStoreError` out of `running()`, which fails the host's startup. At every
+later confirmation each open stream receives every URI it honored, and the tool list if it
+honored that, and the front logs one line, because a change sent while the subscription was down
+is lost. When a publish fails, `changed` raises `PlaceStoreError` (a host never imports tandem or
+redis to catch it) and retries nothing: delivery is uncertain, and a member sees the change by its
+next listen's read within `LISTEN_BOUND_SECONDS`. A payload on agents' channel that is no address
+is logged by its length and skipped; one that is no UTF-8 also resubscribes, so every open stream
+gets the resync pulse and the front logs its resync line. If the subscription fails for good after
+startup, the front logs the cause, ends its open listens and answers every request with 503 until
+the pod restarts.
+Proved by `tests/test_mcp_server_place_wake.py`, `tests/integration/test_redis_place_store.py` and
+the two-process tests of `tests/integration/real_redis`, which `scripts/run_redis_tests.sh` runs.
 
 **The answers.** `resources/list` answers exactly `current`, sorted (a view only beside its
 window, see [a place's view](#the-member-module)), each entry with the URI as its
@@ -728,14 +757,14 @@ one `current` call, a few milliseconds plus the port's latency) keep the answer 
 no before the acknowledgement, after the allowance of the last such stream and for a stream that
 honored only a place window, because the URI is compared as asked and not widened to the places a
 standing subscriber also receives. Several streams of one principal count while any of them
-counts. It runs on the front's event loop, like `changed`.
+counts. It reads this pod's streams only and runs on the front's event loop.
 
 The answer reads what the stream's acknowledgement honored; it does not re-check the member's
 current resources, so a removal turns it no only once the stream has ended and the allowance has
 passed. The standing is every admitted member's own resource, and whether the member still holds
 its account and its places is the app's own record: an app combines the answer with that record.
 
-`ResourceChanges(listening_changed)` takes one optional callable, `(principal, uri, listens) ->
+`ResourceChanges(store, listening_changed=...)` takes one optional callable, `(principal, uri, listens) ->
 None`, called when the answer for a principal and URI changes: with `True` on the request task
 that wrote the first acknowledgement honoring the URI, and with `False` on the event loop once the
 last such stream ended and the allowance passed. It must not block (a host schedules its own work
@@ -754,7 +783,7 @@ a declared tool, never caches it, and never passes it a request argument, so it 
 with the one text `the tool is not offered now`; a name never declared stays `-32602`. A port that
 raises, names an undeclared tool or answers no collection of names (a bare text is none) answers
 `-32603` with one fixed text and logs only the exception's type. When the offer changes, the host
-calls `changes.tools_changed(recipient)`, after the new offer is visible to the port and on the
+awaits `changes.tools_changed(recipient)`, after the new offer is visible to the port and on the
 same terms as `changed`. Every open stream of that principal that honored `toolsListChanged` then
 receives one `notifications/tools/list_changed`, repeated changes before the notice is handed to
 the stream arriving once; a change after that handoff may send one more notice, which a runner

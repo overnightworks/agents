@@ -28,6 +28,7 @@ alice = listen_support.alice
 bob = listen_support.bob
 app = listen_support.app
 changes = listen_support.changes
+place_signals = listen_support.place_signals
 front = listen_support.front
 served = listen_support.served
 
@@ -53,7 +54,7 @@ def woken_by(
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
             for index, uri in enumerate(signalled):
-                changes.changed(member, uri)
+                await changes.changed(member, uri)
                 after_signal(index)
                 await settled()
 
@@ -168,7 +169,7 @@ def test_a_view_found_without_its_window_at_a_pulse_ends_the_stream_with_its_com
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
             del app.readable[alice][window_uri("first")]
-            changes.changed(alice, view_uri("first"))
+            await changes.changed(alice, view_uri("first"))
             await settled()
             assert connection.returned_after is not None
 
