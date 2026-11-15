@@ -24,7 +24,6 @@ class PlaceSignalsFake:
     confirms_subscription: bool = True
     publish_failure: Exception | None = None
     published: list[PlaceSignal] = field(default_factory=list)
-    received_calls: int = 0
     _events: asyncio.Queue[PlaceSignal | Resubscribed | Exception | object] = field(
         default_factory=asyncio.Queue
     )
@@ -36,7 +35,6 @@ class PlaceSignalsFake:
         self._events.put_nowait(signal)
 
     async def received(self) -> AsyncIterator[PlaceSignal | Resubscribed]:
-        self.received_calls += 1
         if self.confirms_subscription:
             yield Resubscribed()
         while True:
