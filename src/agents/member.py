@@ -2,12 +2,12 @@
 
 An app writes these records and an agent's runner reads them: where the member stands in every
 place (``Standing``), the window of lines one place shows (``PlaceWindow``), the state of one
-place (``PlaceView``), the arguments of accepting and declining an invitation and of speaking and
-stopping in a place, what accepting and declining answer when they refuse, what speaking and
-stopping answer (a sentence voiced, or written as a line when the voice failed), and what the
-window says when people talk over the member (``TalkedOver``) and whether the member's voice at the
-place has failed (``VoiceState``). The URIs name the resources that serve them; a URI is no
-credential, so a guessed one yields nothing.
+place (``PlaceView``), the arguments of accepting and declining an invitation and of speaking,
+stopping and continuing in a place, what accepting and declining answer when they refuse, what
+speaking and stopping answer (a sentence voiced, or written as a line when the voice failed), and
+what the window says when people talk over the member (``TalkedOver``), when the member is held by
+it (``Interrupted``) and whether the member's voice at the place has failed (``VoiceState``). The
+URIs name the resources that serve them; a URI is no credential, so a guessed one yields nothing.
 This module is base, so a runner parses all of it without the ``mcp-server`` extra.
 """
 
@@ -35,6 +35,7 @@ from agents.turn import JsonObject, NonEmptyUnicodeText, StopOutcome, StrictMode
 
 __all__ = [
     "ACCEPT_INVITATION_TOOL",
+    "CONTINUE_SPEAKING_TOOL",
     "DECLINE_INVITATION_TOOL",
     "GESTURE_TOOL",
     "INVITATION_SECONDS",
@@ -48,15 +49,21 @@ __all__ = [
     "AcceptInvitationArguments",
     "AcceptInvitationRefusal",
     "AcceptInvitationRefused",
+    "ContinueSpeakingArguments",
+    "ContinueSpeakingRefusal",
+    "ContinueSpeakingRefused",
+    "ContinuedSpeaking",
     "DeclineInvitationArguments",
     "DeclineInvitationReason",
     "DeclineInvitationRefusal",
     "DeclineInvitationRefused",
+    "DroppedSpeaking",
     "FigureRef",
     "GestureArguments",
     "GestureRefusal",
     "GestureRefused",
     "HttpsFileRef",
+    "Interrupted",
     "Invitation",
     "MemberStanding",
     "ParentPlace",
@@ -77,6 +84,7 @@ __all__ = [
     "SpokenLanguage",
     "Standing",
     "StandingState",
+    "StopSpeakingAnswer",
     "StopSpeakingArguments",
     "StopSpeakingRefusal",
     "StopSpeakingRefused",
@@ -111,7 +119,10 @@ DECLINE_INVITATION_TOOL: Final = "decline_invitation"
 SPEAK_TOOL: Final = "speak"
 """The name of the tool that says one sentence aloud in a place."""
 STOP_SPEAKING_TOOL: Final = "stop_speaking"
-"""The name of the tool that cuts the member's current sentence and its queue."""
+"""The name of the tool that cuts the member's current sentence and its queue, or drops a held
+one."""
+CONTINUE_SPEAKING_TOOL: Final = "continue_speaking"
+"""The name of the tool that lets a held sentence go on."""
 GESTURE_TOOL: Final = "gesture"
 """The name of the tool that makes a gesture with the member's figure at a place."""
 SET_TURN_STATE_TOOL: Final = "set_turn_state"
@@ -339,7 +350,9 @@ class SpeakArguments(StrictModel):
     """The arguments of ``speak``: the place and one sentence, whose length the app bounds, and
     optionally the ``language`` of that sentence, the ``style`` it should sound in, which the app
     passes on unchanged, and the ``mood`` the agent's figure shows while it speaks; an absent one
-    means the app's own default, and an app that draws no figure ignores the ``mood``."""
+    means the app's own default, and an app that draws no figure ignores the ``mood``.
+    ``interrupted`` names the hold (``PlaceWindow.interrupted``) the sentence answers instead of
+    the held rest; without it, a held member refuses the sentence."""
 
     place: PlaceRef
     text: NonEmptyUnicodeText
@@ -348,6 +361,7 @@ class SpeakArguments(StrictModel):
     mood: Annotated[FigureMood, Field(strict=False)] | None = Field(
         default=None, exclude_if=_is_none
     )
+    interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=_is_none)
 
 
 def _refuse_false(value: bool) -> bool:
@@ -384,15 +398,20 @@ class SpeakRefusal(StrEnum):
     """Why the app does not speak a sentence: ``language_unavailable`` when the app's voice does
     not speak the language the sentence names, ``style_unavailable`` for every refusal of the
     ``style`` by the voice (it takes none, it is too long or it is not supported), ``stopped``
-    for a queued sentence that a ``stop_speaking`` dropped, and ``unavailable`` when the app
-    neither voices nor writes the sentence now: a social reason, a limit of its own or a failed
-    voice at a place without a chat. No refusal is ever turned into a written line."""
+    for a queued sentence that a ``stop_speaking`` or a ``speak`` naming the hold dropped,
+    ``held`` when the member is held and the sentence names no hold, ``not_interrupted`` when the
+    sentence names a hold that does not stand, and ``unavailable`` when the app neither voices nor
+    writes the sentence now: a social reason, a limit of its own or a failed voice at a place
+    without a chat. ``held`` and ``not_interrupted`` change nothing and answer at once. No
+    refusal is ever turned into a written line."""
 
     NOT_ACTIVE = "not_active"
     TOO_LONG = "too_long"
     LANGUAGE_UNAVAILABLE = "language_unavailable"
     STYLE_UNAVAILABLE = "style_unavailable"
     STOPPED = "stopped"
+    HELD = "held"
+    NOT_INTERRUPTED = "not_interrupted"
     UNAVAILABLE = "unavailable"
 
 
@@ -404,9 +423,11 @@ class SpeakRefused(StrictModel):
 
 class StopSpeakingArguments(StrictModel):
     """The arguments of ``stop_speaking``: the place whose sentence and queue of the member are
-    cut."""
+    cut, and optionally ``interrupted``, the hold (``PlaceWindow.interrupted``) the stop ends; a
+    stale one is refused."""
 
     place: PlaceRef
+    interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=_is_none)
 
 
 class StoppedSpeaking(StrictModel):
@@ -416,18 +437,62 @@ class StoppedSpeaking(StrictModel):
     cut: NonEmptyUnicodeText
 
 
+class DroppedSpeaking(StrictModel):
+    """What ``stop_speaking`` answers, as JSON, when it cut no sentence that had started: it
+    dropped a held sentence that had not started, or the queue; the field is exactly the JSON
+    ``true``."""
+
+    dropped: MarkerTrue
+
+
+StopSpeakingAnswer = StoppedSpeaking | DroppedSpeaking
+"""What a ``stop_speaking`` that is not refused answers: a sentence was cut, or only the held or
+waiting ones were dropped."""
+
+
 class StopSpeakingRefusal(StrEnum):
     """Why the app does not stop: ``not_active`` when the member left, was removed or is paused;
-    ``nothing_playing`` when no sentence of the member plays, so nothing was cut or dropped."""
+    ``nothing_playing`` when the member is silent, so nothing was cut or dropped;
+    ``not_interrupted`` when ``interrupted`` names a hold that does not stand."""
 
     NOT_ACTIVE = "not_active"
     NOTHING_PLAYING = "nothing_playing"
+    NOT_INTERRUPTED = "not_interrupted"
 
 
 class StopSpeakingRefused(StrictModel):
     """What ``stop_speaking`` answers on a refusal, as JSON in an ``is_error`` result."""
 
     refused: Annotated[StopSpeakingRefusal, Field(strict=False)]
+
+
+class ContinueSpeakingArguments(StrictModel):
+    """The arguments of ``continue_speaking``: the place and the hold (``PlaceWindow.interrupted``)
+    whose held sentence goes on."""
+
+    place: PlaceRef
+    interrupted: NonEmptyUnicodeText
+
+
+class ContinuedSpeaking(StrictModel):
+    """What ``continue_speaking`` answers on success, as JSON: the held sentence's rest plays,
+    faded back in, then the queue; the field is exactly the JSON ``true``."""
+
+    continued: MarkerTrue
+
+
+class ContinueSpeakingRefusal(StrEnum):
+    """Why the app does not continue: ``not_active`` when the member left, was removed or is
+    paused; ``not_interrupted`` when ``interrupted`` names a hold that does not stand."""
+
+    NOT_ACTIVE = "not_active"
+    NOT_INTERRUPTED = "not_interrupted"
+
+
+class ContinueSpeakingRefused(StrictModel):
+    """What ``continue_speaking`` answers on a refusal, as JSON in an ``is_error`` result."""
+
+    refused: Annotated[ContinueSpeakingRefusal, Field(strict=False)]
 
 
 class SetTurnStateArguments(StrictModel):
@@ -513,6 +578,15 @@ class TalkedOver(StrictModel):
     speech: tuple[PartialSpeech, ...] = Field(min_length=1)
 
 
+class Interrupted(StrictModel):
+    """The member is held: a person talked over it, and nothing of the member plays until its
+    decision. ``id`` is the app's, never repeats within the window's ``generation`` and stays
+    fixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.
+    The hold ends at one of them, or at the member's or the place's end."""
+
+    id: NonEmptyUnicodeText
+
+
 class VoiceState(StrEnum):
     """Whether the member's voice at the place has failed for that member there: ``available``
     while the app's voice works, ``unavailable`` while it has failed, so a ``speak`` would not be
@@ -558,14 +632,16 @@ class PlaceWindow(StrictModel):
     ``generation`` names the run of ``seq`` numbers the window belongs to. An empty window is
     valid, and its ``starts_at`` is the ``seq`` the next line will get. ``talked_over`` is set
     only while people talk over the member; a person's partial and finished line are never both
-    in one read. ``voice_state`` states a failure of the member's voice at the place, for that
-    member there; absent, the app states nothing.
+    in one read. ``interrupted`` is set exactly while the member is held, and leaves in the same
+    change that ends the hold; a new ``generation`` carries none. ``voice_state`` states a failure
+    of the member's voice at the place, for that member there; absent, the app states nothing.
     """
 
     generation: NonEmptyUnicodeText
     starts_at: int = Field(ge=1)
     entries: tuple[PlaceEntry, ...]
     talked_over: TalkedOver | None = Field(default=None, exclude_if=_is_none)
+    interrupted: Interrupted | None = Field(default=None, exclude_if=_is_none)
     voice_state: Annotated[VoiceState, Field(strict=False)] | None = Field(
         default=None, exclude_if=_is_none
     )
