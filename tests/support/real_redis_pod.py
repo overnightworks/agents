@@ -43,6 +43,40 @@ WRITES_KEY = "writes"
 WRITTEN_MEMBER = a_member("alice")
 
 
+def _lease_routes(store: RedisPlaceStore) -> tuple[MemberLeases, list[Route]]:
+    """The host's leases on the store, and the routes that renew, read and list them and report the
+    lapses its ``lease_ended`` received."""
+    lapses: list[tuple[str, str, str]] = []
+
+    async def lease_ended(principal: Principal, generation: str) -> None:
+        lapses.append((principal.iss, principal.sub, generation))
+
+    leases = MemberLeases(store, lease_ended=lease_ended)
+
+    async def renew(_request: Request) -> JSONResponse:
+        renewal = await leases.renew(WRITTEN_MEMBER)
+        return JSONResponse({"started": renewal.started, "generation": renewal.generation})
+
+    async def lease(_request: Request) -> JSONResponse:
+        standing = await leases.state(WRITTEN_MEMBER)
+        return JSONResponse({"holds": standing.holds, "generation": standing.generation})
+
+    async def live_leases(_request: Request) -> JSONResponse:
+        roster = await leases.live()
+        return JSONResponse(sorted([principal.iss, principal.sub] for principal in roster.holders))
+
+    async def lapses_received(_request: Request) -> JSONResponse:
+        return JSONResponse(lapses)
+
+    routes = [
+        Route(RENEW_PATH, renew, methods=["POST"]),
+        Route(LEASE_PATH, lease),
+        Route(LEASES_PATH, live_leases),
+        Route(LAPSES_PATH, lapses_received),
+    ]
+    return leases, routes
+
+
 def a_pod(redis_url: str, key_prefix: str) -> Starlette:
     redis = Redis.from_url(
         redis_url,
@@ -62,12 +96,7 @@ def a_pod(redis_url: str, key_prefix: str) -> Starlette:
     )
     resources = MemberApp(readable={WRITTEN_MEMBER: readable_uris(STANDING_URI)})
     front = McpPersonFront([], resolve_person=resolve_member, resources=resources, changes=changes)
-    lapses: list[tuple[str, str, str]] = []
-
-    async def lease_ended(principal: Principal, generation: str) -> None:
-        lapses.append((principal.iss, principal.sub, generation))
-
-    leases = MemberLeases(store, lease_ended=lease_ended)
+    leases, lease_routes = _lease_routes(store)
 
     @asynccontextmanager
     async def serving(_app: Starlette) -> AsyncGenerator[None, None]:
@@ -88,31 +117,13 @@ def a_pod(redis_url: str, key_prefix: str) -> Starlette:
     async def changes_received(_request: Request) -> JSONResponse:
         return JSONResponse(listening_changes)
 
-    async def renew(_request: Request) -> JSONResponse:
-        renewal = await leases.renew(WRITTEN_MEMBER)
-        return JSONResponse({"started": renewal.started, "generation": renewal.generation})
-
-    async def lease(_request: Request) -> JSONResponse:
-        standing = await leases.state(WRITTEN_MEMBER)
-        return JSONResponse({"holds": standing.holds, "generation": standing.generation})
-
-    async def live_leases(_request: Request) -> JSONResponse:
-        roster = await leases.live()
-        return JSONResponse(sorted([principal.iss, principal.sub] for principal in roster.holders))
-
-    async def lapses_received(_request: Request) -> JSONResponse:
-        return JSONResponse(lapses)
-
     return Starlette(
         routes=[
             Route(MCP_ENDPOINT_PATH, front),
             Route(WRITE_PATH, write, methods=["POST"]),
             Route(LISTENERS_PATH, listeners),
             Route(LISTENING_CHANGES_PATH, changes_received),
-            Route(RENEW_PATH, renew, methods=["POST"]),
-            Route(LEASE_PATH, lease),
-            Route(LEASES_PATH, live_leases),
-            Route(LAPSES_PATH, lapses_received),
+            *lease_routes,
         ],
         lifespan=serving,
     )
