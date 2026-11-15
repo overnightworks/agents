@@ -273,9 +273,17 @@ def test_leaving_running_during_a_handler_cuts_it_and_the_lapse_is_handed_over_a
         leases = MemberLeases(pod, lease_ended=handle)
         renewal = await leases.renew(_ALICE)
         redis_clock.advance(LEASE_SECONDS)
-        async with leases.running():
-            async with asyncio.timeout(_WAIT_SECONDS):
-                await started.wait()
+
+        async def run_until_cancelled() -> None:
+            async with leases.running():
+                await asyncio.Event().wait()
+
+        runner = asyncio.create_task(run_until_cancelled())
+        async with asyncio.timeout(_WAIT_SECONDS):
+            await started.wait()
+        runner.cancel()
+        await asyncio.wait({runner})
+        assert runner.cancelled()
         left = len(asyncio.all_tasks()) - 1
         redis_clock.advance(CLAIM_FOR.total_seconds() + 1)
         async with serving(a_pod(server)) as handled:
