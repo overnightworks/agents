@@ -1,8 +1,0 @@
-claim_id = "cb80ab6175f64911947f9dbb378b5b0e"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "b7f47b83c804fa268fb414ba72f06d4b49d82900"
-branch = "claude/issue-963-gateway-request"
-scope = [".importlinter", "src/agents/backend/gateway.py", "src/agents/backend/gateway_request.py", "tests"]
-opened_commit = "62b6c0bc7d41e26aea99b2da1b9eb72145122266"
-whole_reason = "The move, its import contract and the tests' imports are one refactor."
