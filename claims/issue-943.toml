@@ -1,0 +1,8 @@
+claim_id = "24079efeb2074ebb980ed561cde9ad29"
+agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
+role = "builder"
+base = "3225a2e7608a072906149e532bd7a00bb6b603d3"
+branch = "claude/issue-943-public-voices-type"
+scope = ["docs/connector.md", "src/agents/member.py", "tests"]
+opened_commit = "eb9e05a38b5444012d23e3932231786441ff143b"
+whole_reason = "One exported type in member.py with its doc line; tests is a directory only because the new test module's name is the builder's choice."
