@@ -1,6 +1,7 @@
-"""How the loop reads a reply: the marker words, the protocol text that teaches them, the sentences.
+"""How the loop reads a reply: the marker words, the rules that teach them, the sentences.
 
-This module is the one owner of the marker words; the protocol text is composed from them.
+This module is the one owner of the marker words and of the reply's rules (``REPLY_RULES``);
+the protocol text is composed from them.
 A reply is read per round: a round opening with ``[`` holds until its marker
 closes within 16 characters, and any other round is speech, released sentence by sentence.
 """
@@ -29,6 +30,14 @@ class Marker(StrEnum):
 SILENT_REPLY: Final = f"[{Marker.SILENT}]"
 """A reply that says nothing; the conversation records a silent decision as this."""
 
+REPLY_RULES: Final = (
+    "Your reply is spoken aloud sentence by sentence and heard once, so write plain spoken "
+    "sentences without markup, lists, headings or emoji.\n"
+    "Write only the words to say aloud, never what you are doing or why.\n"
+    f"To say nothing, reply with {SILENT_REPLY} and nothing else."
+)
+"""What a runner appends when a ``ReplyReader`` reads its reply: the rules of a spoken reply."""
+
 PROTOCOL_TEXT: Final = (
     "You take part in a conversation by voice. Each user message holds what was heard or "
     'written since your last reply, one JSON object per line: "name" is who it comes from, '
@@ -38,13 +47,11 @@ PROTOCOL_TEXT: Final = (
     '"missed_before" counts the lines that were not passed to you before it.\n'
     f"Once the conversation grows long, the first user message opens with {WINDOW_NOTE}; "
     "nobody said that line.\n"
-    "Your reply is spoken aloud sentence by sentence, so write plain spoken sentences without "
-    "markup, lists, headings or emoji.\n"
-    f"To say nothing, reply with {SILENT_REPLY} and nothing else; reply so too after a tool call "
-    "when you have nothing to add.\n"
-    f"Your earlier replies hold only what was spoken aloud, or {SILENT_REPLY}."
+    f"Your earlier replies hold only what was spoken aloud, or {SILENT_REPLY}.\n"
+    f"After a tool call, reply {SILENT_REPLY} when you have nothing to add.\n"
+    f"{REPLY_RULES}"
 )
-"""Appended to the agent's prompt: the line format and note, spoken sentences, the markers."""
+"""Appended to the agent's prompt: the line format and note, the loop's replies, the reply rules."""
 
 _MARKER_OPEN: Final = "["
 _MARKER_CLOSE: Final = "]"
@@ -121,7 +128,8 @@ class ReplyReader:
     closes the marker within 16 characters; the word between, trimmed of spaces and folded to
     ASCII lower case, is the marker. ``silent`` mutes the round; any other word, no ``]`` in
     reach or a round that ends first mutes it as unreadable. Any other round is speech, and a
-    ``[`` inside it is text.
+    ``[`` inside it is text, except that a sentence that is nothing but the ``silent`` marker is
+    dropped; the sentences before it were released and are spoken.
     """
 
     def __init__(self) -> None:
@@ -141,7 +149,7 @@ class ReplyReader:
 
     def _piece(self, text: str) -> Reading:
         if self._round is _Round.SPEECH:
-            return Reading(self._release.feed(text))
+            return Reading(_spoken(self._release.feed(text)))
         if self._round is _Round.MUTED:
             return Reading()
         self._opening = (self._opening + text).lstrip()
@@ -149,7 +157,7 @@ class ReplyReader:
             return Reading()
         if not self._opening.startswith(_MARKER_OPEN):
             self._round = _Round.SPEECH
-            return Reading(self._release.feed(self._opening))
+            return Reading(_spoken(self._release.feed(self._opening)))
         opening = _marker_of(self._opening)
         if opening is not None:
             self._round = _Round.MUTED
@@ -157,7 +165,7 @@ class ReplyReader:
 
     def _end_round(self) -> Reading:
         if self._round is _Round.SPEECH:
-            reading = Reading(self._release.flush())
+            reading = Reading(_spoken(self._release.flush()))
         elif self._round is _Round.OPENING and self._opening:
             reading = Reading(opening=ReplyUnreadable())
         else:
@@ -173,6 +181,19 @@ def _marker_of(opening: str) -> StayedSilent | ReplyUnreadable | None:
         return ReplyUnreadable() if len(opening) > _MARKER_REACH else None
     word = opening[1:close].strip(" ").translate(_ASCII_LOWER)
     return StayedSilent() if word == Marker.SILENT else ReplyUnreadable()
+
+
+def _spoken(released: tuple[str, ...]) -> tuple[str, ...]:
+    """The sentences without any that is nothing but the silent marker."""
+    return tuple(sentence for sentence in released if not _is_silent_marker(sentence))
+
+
+def _is_silent_marker(sentence: str) -> bool:
+    return (
+        sentence.startswith(_MARKER_OPEN)
+        and sentence.find(_MARKER_CLOSE) == len(sentence) - 1
+        and isinstance(_marker_of(sentence), StayedSilent)
+    )
 
 
 def _last_word_start(text: str, not_before: int) -> int:

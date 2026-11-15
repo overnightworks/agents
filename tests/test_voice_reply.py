@@ -15,6 +15,7 @@ from agents.voice import ReplyUnreadable, StayedSilent
 from agents.voice.conversation import Conversation
 from agents.voice.reply import (
     PROTOCOL_TEXT,
+    REPLY_RULES,
     SILENT_REPLY,
     ReplyReader,
     SentenceRelease,
@@ -71,7 +72,14 @@ def released_by(release: SentenceRelease, *texts: str) -> list[str]:
         (a_final("[" + "x" * 16, "] Hallo."), UNREADABLE, []),
         (a_final("[sile"), UNREADABLE, []),
         (a_final("Ja [silent] gut."), (), ["Ja [silent] gut."]),
-        (a_final("Gut. ", "[silent]"), (), ["Gut.", "[silent]"]),
+        (a_final("Gut. ", "[silent]"), (), ["Gut."]),
+        (a_final("Gut. Danke. ", "[ SILENT ]"), (), ["Gut.", "Danke."]),
+        (a_final("Gut. ", "[silent] Danke."), (), ["Gut.", "[silent] Danke."]),
+        (a_final("Gut. ", "[shout]"), (), ["Gut.", "[shout]"]),
+        (a_final("Gut. [sil", "ent]"), (), ["Gut."]),
+        (a_final("Gut.\n\n[silent]\n\nDanke."), (), ["Gut.", "Danke."]),
+        (a_final("Gut.\n\n[sil", "ent]\n\nDanke."), (), ["Gut.", "Danke."]),
+        (a_final("Gut. [silent]. Danke."), (), ["Gut.", "[silent]. Danke."]),
         (a_final("  ", " Gut. Danke."), (), ["Gut.", "Danke."]),
         (a_final("Das habe ich vergessen."), (), ["Das habe ich vergessen."]),
     ],
@@ -104,6 +112,17 @@ def test_a_tool_call_ends_a_round_and_the_next_round_is_read_afresh(events, open
 def test_the_protocol_text_names_the_marker_the_reader_takes_as_silence():
     assert SILENT_REPLY in PROTOCOL_TEXT
     assert read_turn(a_final(SILENT_REPLY)) == (SILENT, [])
+
+
+def test_the_protocol_text_ends_with_the_reply_rules_and_holds_each_of_their_lines_once():
+    assert PROTOCOL_TEXT.endswith(REPLY_RULES)
+    assert {line: PROTOCOL_TEXT.count(line) for line in REPLY_RULES.splitlines()} == dict.fromkeys(
+        REPLY_RULES.splitlines(), 1
+    )
+
+
+def test_the_reply_rules_name_the_marker_the_reader_takes_as_silence():
+    assert SILENT_REPLY in REPLY_RULES
 
 
 def test_the_protocol_text_names_every_key_a_written_line_carries():
