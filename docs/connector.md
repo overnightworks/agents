@@ -1189,7 +1189,9 @@ trimmed of spaces and folded to ASCII lower case, is the marker. `silent` speaks
 round and its tools still run; any other word, no `]` in reach or a round that ends first speaks
 nothing of it and reports `ReplyUnreadable`. Any other round is speech, a `[` inside it included:
 a sentence is released once content follows it, a number and its period read as a German
-ordinal, and the rest when the round ends. Proved by `tests/test_voice_reply.py`:
+ordinal, and the rest when the round ends. A sentence of a speech round that is nothing but
+`[silent]` (in the case and spacing the opening accepts) is dropped, the sentences before it
+stay spoken, and any other bracket stays text. Proved by `tests/test_voice_reply.py`:
 `test_a_rounds_opening_marker_decides_whether_any_of_it_is_spoken`,
 `test_a_tool_call_ends_a_round_and_the_next_round_is_read_afresh`,
 `test_a_sentence_is_released_only_once_content_follows_it` and

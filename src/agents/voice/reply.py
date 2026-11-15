@@ -128,7 +128,8 @@ class ReplyReader:
     closes the marker within 16 characters; the word between, trimmed of spaces and folded to
     ASCII lower case, is the marker. ``silent`` mutes the round; any other word, no ``]`` in
     reach or a round that ends first mutes it as unreadable. Any other round is speech, and a
-    ``[`` inside it is text.
+    ``[`` inside it is text, except that a sentence that is nothing but the ``silent`` marker is
+    dropped; the sentences before it were released and are spoken.
     """
 
     def __init__(self) -> None:
@@ -148,7 +149,7 @@ class ReplyReader:
 
     def _piece(self, text: str) -> Reading:
         if self._round is _Round.SPEECH:
-            return Reading(self._release.feed(text))
+            return Reading(_spoken(self._release.feed(text)))
         if self._round is _Round.MUTED:
             return Reading()
         self._opening = (self._opening + text).lstrip()
@@ -156,7 +157,7 @@ class ReplyReader:
             return Reading()
         if not self._opening.startswith(_MARKER_OPEN):
             self._round = _Round.SPEECH
-            return Reading(self._release.feed(self._opening))
+            return Reading(_spoken(self._release.feed(self._opening)))
         opening = _marker_of(self._opening)
         if opening is not None:
             self._round = _Round.MUTED
@@ -164,7 +165,7 @@ class ReplyReader:
 
     def _end_round(self) -> Reading:
         if self._round is _Round.SPEECH:
-            reading = Reading(self._release.flush())
+            reading = Reading(_spoken(self._release.flush()))
         elif self._round is _Round.OPENING and self._opening:
             reading = Reading(opening=ReplyUnreadable())
         else:
@@ -180,6 +181,19 @@ def _marker_of(opening: str) -> StayedSilent | ReplyUnreadable | None:
         return ReplyUnreadable() if len(opening) > _MARKER_REACH else None
     word = opening[1:close].strip(" ").translate(_ASCII_LOWER)
     return StayedSilent() if word == Marker.SILENT else ReplyUnreadable()
+
+
+def _spoken(released: tuple[str, ...]) -> tuple[str, ...]:
+    """The sentences without any that is nothing but the silent marker."""
+    return tuple(sentence for sentence in released if not _is_silent_marker(sentence))
+
+
+def _is_silent_marker(sentence: str) -> bool:
+    return (
+        sentence.startswith(_MARKER_OPEN)
+        and sentence.find(_MARKER_CLOSE) == len(sentence) - 1
+        and isinstance(_marker_of(sentence), StayedSilent)
+    )
 
 
 def _last_word_start(text: str, not_before: int) -> int:
