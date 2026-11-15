@@ -602,8 +602,8 @@ An accept may name the agent's 3D figure, `figure` as `FigureRef(url, sha256, ge
 would speak with, `voices` as a list of voice names, the persona's order of preference with the
 first choice first; both are optional, and an accept without them dumps without their keys. The
 record checks only their form: `url` is an absolute `https` address with a host and no user part,
-query or fragment, `sha256` is 64 lowercase hexadecimal characters, and `voices` holds 1 to 8
-names, none twice, each 1 to 64 ASCII letters of either case, digits, `.`, `_` or `-`. The app
+query or fragment, `sha256` is 64 lowercase hexadecimal characters, and `voices` is the `Voices` type, 1 to 8
+names, none twice (a host types its own voice list with it), each 1 to 64 ASCII letters of either case, digits, `.`, `_` or `-`. The app
 decides the rest:
 
 - It fetches a figure only from sources it allows, and serves only bytes whose sha256 matches.

@@ -85,6 +85,7 @@ __all__ = [
     "VoiceName",
     "VoiceState",
     "VoiceStyle",
+    "Voices",
     "Written",
     "gesture_tool",
     "place_ref_from_view_uri",
@@ -243,7 +244,21 @@ VoiceName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,64}$")]
 ``.``, ``_`` or ``-``. The name is passed through unchanged; the app's speech service decides
 whether it offers that voice."""
 
-_MAX_VOICES: Final = 8
+
+def _name_no_voice_twice(voices: tuple[str, ...]) -> tuple[str, ...]:
+    if len(set(voices)) != len(voices):
+        raise ValueError("a voice is named at most once")
+    return voices
+
+
+Voices = Annotated[
+    tuple[VoiceName, ...],
+    Field(min_length=1, max_length=8),
+    AfterValidator(_name_no_voice_twice),
+]
+"""The voices an agent would speak with, first choice first: 1 to 8 ``VoiceName`` entries, none
+twice. A host types its own voice list with it to refuse a malformed one before an accept, by the
+same rule ``AcceptInvitationArguments.voices`` applies."""
 
 
 class AcceptInvitationArguments(StrictModel):
@@ -256,16 +271,7 @@ class AcceptInvitationArguments(StrictModel):
     invitation: NonEmptyUnicodeText
     epoch: int = Field(ge=0)
     figure: FigureRef | None = Field(default=None, exclude_if=_is_none)
-    voices: tuple[VoiceName, ...] | None = Field(
-        default=None, min_length=1, max_length=_MAX_VOICES, exclude_if=_is_none
-    )
-
-    @field_validator("voices")
-    @classmethod
-    def _name_no_voice_twice(cls, voices: tuple[str, ...] | None) -> tuple[str, ...] | None:
-        if voices is not None and len(set(voices)) != len(voices):
-            raise ValueError("a voice is named at most once")
-        return voices
+    voices: Voices | None = Field(default=None, exclude_if=_is_none)
 
 
 class AcceptInvitationRefusal(StrEnum):
