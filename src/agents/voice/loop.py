@@ -7,6 +7,8 @@ import contextlib
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 
+from logline import unit_trace
+
 from agents.agent_file import AgentDefinition, TurnRequest
 from agents.backend import AgentBackend, TurnPerson, TurnStopped
 from agents.member import PlaceEntry
@@ -47,7 +49,8 @@ async def run_voice_loop[Audio](
     never asked of ``wakes`` either; it does not count for ``first_after_answer``. Any other
     line that is not the agent's own and that ``wakes`` accepts starts a decision; at most one
     is in flight and one answer plays, and a line that wakes meanwhile gets exactly one decision
-    after it, over every line since the last one. The system text is the agent's prompt, the
+    after it, over every line since the last one. A decision runs in the trace of the newest line
+    that woke it (``PlaceEntry.traceparent``), a new trace when that line carries none. The system text is the agent's prompt, the
     protocol text and ``context``. A decision sends at most the agent's voice window of the
     conversation; only the newest line goes beyond it, alone and behind the window note once
     anything went. An agent without a voice section raises ``ValueError`` before ``hearing`` is
@@ -125,6 +128,7 @@ class _VoiceLoop[Audio]:
         self._appended_system = "\n\n".join(part for part in (PROTOCOL_TEXT, context) if part)
         self._conversation = conversation
         self._woken = asyncio.Event()
+        self._waking_traceparent: str | None = None
         self._first_after_answer = False
         self._answer = _Answer()
         self._last_played: list[str] = []
@@ -139,6 +143,7 @@ class _VoiceLoop[Audio]:
             return
         first_after_answer, self._first_after_answer = self._first_after_answer, False
         if self._wakes(line, first_after_answer=first_after_answer):
+            self._waking_traceparent = line.traceparent
             self._woken.set()
 
     def _latest_answer(self) -> list[str]:
@@ -150,7 +155,8 @@ class _VoiceLoop[Audio]:
             await self._woken.wait()
             self._woken.clear()
             self._first_after_answer = False
-            played = await self._decide()
+            with unit_trace(self._waking_traceparent):
+                played = await self._decide()
             self._first_after_answer = played
 
     async def _decide(self) -> bool:

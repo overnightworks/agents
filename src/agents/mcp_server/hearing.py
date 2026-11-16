@@ -20,9 +20,10 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import Annotated, Literal
 
+from logline import current_traceparent
 from pydantic import AfterValidator, Field
 
-from agents.member import PlaceRef
+from agents.member import OptionalTraceparent, PlaceRef
 from agents.turn import NonEmptyUnicodeText, Principal, StrictModel
 
 
@@ -57,13 +58,15 @@ class Utterance(StrictModel):
 
 
 class SpokenLine(StrictModel):
-    """A line said aloud and heard, as a ``PlaceEntry`` without the ``seq`` the app adds."""
+    """A line said aloud and heard, as a ``PlaceEntry`` without the ``seq`` the app adds.
+    ``traceparent`` is the trace the utterance was heard in."""
 
     kind: SpokenText
     name: SpokenText
     text: SpokenText
     own: Literal[False] = False
     spoken: Literal[True] = True
+    traceparent: OptionalTraceparent
 
 
 class Heard(StrictModel):
@@ -104,7 +107,12 @@ class MemberHearing:
             members=frozenset(
                 member for member, since in switched_on_at.items() if since <= utterance.began_at
             ),
-            line=SpokenLine(kind=utterance.kind, name=utterance.name, text=utterance.text),
+            line=SpokenLine(
+                kind=utterance.kind,
+                name=utterance.name,
+                text=utterance.text,
+                traceparent=current_traceparent(),
+            ),
         )
 
     def member_ended(self, place: PlaceRef, member: Principal) -> None:
