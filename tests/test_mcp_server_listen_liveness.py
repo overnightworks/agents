@@ -626,7 +626,8 @@ def test_each_lapse_run_writes_its_lines_in_one_trace_of_its_own(
     failed, ended = log_lines.of("listen_lapse.ended")
     trace_of_failed_run = failed["trace_id"]
     trace_of_ended_run = ended["trace_id"]
-    assert trace_of_failed_run and trace_of_ended_run
+    assert trace_of_failed_run
+    assert trace_of_ended_run
     assert trace_of_failed_run != trace_of_ended_run
     assert log_lines.one("listen_lapse.resumed")["trace_id"] == trace_of_ended_run
     assert log_lines.one("listening.lapsed")["trace_id"] == trace_of_ended_run
