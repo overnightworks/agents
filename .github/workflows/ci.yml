@@ -169,7 +169,7 @@ jobs:
           proof="$(mktemp -d "$RUNNER_TEMP/client-voice.XXXXXX")"
           uv venv "$proof/venv"
           client_wheel="$(ls "$GITHUB_WORKSPACE"/dist/overnightworks_agents-*-py3-none-any.whl)"
-          uv pip install --python "$proof/venv/bin/python" "$client_wheel[voice]"
+          uv pip install --python "$proof/venv/bin/python" "$client_wheel[voice]" "$LOGLINE_SOURCE"
           cd "$proof"
           "$proof/venv/bin/python" -I -c '
           import importlib
