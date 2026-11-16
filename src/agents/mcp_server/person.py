@@ -24,7 +24,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import partial
 from http import HTTPStatus
-from typing import Any, Final, cast, get_args
+from typing import Any, Final, cast, get_args, get_origin
 
 import anyio.lowlevel
 from logline import StepTimer
@@ -490,22 +490,39 @@ def _models_in(annotation: object) -> tuple[type[BaseModel], ...]:
     return tuple(model for part in get_args(annotation) for model in _models_in(part))
 
 
+def _holds_keys(annotation: object) -> bool:
+    """Whether a field's annotation is a mapping at any depth: the next name in its paths is a
+    caller's key."""
+    origin = get_origin(annotation)
+    if isinstance(origin, type) and issubclass(origin, Mapping):
+        return True
+    return any(_holds_keys(part) for part in get_args(annotation))
+
+
 def _declared_path(model: type[BaseModel], location: tuple[int | str, ...]) -> str:
-    """A failing field's path in dots; a name the models do not declare is a caller's key, which
-    is never echoed."""
+    """A failing field's path in dots; a name that is no declared field, or that follows a
+    mapping field, is a caller's key, which is never echoed."""
     candidates = (model,)
+    keyed = False
     parts: list[str] = []
     for step in location:
         if isinstance(step, int):
             parts.append(str(step))
             continue
-        declared = next((held for held in candidates if step in held.model_fields), None)
+        declared = (
+            None
+            if keyed
+            else next((held for held in candidates if step in held.model_fields), None)
+        )
         if declared is None:
+            keyed = False
             if not parts or parts[-1] != _KEY_PLACEHOLDER:
                 parts.append(_KEY_PLACEHOLDER)
             continue
         parts.append(step)
-        candidates = _models_in(declared.model_fields[step].annotation)
+        annotation = declared.model_fields[step].annotation
+        keyed = _holds_keys(annotation)
+        candidates = _models_in(annotation)
     return ".".join(parts)
 
 

@@ -133,6 +133,11 @@ def test_a_member_tool_call_that_fits_its_record_reaches_the_handler_as_sent(
             id="a key outside the vocabulary is named as a key",
         ),
         pytest.param(
+            accept_wire(figure=_FIGURE | {"gestures": {"url": _FIGURE}}),
+            "figure.gestures.[key] (enum)",
+            id="a key spelled like a field of the value model is still named as a key",
+        ),
+        pytest.param(
             accept_wire(**{"unknown-secret": 1}),
             "[key] (extra_forbidden)",
             id="a field the record does not have is named as a key",
