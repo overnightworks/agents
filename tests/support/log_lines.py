@@ -30,6 +30,10 @@ class LogLines:
     def of(self, event: str) -> list[LogLine]:
         return [line for line in self.all() if line["event"] == event]
 
+    def written_by(self, logger_prefix: str) -> list[LogLine]:
+        """The lines of the loggers under the prefix, leaving out other libraries' debug lines."""
+        return [line for line in self.all() if str(line["logger"]).startswith(logger_prefix)]
+
     def one(self, event: str) -> LogLine:
         (line,) = self.of(event)
         return line

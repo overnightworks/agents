@@ -10,10 +10,14 @@ in ``agents.mcp_server.redis_place_store``.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable, Collection
+import logging
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Collection
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import NoReturn, Protocol
+
+from logline import StepTimer
 
 from agents.turn import Principal
 
@@ -23,12 +27,32 @@ class PlaceStoreError(Exception):
 
 
 def failure_type(failure: Exception) -> str:
-    """The type name a log line carries for a failure: the cause of a ``PlaceStoreError``, which
-    is the store library's refusal, else the failure's own type; never its text."""
-    cause = failure.__cause__
-    if isinstance(failure, PlaceStoreError) and cause is not None:
-        return type(cause).__name__
-    return type(failure).__name__
+    """The type name a log line carries for a failure: the innermost cause of a
+    ``PlaceStoreError``, which is what the store library met (a lost connection, a refusal), else
+    the failure's own type; never its text."""
+    if not isinstance(failure, PlaceStoreError):
+        return type(failure).__name__
+    root: BaseException = failure
+    while root.__cause__ is not None:
+        root = root.__cause__
+    return type(root).__name__
+
+
+@asynccontextmanager
+async def store_step(
+    event: str, logger: logging.Logger, **fields: int | str
+) -> AsyncGenerator[StepTimer, None]:
+    """One timed call of the place store: the timer's line, and on a failure the line also carries
+    ``cause_type``, the name ``failure_type`` gives, since the timer's ``error_type`` is the class
+    of the ``PlaceStoreError`` itself."""
+    timer = StepTimer(event, logger)
+    timer.add(**fields)
+    async with timer as step:
+        try:
+            yield step
+        except Exception as failure:
+            step.add(cause_type=failure_type(failure))
+            raise
 
 
 @dataclass(frozen=True)
@@ -59,6 +83,18 @@ class ListeningTurn:
     principal: Principal
     uri: str
     listens: bool
+
+
+@dataclass(frozen=True)
+class LapseRun:
+    """What one ``lapse_due`` did: the ``turns`` it published, the streams it ``stream_count``
+    lapsed, and the streams it could not (``failed_count``), with the type name of the last
+    failure. A run that claimed nothing is all zeros and ``None``."""
+
+    turns: tuple[ListeningTurn, ...] = ()
+    stream_count: int = 0
+    failed_count: int = 0
+    last_error_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -112,9 +148,11 @@ class ListenRecord(Protocol):
         """The principals with a recorded stream that honored the URI."""
         ...
 
-    async def lapse_due(self, claimer: str) -> None:
+    async def lapse_due(self, claimer: str) -> LapseRun:
         """Lapses every stream whose deadline passed that nobody else lapses now; a principal's
-        last stream of a URI turns it to no and publishes a ``ListeningTurn``."""
+        last stream of a URI turns it to no, publishes a ``ListeningTurn`` and is one of the
+        run's ``turns``, which this call's pod alone returns. A stream that fails to lapse is
+        counted, not raised, and its claim runs out."""
         ...
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 from typing import Any
 
@@ -22,6 +22,7 @@ from agents.member import STANDING_URI
 from agents.tools import Principal
 from tests.support import listen_support
 from tests.support.listen_support import ListeningHost
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import (
     MemberApp,
     ToolOffer,
@@ -33,7 +34,7 @@ from tests.support.mcp_server_support import (
     settled,
     window_uri,
 )
-from tests.support.place_store_support import PlaceStoreFake
+from tests.support.place_store_support import PlaceStoreFake, refused_with_a_cause
 
 alice = listen_support.alice
 bob = listen_support.bob
@@ -42,6 +43,7 @@ changes = listen_support.changes
 place_store = listen_support.place_store
 front = listen_support.front
 served = listen_support.served
+log_lines = log_lines
 
 _ACKNOWLEDGED = "notifications/subscriptions/acknowledged"
 _UPDATED = "notifications/resources/updated"
@@ -77,8 +79,9 @@ def test_a_failing_publish_raises_place_store_error_and_wakes_no_stream(
     changes: ResourceChanges,
     place_store: PlaceStoreFake,
     alice: Principal,
+    log_lines: LogLines,
 ) -> None:
-    place_store.publish_failure = PlaceStoreError("the store did not answer")
+    place_store.publish_failure = refused_with_a_cause()
     connection = listen_connection(front, alice, [STANDING_URI])
 
     async def scenario() -> None:
@@ -90,6 +93,42 @@ def test_a_failing_publish_raises_place_store_error_and_wakes_no_stream(
     served(scenario())
 
     assert connection.updated_uris == []
+    failed = log_lines.one("place_publish.ended")
+    assert (
+        failed["outcome"],
+        failed["signal_kind"],
+        failed["error_type"],
+        failed["cause_type"],
+    ) == ("failed", "resource", "PlaceStoreError", "PermissionError")
+
+
+@pytest.mark.parametrize(
+    ("publish", "signal_kind"),
+    [
+        pytest.param(
+            lambda changes, principal: changes.changed(principal, STANDING_URI),
+            "resource",
+            id="a resource change",
+        ),
+        pytest.param(
+            lambda changes, principal: changes.tools_changed(principal),
+            "tools",
+            id="a tool list change",
+        ),
+    ],
+)
+def test_a_publish_is_one_ok_line_with_its_kind_and_no_address(
+    changes: ResourceChanges,
+    alice: Principal,
+    log_lines: LogLines,
+    publish: Callable[[ResourceChanges, Principal], Awaitable[None]],
+    signal_kind: str,
+) -> None:
+    served(publish(changes, alice))
+
+    published = log_lines.one("place_publish.ended")
+    assert (published["outcome"], published["signal_kind"]) == ("ok", signal_kind)
+    assert STANDING_URI not in log_lines.everything()
 
 
 def test_a_signal_another_pod_published_reaches_the_streams_of_its_member_only(
@@ -175,14 +214,13 @@ def test_running_raises_place_store_error_when_the_subscription_fails_before_it_
         served(serving)
 
 
-def test_a_later_subscription_gives_each_stream_what_it_honored_and_logs_one_line_each(
+def test_a_later_subscription_resyncs_each_stream_and_writes_one_renewed_line_each_time(
     app: MemberApp,
     alice: Principal,
     place_store: PlaceStoreFake,
     changes: ResourceChanges,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
 ) -> None:
-    caplog.set_level(logging.INFO, logger=LOGGER_NAME)
     offer = ToolOffer(offered={alice: ()})
     front = McpPersonFront(
         [],
@@ -197,19 +235,19 @@ def test_a_later_subscription_gives_each_stream_what_it_honored_and_logs_one_lin
     )
     watching_the_standing = listen_connection(front, alice, [STANDING_URI])
 
-    async def scenario() -> int:
+    async def scenario() -> None:
         async with front.running(), open_stream(watching_everything):
             async with open_stream(watching_the_standing):
-                logged_before = len(caplog.records)
                 place_store.resubscribe()
                 await settled()
                 place_store.resubscribe()
                 await settled()
-        return len(caplog.records) - logged_before
 
-    logged = served(scenario())
+    served(scenario())
 
-    assert logged == 2
+    assert [
+        (line["level"], line["stream_count"]) for line in log_lines.of("place_subscription.renewed")
+    ] == [("info", 2)] * 2
     assert sorted(
         (method or "", uri or "")
         for method, uri in frames_of(watching_everything)
@@ -256,23 +294,23 @@ def test_a_subscription_that_fails_later_ends_the_open_listens_and_answers_503_b
     assert len([record for record in caplog.records if record.levelno >= logging.ERROR]) == 1
 
 
-def test_a_subscription_failing_for_good_logs_its_cause(
-    front: McpPersonFront,
-    place_store: PlaceStoreFake,
-    caplog: pytest.LogCaptureFixture,
+def test_a_subscription_failing_for_good_writes_one_error_line_with_the_type_of_its_cause(
+    front: McpPersonFront, place_store: PlaceStoreFake, log_lines: LogLines
 ) -> None:
-    caplog.set_level(logging.ERROR, logger=LOGGER_NAME)
+    refusal = PlaceStoreError("no permission for the channel")
+    refusal.__cause__ = PermissionError("the secret detail")
 
     async def scenario() -> None:
         async with front.running():
-            place_store.fail(PlaceStoreError("no permission for the channel"))
+            place_store.fail(refusal)
             await settled()
 
     served(scenario())
 
-    assert "no permission for the channel" in " ".join(
-        record.getMessage() for record in caplog.records
-    )
+    failed = log_lines.one("place_subscription.failed")
+    assert (failed["level"], failed["error_type"]) == ("error", "PermissionError")
+    assert "secret detail" not in log_lines.everything()
+    assert "no permission for the channel" not in log_lines.everything()
 
 
 def test_a_listen_that_passed_the_dead_check_before_the_subscription_failed_opens_no_stream(

@@ -5,19 +5,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from contextlib import suppress
 
 import pytest
 
 from agents.mcp_server import McpPersonFront, ResourceChanges
-from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.listen import LAPSE_POLL_SECONDS
 from agents.mcp_server.place_store import PlaceStoreError
 from agents.member import LISTEN_ALLOWANCE_SECONDS, LISTEN_BOUND_SECONDS, STANDING_URI
 from agents.tools import Principal
 from tests.support import listen_support
 from tests.support.listen_support import ListeningHost
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import (
     MemberApp,
     listen_connection,
@@ -26,7 +25,7 @@ from tests.support.mcp_server_support import (
     settled,
     window_uri,
 )
-from tests.support.place_store_support import PlaceStoreFake
+from tests.support.place_store_support import PlaceStoreFake, refused_with_a_cause
 
 alice = listen_support.alice
 bob = listen_support.bob
@@ -35,6 +34,7 @@ changes = listen_support.changes
 front = listen_support.front
 served = listen_support.served
 place_store = listen_support.place_store
+log_lines = log_lines
 
 _PAST_THE_ALLOWANCE = LISTEN_ALLOWANCE_SECONDS + 2 * LAPSE_POLL_SECONDS
 _FAILED_TEXT = "the resource failed"
@@ -381,8 +381,9 @@ def test_a_failing_acknowledgement_answers_the_fixed_text_and_calls_nothing_on_t
     host: ListeningHost,
     place_store: PlaceStoreFake,
     alice: Principal,
+    log_lines: LogLines,
 ) -> None:
-    place_store.acknowledged_failure = PlaceStoreError("the reply was lost")
+    place_store.acknowledged_failure = refused_with_a_cause()
     connection = listen_connection(signalling_front, alice, [STANDING_URI])
 
     async def scenario() -> None:
@@ -400,16 +401,44 @@ def test_a_failing_acknowledgement_answers_the_fixed_text_and_calls_nothing_on_t
         (False, "signal"),
     ]
     assert "ended" in place_store.shared.stream_calls
+    failed = log_lines.one("listen_acknowledgement.ended")
+    assert (
+        failed["outcome"],
+        failed["level"],
+        failed["error_type"],
+        failed["cause_type"],
+        failed["uri_count"],
+    ) == ("failed", "warning", "PlaceStoreError", "PermissionError", 1)
+    assert "turned_count" not in failed
+    assert log_lines.of("listening.opened") == []
 
 
-def test_a_failing_end_is_logged_by_type_and_the_listen_ends_normally(
+def test_an_acknowledgement_is_one_ok_line_with_the_uris_and_those_it_turned_to_yes(
+    front: McpPersonFront, alice: Principal, log_lines: LogLines
+) -> None:
+    first = listen_connection(front, alice, [STANDING_URI, window_uri("first")], request_id=1)
+    second = listen_connection(front, alice, [STANDING_URI], request_id=2)
+
+    async def scenario() -> None:
+        async with front.running(), open_stream(first), open_stream(second):
+            pass
+
+    served(scenario())
+
+    assert [
+        (line["outcome"], line["uri_count"], line["turned_count"])
+        for line in log_lines.of("listen_acknowledgement.ended")
+    ] == [("ok", 2, 2), ("ok", 1, 0)]
+    assert [line["sub"] for line in log_lines.of("listening.opened")] == [alice.sub] * 2
+
+
+def test_a_failing_end_is_one_failed_line_without_the_detail_and_the_listen_ends_normally(
     signalling_front: McpPersonFront,
     place_store: PlaceStoreFake,
     alice: Principal,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
 ) -> None:
-    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
-    place_store.ended_failure = PlaceStoreError("the secret detail")
+    place_store.ended_failure = refused_with_a_cause()
     connection = listen_connection(signalling_front, alice, [STANDING_URI])
 
     async def scenario() -> None:
@@ -418,10 +447,29 @@ def test_a_failing_end_is_logged_by_type_and_the_listen_ends_normally(
 
     served(scenario())
 
+    ended = log_lines.one("listen_end.ended")
     assert connection.status == 200
-    logged = " ".join(record.getMessage() for record in caplog.records)
-    assert "PlaceStoreError" in logged
-    assert "secret detail" not in logged
+    assert (ended["outcome"], ended["level"], ended["error_type"], ended["cause_type"]) == (
+        "failed",
+        "warning",
+        "PlaceStoreError",
+        "PermissionError",
+    )
+    assert "secret detail" not in log_lines.everything()
+
+
+def test_an_end_that_is_recorded_is_one_ok_line(
+    signalling_front: McpPersonFront, alice: Principal, log_lines: LogLines
+) -> None:
+    connection = listen_connection(signalling_front, alice, [STANDING_URI])
+
+    async def scenario() -> None:
+        async with signalling_front.running(), open_stream(connection):
+            pass
+
+    served(scenario())
+
+    assert log_lines.one("listen_end.ended")["outcome"] == "ok"
 
 
 def test_a_listen_whose_task_is_cancelled_still_ends_its_stream_in_the_store(
@@ -443,30 +491,23 @@ def test_a_listen_whose_task_is_cancelled_still_ends_its_stream_in_the_store(
     assert place_store.shared.stream_calls == ["acknowledged", "ended"]
 
 
-def _refused_with_a_cause() -> PlaceStoreError:
-    refusal = PlaceStoreError("the store is down")
-    refusal.__cause__ = PermissionError("the secret detail")
-    return refusal
-
-
 @pytest.mark.parametrize(
     ("failure", "logged_type"),
     [
         pytest.param(PlaceStoreError("the store is down"), "PlaceStoreError", id="a store error"),
-        pytest.param(_refused_with_a_cause(), "PermissionError", id="a refusal with its cause"),
+        pytest.param(refused_with_a_cause(), "PermissionError", id="a refusal with its cause"),
         pytest.param(RuntimeError("the secret detail"), "RuntimeError", id="an unexpected error"),
     ],
 )
-def test_a_failing_lapse_is_logged_by_type_and_the_next_tick_lapses(
+def test_a_failing_lapse_writes_one_failed_line_by_type_and_the_next_tick_lapses(
     signalling_front: McpPersonFront,
     host: ListeningHost,
     place_store: PlaceStoreFake,
     alice: Principal,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
     failure: Exception,
     logged_type: str,
 ) -> None:
-    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
     connection = listen_connection(signalling_front, alice, [STANDING_URI])
 
     async def scenario() -> list[bool]:
@@ -481,9 +522,108 @@ def test_a_failing_lapse_is_logged_by_type_and_the_next_tick_lapses(
             return [*failing, host.calls[-1][2]]
 
     assert served(scenario()) == [True, True, False]
-    logged = " ".join(record.getMessage() for record in caplog.records)
-    assert logged_type in logged
-    assert "secret detail" not in logged
+    ran = log_lines.of("listen_lapse.ended")
+    assert [line["outcome"] for line in ran] == ["failed", "ok"]
+    assert (ran[0]["level"], ran[0]["last_error_type"]) == ("warning", logged_type)
+    assert "secret detail" not in log_lines.everything()
+
+
+def test_a_lapse_run_that_fails_for_several_polls_writes_its_first_failure_and_then_its_recovery(
+    signalling_front: McpPersonFront, place_store: PlaceStoreFake, log_lines: LogLines
+) -> None:
+    failed_polls = 3
+
+    async def scenario() -> None:
+        async with signalling_front.running():
+            place_store.lapse_failure = PlaceStoreError("the store is down")
+            await asyncio.sleep(failed_polls * LAPSE_POLL_SECONDS + 0.5)
+            place_store.lapse_failure = None
+            await asyncio.sleep(2 * LAPSE_POLL_SECONDS)
+
+    served(scenario())
+
+    assert [(line["event"], line["level"]) for line in log_lines.written_by("agents")] == [
+        ("listen_lapse.ended", "warning"),
+        ("listen_lapse.resumed", "info"),
+    ]
+    assert log_lines.one("listen_lapse.resumed")["failed_run_count"] == failed_polls
+
+
+def test_a_lapse_run_in_which_one_stream_failed_is_one_failed_line_with_its_counts(
+    signalling_front: McpPersonFront, place_store: PlaceStoreFake, log_lines: LogLines
+) -> None:
+    place_store.lapse_item_failure = "StoreError"
+
+    async def scenario() -> None:
+        async with signalling_front.running():
+            await asyncio.sleep(LAPSE_POLL_SECONDS + 0.5)
+
+    served(scenario())
+
+    failed = log_lines.one("listen_lapse.ended")
+    assert (failed["outcome"], failed["reason"], failed["failed_count"]) == (
+        "failed",
+        "lapse_failed",
+        1,
+    )
+    assert failed["last_error_type"] == "StoreError"
+
+
+def test_a_lapse_run_that_found_nothing_writes_no_line(
+    signalling_front: McpPersonFront, log_lines: LogLines
+) -> None:
+    async def scenario() -> None:
+        async with signalling_front.running():
+            await asyncio.sleep(5 * LAPSE_POLL_SECONDS)
+
+    served(scenario())
+
+    assert log_lines.written_by("agents") == []
+
+
+def test_a_lapse_writes_one_line_with_its_counts_and_one_lapsed_line_for_the_principal(
+    signalling_front: McpPersonFront, alice: Principal, log_lines: LogLines
+) -> None:
+    connection = listen_connection(signalling_front, alice, [STANDING_URI])
+
+    async def scenario() -> None:
+        async with signalling_front.running():
+            async with open_stream(connection):
+                pass
+            await asyncio.sleep(_PAST_THE_ALLOWANCE)
+
+    served(scenario())
+
+    ran = log_lines.one("listen_lapse.ended")
+    assert (ran["outcome"], ran["stream_count"], ran["turn_count"], ran["failed_count"]) == (
+        "ok",
+        1,
+        1,
+        0,
+    )
+    assert log_lines.one("listening.lapsed")["sub"] == alice.sub
+
+
+def test_two_pods_and_one_acknowledgement_write_one_opened_line_and_one_lapsed_line(
+    app: MemberApp,
+    alice: Principal,
+    place_store: PlaceStoreFake,
+    log_lines: LogLines,
+) -> None:
+    front_a, _host_a = a_front(app, place_store)
+    front_b, _host_b = a_front(app, place_store.shared.pod())
+    connection = listen_connection(front_a, alice, [STANDING_URI])
+
+    async def scenario() -> None:
+        async with front_a.running(), front_b.running():
+            async with open_stream(connection):
+                await settled()
+            await asyncio.sleep(_PAST_THE_ALLOWANCE)
+
+    served(scenario())
+
+    assert log_lines.one("listening.opened")["sub"] == alice.sub
+    assert log_lines.one("listening.lapsed")["sub"] == alice.sub
 
 
 def test_a_listen_cancelled_as_the_front_stops_has_its_end_recorded_before_running_exits(
@@ -502,11 +642,19 @@ def test_a_listen_cancelled_as_the_front_stops_has_its_end_recorded_before_runni
     assert served(scenario()) == ["acknowledged", "ended"]
 
 
-@pytest.mark.parametrize("read", ["listens_to", "listeners"])
-def test_a_failing_store_raises_place_store_error_from_a_read(
-    changes: ResourceChanges, place_store: PlaceStoreFake, alice: Principal, read: str
+@pytest.mark.parametrize(
+    ("read", "event"),
+    [("listens_to", "listening_lookup.ended"), ("listeners", "listeners_lookup.ended")],
+)
+def test_a_failing_store_raises_place_store_error_from_a_read_and_writes_one_failed_line(
+    changes: ResourceChanges,
+    place_store: PlaceStoreFake,
+    alice: Principal,
+    read: str,
+    event: str,
+    log_lines: LogLines,
 ) -> None:
-    place_store.read_failure = PlaceStoreError("the store did not answer")
+    place_store.read_failure = refused_with_a_cause()
 
     async def scenario() -> None:
         if read == "listens_to":
@@ -519,15 +667,20 @@ def test_a_failing_store_raises_place_store_error_from_a_read(
     with pytest.raises(PlaceStoreError):
         served(read_scenario)
 
+    failed = log_lines.one(event)
+    assert (failed["outcome"], failed["error_type"], failed["cause_type"]) == (
+        "failed",
+        "PlaceStoreError",
+        "PermissionError",
+    )
 
-def test_a_callable_that_raises_leaves_the_listen_unharmed_and_is_logged_by_type_only(
+
+def test_a_callable_that_raises_leaves_the_listen_unharmed_and_is_one_error_line_by_type_only(
     app: MemberApp,
     alice: Principal,
     place_store: PlaceStoreFake,
-    caplog: pytest.LogCaptureFixture,
+    log_lines: LogLines,
 ) -> None:
-    caplog.set_level(logging.ERROR, logger=LOGGER_NAME)
-
     def raises(_principal: Principal, _uri: str, _listens: bool) -> None:
         raise RuntimeError("the host's secret detail")
 
@@ -549,8 +702,44 @@ def test_a_callable_that_raises_leaves_the_listen_unharmed_and_is_logged_by_type
     assert served(scenario()) == [True, False]
     assert connection.updated_uris == [STANDING_URI]
     assert connection.status == 200
-    logged = " ".join(record.getMessage() for record in caplog.records)
-    assert "listening_changed" in logged
-    assert "RuntimeError" in logged
-    assert "resource method" not in logged
-    assert "secret detail" not in logged
+    failed = log_lines.of("host_callback.failed")
+    assert {(line["level"], line["callback"], line["error_type"]) for line in failed} == {
+        ("error", "listening_changed", "RuntimeError")
+    }
+    assert "secret detail" not in log_lines.everything()
+
+
+def test_a_listens_to_read_is_one_ok_line(
+    front: McpPersonFront, alice: Principal, changes: ResourceChanges, log_lines: LogLines
+) -> None:
+    connection = listen_connection(front, alice, [STANDING_URI])
+
+    async def scenario() -> None:
+        async with front.running(), open_stream(connection):
+            await changes.listens_to(alice, STANDING_URI)
+
+    served(scenario())
+
+    assert log_lines.one("listening_lookup.ended")["outcome"] == "ok"
+
+
+def test_a_listeners_read_is_one_ok_line_with_the_count_of_principals(
+    front: McpPersonFront,
+    alice: Principal,
+    bob: Principal,
+    changes: ResourceChanges,
+    log_lines: LogLines,
+) -> None:
+    streams = [
+        listen_connection(front, alice, [STANDING_URI], request_id=1),
+        listen_connection(front, bob, [STANDING_URI], request_id=2),
+    ]
+
+    async def scenario() -> None:
+        async with front.running(), open_stream(streams[0]), open_stream(streams[1]):
+            await changes.listeners(STANDING_URI)
+
+    served(scenario())
+
+    ended = log_lines.one("listeners_lookup.ended")
+    assert (ended["outcome"], ended["principal_count"]) == ("ok", 2)

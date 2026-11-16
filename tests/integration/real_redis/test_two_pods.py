@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import signal
 import time
 from collections.abc import Iterator
@@ -26,14 +25,15 @@ from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 from tandem.keys import deadline_keys
 
-from agents.mcp_server.asgi import LOGGER_NAME
+from agents.mcp_server import ResourceChanges
 from agents.mcp_server.listen import LAPSE_POLL_SECONDS
-from agents.mcp_server.place_store import ListeningTurn, ResourceChange, Resubscribed
+from agents.mcp_server.place_store import LapseRun, ListeningTurn, ResourceChange, Resubscribed
 from agents.mcp_server.redis_place_store import CLAIM_FOR, RedisPlaceStore
 from agents.mcp_wire import MCP_ENDPOINT_PATH
 from agents.member import LISTEN_ALLOWANCE_SECONDS, LISTEN_BOUND_SECONDS, STANDING_URI
 from agents.turn import Principal
 from tests.support.faulty_redis import EvalshaStopsAfter
+from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import a_member, member_scope, rpc_body
 from tests.support.real_redis_pod import (
     LISTENERS_PATH,
@@ -52,6 +52,8 @@ from tests.support.redis_listen_support import (
     snapshots_around_evalsha,
     subscribed,
 )
+
+log_lines = log_lines
 
 _ACKNOWLEDGED = "notifications/subscriptions/acknowledged"
 _UPDATED = "notifications/resources/updated"
@@ -230,6 +232,35 @@ def a_store(redis_url: str) -> RedisPlaceStore:
     return RedisPlaceStore(AsyncRedis.from_url(redis_url), key_prefix=PREFIX)
 
 
+def test_two_pods_following_one_store_write_one_opened_line_and_one_lapsed_line(
+    redis_url: str, admin: Redis, log_lines: LogLines
+) -> None:
+    async def scenario() -> None:
+        pod_a = ResourceChanges(a_store(redis_url))
+        pod_b = ResourceChanges(a_store(redis_url))
+        async with pod_a.following(), pod_b.following():
+            async with pod_a.opened(WRITTEN_MEMBER) as stream:
+                await pod_a.acknowledged(WRITTEN_MEMBER, stream, [STANDING_URI], tools=False)
+
+            async def lapsed() -> bool:
+                return bool(log_lines.of("listening.lapsed"))
+
+            await eventually(
+                lapsed,
+                seconds=LISTEN_ALLOWANCE_SECONDS
+                + CLAIM_FOR.total_seconds()
+                + LAPSE_POLL_SECONDS
+                + 5,
+            )
+            await asyncio.sleep(2 * LAPSE_POLL_SECONDS)
+
+    asyncio.run(scenario())
+
+    assert [line["sub"] for line in log_lines.of("listening.opened")] == [WRITTEN_MEMBER.sub]
+    assert [line["sub"] for line in log_lines.of("listening.lapsed")] == [WRITTEN_MEMBER.sub]
+    assert len(log_lines.of("listen_lapse.ended")) == 1
+
+
 def test_a_claim_its_pod_cannot_finish_is_lapsed_by_another_pod_once_the_claim_ran_out(
     redis_url: str, admin: Redis
 ) -> None:
@@ -304,15 +335,14 @@ def test_a_lapsed_stream_leaves_no_member_whatever_its_principal_and_uri_hold(
         ),
     ],
 )
-def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_logs(
-    redis_url: str, admin: Redis, record: str, caplog: pytest.LogCaptureFixture
+def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_counts_the_failure(
+    redis_url: str, admin: Redis, record: str
 ) -> None:
     """``cjson.decode`` raises on text that is no JSON; the fake Redis raises a Python error there
     that no real server shows."""
-    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
     alice = a_member("alice")
 
-    async def scenario() -> tuple[tuple[object, object], list[object]]:
+    async def scenario() -> tuple[tuple[object, object], list[object], LapseRun]:
         client = AsyncRedis.from_url(redis_url)
         watcher = AsyncRedis.from_url(redis_url)
         around_scripts = snapshots_around_evalsha(client, lambda: namespace_of(watcher, PREFIX))
@@ -322,16 +352,22 @@ def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_logs(
             await delivered_up_to(store, events, _FIRST_BARRIER)
             admin.hset(f"{PREFIX}-agents:v1:streams", "held", record)
 
+            runs: list[LapseRun] = []
+
             async def claimed() -> bool:
-                await store.lapse_due("pod")
+                runs.append(await store.lapse_due("pod"))
                 return bool(
                     admin.zscore(deadline_keys(f"{PREFIX}-agents", "listen").claimed, "held")
                 )
 
             await eventually(claimed, seconds=WAIT_SECONDS)
-            return around_scripts[-1], await delivered_up_to(store, events, _SECOND_BARRIER)
+            return (
+                around_scripts[-1],
+                await delivered_up_to(store, events, _SECOND_BARRIER),
+                runs[-1],
+            )
 
-    (before, after), seen = asyncio.run(scenario())
+    (before, after), seen, run = asyncio.run(scenario())
 
     assert after == before
     assert seen == [
@@ -340,4 +376,4 @@ def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_logs(
         _FIRST_BARRIER,
         _SECOND_BARRIER,
     ]
-    assert caplog.records
+    assert (run.turns, run.stream_count, run.failed_count) == ((), 0, 1)
