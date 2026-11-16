@@ -3,6 +3,6 @@ agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
 role = "builder"
 base = "8a7a6347bb49359f2f80e6e6081e6b6142afb4c0"
 branch = "claude/issue-980-tandem-wake-trace"
-scope = ["docs/connector.md", "pyproject.toml", "src/agents/mcp_server/listen.py", "src/agents/mcp_server/place_store.py", "src/agents/mcp_server/redis_place_store.py", "tests", "uv.lock"]
+scope = ["README.md", "docs/connector.md", "pyproject.toml", "src/agents/mcp_server/listen.py", "src/agents/mcp_server/place_store.py", "src/agents/mcp_server/redis_place_store.py", "tests", "uv.lock"]
 opened_commit = "4696a492324ca8791f245483e9ce5aca60498d62"
 whole_reason = "The pin, the Lua wake argument and the handler's trace are one wire change that only works together."
