@@ -281,11 +281,11 @@ every person's budget, so every caller computes it with
 | 200, an event stream that ends with `[DONE]` after `finish_reason: stop`, non-empty text of at most `MAX_EVENT_BYTES` | one `AssistantTextEvent` per text piece as it arrives, then `FinalEvent` |
 | 200, an event stream that ends with `[DONE]` after `finish_reason: tool_calls`, whole round | the calls run in order (see below), then the next request |
 | 200 otherwise (a stream that ends or breaks before `[DONE]`, a `[DONE]` with no finish reason, an event that is no JSON object or no chunk, a line that is no UTF-8, empty text, another `finish_reason`, a lone surrogate, a longer reply, a round that is not whole) | `failed: provider_error`, detail `malformed_reply`; pieces already yielded stand |
-| 200, an event stream with an error event (a JSON object with an `error` key), with or without a following `[DONE]` | `failed: provider_unavailable`, detail `gateway_failed`; the log carries the error's type and code when they are well formed, never its message |
+| 200, an event stream with an error event (a JSON object with an `error` key), with or without a following `[DONE]` | `failed: provider_unavailable`, detail `gateway_failed`; nothing of the event is kept, its message included |
 | 429 | `refused: busy`; `retry_after_s` from the `Retry-After` seconds, at most `MAX_RETRY_AFTER_S`; an HTTP-date or no header gives none |
 | 422 whose error `type` is `budget_exceeded` (a spent person or app budget) | `refused: budget_spent`; decided from the status and the checked error type, never the message |
-| another 4xx | `failed: provider_unavailable`, detail `gateway_refused`; the body is read within `MAX_EVENT_BYTES` only for the logged error type and code |
-| 1xx, a 2xx other than 200, 3xx or 5xx (a `Retry-After` is ignored) | `failed: provider_unavailable`, detail `gateway_failed`; the body is read as for a 4xx |
+| another 4xx | `failed: provider_unavailable`, detail `gateway_refused`; a 400 or another 4xx reads no body, a 422 reads it within `MAX_EVENT_BYTES` only to find a spent budget |
+| 1xx, a 2xx other than 200, 3xx or 5xx (a `Retry-After` is ignored) | `failed: provider_unavailable`, detail `gateway_failed`; no body is read |
 | connection refused or reset, or lost while the stream runs, TLS failure, an origin the HTTP library refuses | `failed: provider_unavailable`, detail `connection_failed` |
 
 Proved by `tests/test_backend_gateway.py`: `test_a_text_turn_ends_with_the_answer`,
@@ -296,14 +296,13 @@ Proved by `tests/test_backend_gateway.py`: `test_a_text_turn_ends_with_the_answe
 `test_a_lost_connection_is_provider_unavailable` and
 `test_an_origin_the_http_library_refuses_is_provider_unavailable`; and by `tests/test_backend_gateway_stream.py`:
 `test_a_round_that_streams_text_then_fails_leaves_the_text_shown_and_runs_nothing`,
-`test_an_error_event_ends_the_turn_and_logs_only_its_type_and_code`,
+`test_an_error_event_ends_the_turn_as_gateway_failed`,
 `test_a_connection_lost_while_the_stream_runs_is_connection_failed` and
 `test_a_stopped_turn_holds_no_text_from_the_wire`. A round is complete only at `[DONE]` after
 `stop` or `tool_calls`; the client judges what the gateway sends, so a provider stream the
 gateway cuts and closes with a finish reason of its own reads as complete. A person or app over budget reads as
-`budget_spent`, no outage. `detail` is for logs only. A refusal logs the
-gateway's error type and code, never its message
-(`tests/test_backend_gateway_refusal.py`, which also proves `budget_spent`).
+`budget_spent`, no outage. `detail` is the reason of the request's line
+(`tests/test_backend_gateway_refusal.py` proves `budget_spent`).
 
 ### The tool loop
 
@@ -404,7 +403,7 @@ Proved by `test_one_picture_ends_the_turn_as_a_file_with_no_other_event`,
 | --- | --- | --- |
 | The HTTP body | `base64_length(MAX_RUN_FILES_BYTES)` plus `MAX_EVENT_BYTES` for the JSON around it | `failed: provider_error`, as a text body over its bound |
 | The decoded picture | canonical base64, at most `MAX_RUN_FILES_BYTES` | `failed: provider_error` |
-| 429, another status, a connection or read failure, the deadline | | as for a text turn |
+| 429, another status, a connection or read failure, the deadline | | as for a text turn, with the line `picture_request.ended` |
 
 Proved by `test_a_body_one_byte_over_the_read_bound_is_a_provider_error` and
 `test_a_picture_one_byte_over_its_decoded_bound_is_a_provider_error`. A vendor's moderation
@@ -474,7 +473,7 @@ gateway client adds `tool_call_id`, the person front has none
 | the handler raises | `failed`, `error_type` the class name, WARNING, no traceback |
 | the result is over `MAX_EVENT_BYTES` | `refused`, `result_too_large`, INFO |
 | a handler's `TurnStopped` refusing the turn (client only) | `refused`, its code, INFO |
-| a handler's `TurnStopped` failing the turn (client only) | `failed`, `error_type` `TurnStopped`, WARNING |
+| a handler's `TurnStopped` failing the turn (client only) | `failed`, its code as `reason`, WARNING |
 | the deadline, the host's close, a client cancelling | `cancelled`, INFO |
 
 The person front writes single lines for what it holds back: `answer.withheld` (`method` from the
@@ -482,6 +481,27 @@ served methods, and `tool_name` for an offered tool), `listen_stream.cut`, `tool
 `resource_lookup.failed` (`method` and `error_type`). The route writes `route_answer.refused` with
 `reason` (`no_status`, `incomplete`, `too_large`, `status`, `not_text`) and `status` when the app
 sent one. The inner route request carries the outer trace id under a new span id.
+
+Each request to the gateway writes one line when it ends: `model_request.ended` per round of a
+turn, `picture_request.ended` and `model_list_request.ended`. A line carries `duration_ms`,
+`outcome` and the response's `status` once one came; a round's line also carries `first_output_ms`
+at its first text piece and `input_tokens`, `output_tokens`, `cached_input_tokens` and
+`cache_write_tokens` when the gateway sent a usage. The `reason` is the stop's detail, or its code
+when it has none; a failed line is a WARNING, because the turn reports the stop itself
+(`tests/test_backend_gateway_request_lines.py`):
+
+| Case | `outcome`, `reason`, level |
+|---|---|
+| answered 200 and read whole | `ok`, INFO |
+| 429 | `refused`, `busy`, INFO |
+| 422 with the `budget_exceeded` error type | `refused`, `budget_spent`, INFO |
+| another 4xx | `failed`, `gateway_refused`, with the `status` |
+| 5xx, or an error event in a 200 stream | `failed`, `gateway_failed` |
+| a reply that is no round, list or picture | `failed`, `malformed_reply` |
+| a connection refused or lost | `failed`, `connection_failed`, with no `status` unless one came before |
+| the turn's deadline | `failed`, `limit_exceeded` |
+| the model list's deadline | `failed`, `timed_out` |
+| the host's close | `cancelled` |
 
 The place store, the listen record and the lease write one `<noun>.ended` line per call of the
 store, with `duration_ms` and `outcome`; a call that fails is `failed` with `error_type`, the class
