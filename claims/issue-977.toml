@@ -3,6 +3,6 @@ agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
 role = "builder"
 base = "b8568cbf2d46aa0d88db19d6e9011bdf8c682ac5"
 branch = "claude/issue-977-place-traceparent"
-scope = ["docs/connector.md", "docs/hearing.md", "src/agents/mcp_server/hearing.py", "src/agents/member.py", "src/agents/voice/loop.py", "tests"]
+scope = [".github/workflows/ci.yml", ".importlinter", "README.md", "docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "pyproject.toml", "quality/config.toml", "src/agents/mcp_server/hearing.py", "src/agents/member.py", "src/agents/voice/loop.py", "tests", "uv.lock"]
 opened_commit = "ddce336c76d30785a2baaa6ea05e05711f6084eb"
 whole_reason = "The field, the one writer agents owns and the one reader agents owns are a single wire change that readers adopt first."
