@@ -22,9 +22,10 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Map
 from contextlib import AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from enum import StrEnum
 from functools import partial
 from http import HTTPStatus
-from typing import Any, Final, cast
+from typing import Annotated, Any, Final, cast, get_args, get_origin
 
 import anyio.lowlevel
 from logline import StepTimer
@@ -58,7 +59,7 @@ from mcp_types import (
     ToolsCapability,
     UnsupportedProtocolVersionErrorData,
 )
-from pydantic import JsonValue, StrictInt, TypeAdapter, ValidationError
+from pydantic import BaseModel, JsonValue, StrictInt, TypeAdapter, ValidationError
 
 from agents.mcp_server.asgi import (
     DISCOVER_METHOD,
@@ -80,13 +81,14 @@ from agents.mcp_server.asgi import (
 )
 from agents.mcp_server.listen import ResourceChanges, on_subscriptions_listen
 from agents.mcp_server.resources import MemberResources, list_answer, read_answer
+from agents.mcp_server.route_call import ARGUMENTS_REFUSED_TEXT
 from agents.mcp_wire import (
     JSON_MEDIA_TYPE,
     PROTOCOL_VERSION,
     carries_signature_of,
     read_strict_json,
 )
-from agents.member import LISTEN_BOUND_SECONDS
+from agents.member import LISTEN_BOUND_SECONDS, MEMBER_TOOL_ARGUMENTS, member_arguments
 from agents.tools import ToolDeclaration, ToolEffect, ToolOutcome
 from agents.turn import (
     TOOL_IMAGE_MEDIA_TYPE,
@@ -110,6 +112,7 @@ _UNKNOWN_TOOL_TEXT: Final = "Unknown tool"
 _NOT_OFFERED_TEXT: Final = "the tool is not offered now"
 _OFFER_FAILED_TEXT: Final = "the tool offer failed"
 _INVALID_ARGUMENTS_TEXT: Final = "Invalid tool arguments"
+_KEY_PLACEHOLDER: Final = "[key]"
 _BEARER_SCHEME: Final = "bearer"
 _SERVER_NAME: Final = "overnightworks-agents"
 _SERVER_VERSION: Final = "1"
@@ -461,6 +464,15 @@ class McpPersonFront:
         try:
             async with StepTimer("tool_call.ended", _LOG, tool_name=tool.declaration.name) as step:
                 step.handled()
+                model = MEMBER_TOOL_ARGUMENTS.get(tool.declaration.name)
+                if model is not None:
+                    try:
+                        member_arguments(model, arguments)
+                    except ValidationError as error:
+                        step.refuse(ToolRefusal.TOOL_ERROR)
+                        return _written(
+                            ToolOutcome(_arguments_refused_text(model, error), is_error=True)
+                        )
                 outcome = await tool.handler(_CURRENT_REQUEST.get(), arguments)
                 if not is_within_event_bound(outcome.content, outcome.image):
                     step.refuse(ToolRefusal.RESULT_TOO_LARGE)
@@ -470,6 +482,69 @@ class McpPersonFront:
                 return _written(outcome)
         except Exception:  # the timer wrote the line; only the class name is ever logged
             return _written(ToolOutcome(_HANDLER_FAILED_TEXT, is_error=True))
+
+
+def _models_in(annotation: object) -> tuple[type[BaseModel], ...]:
+    """The models a field's annotation holds at any depth: the ones its paths continue in."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return (annotation,)
+    return tuple(model for part in get_args(annotation) for model in _models_in(part))
+
+
+def _key_words(annotation: object) -> frozenset[str] | None:
+    """The words of the enum a field's mapping annotation keys by, at any depth: empty when the
+    mapping's keys are no enum; none when the annotation holds no mapping."""
+    origin = get_origin(annotation)
+    if isinstance(origin, type) and issubclass(origin, Mapping):
+        key_type = get_args(annotation)[0]
+        while get_origin(key_type) is Annotated:
+            key_type = get_args(key_type)[0]
+        if isinstance(key_type, type) and issubclass(key_type, StrEnum):
+            return frozenset(word.value for word in key_type)
+        return frozenset()
+    return next(
+        (words for part in get_args(annotation) if (words := _key_words(part)) is not None), None
+    )
+
+
+def _declared_path(model: type[BaseModel], location: tuple[int | str, ...]) -> str:
+    """A failing field's path in dots. A name that is no declared field, or that follows a mapping
+    field, is a caller's key and reads `[key]`, never echoed, unless it is a word of the
+    mapping's enum keys: a protocol word the model needs to tell which entry failed."""
+    candidates = (model,)
+    key_words: frozenset[str] | None = None
+    parts: list[str] = []
+    for step in location:
+        if isinstance(step, int):
+            parts.append(str(step))
+            continue
+        if key_words is not None and step in key_words:
+            parts.append(step)
+            key_words = None
+            continue
+        declared = (
+            None
+            if key_words is not None
+            else next((held for held in candidates if step in held.model_fields), None)
+        )
+        if declared is None:
+            key_words = None
+            if not parts or parts[-1] != _KEY_PLACEHOLDER:
+                parts.append(_KEY_PLACEHOLDER)
+            continue
+        parts.append(step)
+        annotation = declared.model_fields[step].annotation
+        key_words = _key_words(annotation)
+        candidates = _models_in(annotation)
+    return ".".join(parts)
+
+
+def _arguments_refused_text(model: type[BaseModel], error: ValidationError) -> str:
+    """Each failing path and its error type, once and sorted, never an input value."""
+    failures = {
+        f"{_declared_path(model, failure['loc'])} ({failure['type']})" for failure in error.errors()
+    }
+    return f"{ARGUMENTS_REFUSED_TEXT}: {', '.join(sorted(failures))}"
 
 
 async def _offer(

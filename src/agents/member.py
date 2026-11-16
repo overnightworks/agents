@@ -13,7 +13,10 @@ This module is base, so a runner parses all of it without the ``mcp-server`` ext
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Annotated, Final, Self
 from urllib.parse import quote, unquote, urlsplit
 
@@ -42,6 +45,7 @@ __all__ = [
     "LEASE_SECONDS",
     "LISTEN_ALLOWANCE_SECONDS",
     "LISTEN_BOUND_SECONDS",
+    "MEMBER_TOOL_ARGUMENTS",
     "SET_TURN_STATE_TOOL",
     "SPEAK_TOOL",
     "STANDING_URI",
@@ -97,6 +101,7 @@ __all__ = [
     "Voices",
     "Written",
     "gesture_tool",
+    "member_arguments",
     "place_ref_from_view_uri",
     "place_ref_from_window_uri",
     "place_view_uri",
@@ -525,6 +530,29 @@ class GestureArguments(StrictModel):
 
     place: PlaceRef
     gesture: Annotated[FigureGesture, Field(strict=False)]
+
+
+MEMBER_TOOL_ARGUMENTS: Final[Mapping[str, type[StrictModel]]] = MappingProxyType(
+    {
+        ACCEPT_INVITATION_TOOL: AcceptInvitationArguments,
+        DECLINE_INVITATION_TOOL: DeclineInvitationArguments,
+        SPEAK_TOOL: SpeakArguments,
+        STOP_SPEAKING_TOOL: StopSpeakingArguments,
+        CONTINUE_SPEAKING_TOOL: ContinueSpeakingArguments,
+        GESTURE_TOOL: GestureArguments,
+        SET_TURN_STATE_TOOL: SetTurnStateArguments,
+    }
+)
+"""The arguments record of each member tool by the tool's name. The person front checks a call
+against it before the handler runs."""
+
+
+def member_arguments[ArgumentsT: StrictModel](
+    model: type[ArgumentsT], arguments: JsonObject
+) -> ArgumentsT:
+    """The arguments as the model, parsed as JSON as an agent sends them (a list is a ``Voices``
+    tuple); a ``ValidationError`` when they do not fit it."""
+    return model.model_validate_json(json.dumps(arguments))
 
 
 class Relayed(StrictModel):

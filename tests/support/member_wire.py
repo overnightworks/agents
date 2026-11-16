@@ -61,6 +61,14 @@ def written_wire(**fields: Any) -> dict[str, Any]:
     return {"written": True} | fields
 
 
+def accept_wire(**fields: Any) -> dict[str, Any]:
+    return {"place": {"kind": "room", "id": "r-1"}, "invitation": "i-1", "epoch": 3} | fields
+
+
+def decline_wire(**fields: Any) -> dict[str, Any]:
+    return accept_wire(reason="busy") | fields
+
+
 def speak_wire(**fields: Any) -> dict[str, Any]:
     return {"place": {"kind": "room", "id": "r-1"}, "text": "Shall we start?"} | fields
 
