@@ -517,6 +517,8 @@ No line carries a URI, a generation or content:
 | `listen_end.ended` | none; a failed end or one past its cap is `failed`, WARNING |
 | `listening_lookup.ended`, `listeners_lookup.ended` | `principal_count` on the second |
 
+The lease writes no timed line of its own: tandem's `lease_renewal.ended`, `lease_state_read.ended` and `lease_roster_read.ended` time each renew and read, each with `lease_family`, `outcome` and, on failure, `error_type`.
+
 State changes and background runs write their own lines, carrying `sub` where they name a person:
 
 | Line | When |
