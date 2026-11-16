@@ -1,5 +1,9 @@
 """The voice loop answers each decision in the trace of the line that woke it."""
 
+import pytest
+from logline import unit_trace
+from logline.trace import current_trace_id
+
 from tests.support import voice_support
 from tests.support.voice_lines import a_line
 from tests.support.voice_support import RETURNED, PacedGateway, finish, piece
@@ -43,13 +47,19 @@ def test_each_answer_runs_in_the_trace_of_the_line_that_woke_it(place):
     assert trace_ids_sent(gateway) == [t.split("-")[1] for t in (A_TRACEPARENT, other)]
 
 
-def test_a_waking_line_without_a_traceparent_starts_a_trace_of_its_own(place):
+@pytest.mark.parametrize("traceparent", [None, "not-a-traceparent"], ids=["absent", "malformed"])
+def test_a_waking_line_without_a_usable_traceparent_starts_a_trace_of_its_own(place, traceparent):
     gateway = PacedGateway(place.trace, [piece("Gern."), finish()])
 
     async def hearing(trace):
-        yield a_line(1, "Frage eins?")
+        yield a_line(1, "Frage eins?").model_copy(update={"traceparent": traceparent})
         await trace.settled()
 
-    assert place.run(hearing, gateway) == RETURNED
+    with unit_trace(None):
+        enclosing_trace_id = current_trace_id()
+        ending = place.run(hearing, gateway)
 
-    assert len(trace_ids_sent(gateway)[0]) == 32
+    (sent,) = trace_ids_sent(gateway)
+    assert ending == RETURNED
+    assert len(sent) == 32
+    assert sent != enclosing_trace_id
