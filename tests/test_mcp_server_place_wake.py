@@ -14,10 +14,12 @@ from http import HTTPStatus
 from typing import Any
 
 import pytest
+from logline import current_traceparent, unit_trace
+from logline.trace import current_trace_id
 
 from agents.mcp_server import McpPersonFront, ResourceChanges
 from agents.mcp_server.asgi import LOGGER_NAME
-from agents.mcp_server.place_store import PlaceStoreError, ResourceChange
+from agents.mcp_server.place_store import ListeningTurn, PlaceStoreError, ResourceChange
 from agents.member import STANDING_URI
 from agents.tools import Principal
 from tests.support import listen_support
@@ -150,6 +152,45 @@ def test_a_signal_another_pod_published_reaches_the_streams_of_its_member_only(
         "alice": [STANDING_URI],
         "bob": [],
     }
+
+
+@pytest.mark.parametrize(
+    "traceparent",
+    [
+        pytest.param(None, id="none"),
+        pytest.param("", id="empty"),
+        pytest.param("not-a-traceparent", id="malformed"),
+        pytest.param("00-" + "0" * 32 + "-00f067aa0ba902b7-01", id="all-zero trace id"),
+    ],
+)
+def test_a_turn_another_pod_published_without_a_usable_trace_is_handled_in_a_fresh_one(
+    place_store: PlaceStoreFake, alice: Principal, traceparent: str | None
+) -> None:
+    with unit_trace(None):
+        sender_trace = current_trace_id()
+        next_traceparent = current_traceparent()
+    heard_in: list[str | None] = []
+    changes = ResourceChanges(
+        place_store, listening_changed=lambda *_: heard_in.append(current_trace_id())
+    )
+
+    async def scenario() -> None:
+        async with changes.following():
+            place_store.deliver(
+                ListeningTurn(alice, STANDING_URI, listens=True, traceparent=traceparent)
+            )
+            place_store.deliver(
+                ListeningTurn(alice, STANDING_URI, listens=False, traceparent=next_traceparent)
+            )
+            await settled()
+
+    served(scenario())
+
+    [fresh, carried] = heard_in
+    assert fresh is not None
+    assert fresh != sender_trace
+    assert carried == sender_trace
+    assert current_trace_id() is None
 
 
 def test_running_yields_only_once_the_first_subscription_is_confirmed(

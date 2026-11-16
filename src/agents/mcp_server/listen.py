@@ -29,7 +29,7 @@ from typing import Any, Final
 from uuid import uuid4
 
 import anyio
-from logline import StepTimer
+from logline import StepTimer, unit_trace
 from mcp.server.context import ServerRequestContext
 from mcp.shared.subscriptions import (
     SUBSCRIPTION_ID_META_KEY,
@@ -277,10 +277,12 @@ class ResourceChanges:
                             )
                         else:
                             confirmed.set_result(None)
-                    case ListeningTurn(principal, uri, listens):
-                        self._signal(principal, uri, listens=listens)
+                    case ListeningTurn(principal, uri, listens, traceparent):
+                        with unit_trace(traceparent):
+                            self._signal(principal, uri, listens=listens)
                     case ResourceChange() | ToolsChange():
-                        self._deliver(event)
+                        with unit_trace(event.traceparent):
+                            self._deliver(event)
             raise PlaceStoreError("the place store's subscription ended")
         except Exception as failure:
             if confirmed.done():

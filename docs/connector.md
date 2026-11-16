@@ -784,7 +784,7 @@ name, the one segment (`[a-z0-9][a-z0-9-]*`) your app gives its own tandem. agen
 it stores, tandem's channel included, under `<prefix>-agents`, so its keys and wakes never meet your
 app's; it refuses a prefix ending in `-agents`. A member's lease keeps its keys beside the listen
 record's, `<prefix>-agents:tandem:v1:epoch` and `<prefix>-agents:tandem:v1:l:member:*`, on tandem's
-leases of family `member`; the `redis` extra names tandem by range (0.7, tag v0.7.1) and the host pins that tag itself, as it
+leases of family `member`; the `redis` extra names tandem by range (0.8, tag v0.8.0) and the host pins that tag itself, as it
 pins logline, because uv resolves one version.
 The client carries a `Retry` and sets
 `socket_timeout` and `socket_connect_timeout`: without the timeouts a publish to a silent Redis
@@ -795,6 +795,20 @@ UTF-8, so each one costs a resync (an open gap on overnightworks/tandem#2). The 
 `tools_changed` after a Redis restart may raise `PlaceStoreError`, because tandem never resends a
 `PUBLISH` and a stale pooled connection fails it; the host expects that and relies on the listen's
 read within `LISTEN_BOUND_SECONDS`.
+
+**The trace across a wake.** Every wake carries its sender's trace: `publish` sends the caller's
+current trace and the Lua scripts of the listen record send `logline.current_traceparent()`, so a
+`PlaceSignal` or `ListeningTurn` a pod receives holds the sender's `traceparent`, `None` for a
+sender outside a trace. The front handles each signal and turn under `logline.unit_trace` of it,
+so a `listening_changed` of a host runs in the trace of the listen request that turned the answer
+on another pod, and a host that implements the port passes the field through as received; the
+value is unvalidated, since `unit_trace` starts a new trace for a malformed one. Pods on tandem 0.8
+and on an earlier tandem share no wake channel and never hear each other, so every pod of a host
+moves to this release at once and restarts together, and a rollback goes back for all pods
+together, because a rolling update loses wakes until the last old pod is gone. Proved
+by `test_a_wake_carries_the_trace_of_the_pod_that_sent_it_to_the_pod_that_receives_it`,
+`test_a_turn_another_pod_published_is_handled_in_the_trace_it_carries` and, on two pods,
+`test_a_listen_on_one_pod_reaches_the_host_of_the_other_in_the_trace_of_its_request`.
 
 `running()` yields at the first confirmed subscription, so a pod turns ready only once it hears
 changes; while Redis is unreachable it stays not ready, and a subscription the store refuses
