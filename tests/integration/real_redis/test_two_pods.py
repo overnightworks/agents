@@ -21,9 +21,9 @@ from typing import Any
 
 import httpx2
 import pytest
+from logline.trace import current_trace_id
 from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
-from logline.trace import current_trace_id
 from tandem import wake_channel
 from tandem.keys import deadline_keys
 
