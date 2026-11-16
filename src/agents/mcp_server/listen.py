@@ -240,28 +240,31 @@ class ResourceChanges:
         failed_run_count = 0
         while True:
             await asyncio.sleep(LAPSE_POLL_SECONDS)
-            step = StepTimer("listen_lapse.ended", _LOG)
-            step.handled()
-            try:
-                run = await self._store.lapse_due(self._origin)
-            except Exception as failure:
-                step.add(last_error_type=failure_type(failure))
-                step.fail("store_failed")
-                failed_run_count = _ended_when_first_failure(step, failed_run_count)
-                continue
-            for turn in run.turns:
-                _LOG.info("listening.lapsed", extra={"sub": turn.principal.sub})
-            if run.failed_count:
-                step.add(**_lapse_counts(run), last_error_type=run.last_error_type)
-                step.fail("lapse_failed")
-                failed_run_count = _ended_when_first_failure(step, failed_run_count)
-                continue
-            if failed_run_count:
-                _LOG.info("listen_lapse.resumed", extra={"failed_run_count": failed_run_count})
-                failed_run_count = 0
-            if run.stream_count:
-                step.add(**_lapse_counts(run))
-                step.end()
+            with unit_trace(None):
+                failed_run_count = await self._lapse_run(failed_run_count)
+
+    async def _lapse_run(self, failed_run_count: int) -> int:
+        """One lapse run in the trace it runs under; returns the length of the failed streak."""
+        step = StepTimer("listen_lapse.ended", _LOG)
+        step.handled()
+        try:
+            run = await self._store.lapse_due(self._origin)
+        except Exception as failure:
+            step.add(last_error_type=failure_type(failure))
+            step.fail("store_failed")
+            return _ended_when_first_failure(step, failed_run_count)
+        for turn in run.turns:
+            _LOG.info("listening.lapsed", extra={"sub": turn.principal.sub})
+        if run.failed_count:
+            step.add(**_lapse_counts(run), last_error_type=run.last_error_type)
+            step.fail("lapse_failed")
+            return _ended_when_first_failure(step, failed_run_count)
+        if failed_run_count:
+            _LOG.info("listen_lapse.resumed", extra={"failed_run_count": failed_run_count})
+        if run.stream_count:
+            step.add(**_lapse_counts(run))
+            step.end()
+        return 0
 
     async def _follow(self, confirmed: asyncio.Future[None]) -> None:
         try:
