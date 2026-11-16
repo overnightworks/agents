@@ -9,9 +9,8 @@ import pytest
 from pydantic import ValidationError
 
 from agents.member import PlaceEntry, PlaceView
-from tests.support.member_wire import entry, window_from
+from tests.support.member_wire import a_waking_trace, entry, window_from
 
-A_TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 MAX_TRACEPARENT_LENGTH = 256
 
 
@@ -27,19 +26,21 @@ RECORDS = [
 
 @pytest.mark.parametrize(("record", "wire"), RECORDS)
 def test_a_traceparent_survives_the_wire(record: type[PlaceEntry | PlaceView], wire) -> None:
-    carrying = record.model_validate(wire | {"traceparent": A_TRACEPARENT})
+    traceparent = a_waking_trace().traceparent
+    carrying = record.model_validate(wire | {"traceparent": traceparent})
 
     read = record.model_validate_json(carrying.model_dump_json())
 
-    assert read.traceparent == A_TRACEPARENT
+    assert read.traceparent == traceparent
 
 
 def test_a_line_carries_its_traceparent_through_a_window() -> None:
-    wire = {"generation": "g", "starts_at": 1, "entries": [entry(1, traceparent=A_TRACEPARENT)]}
+    traceparent = a_waking_trace().traceparent
+    wire = {"generation": "g", "starts_at": 1, "entries": [entry(1, traceparent=traceparent)]}
 
     read = window_from(wire)
 
-    assert read.entries[0].traceparent == A_TRACEPARENT
+    assert read.entries[0].traceparent == traceparent
 
 
 @pytest.mark.parametrize(("record", "wire"), RECORDS)
@@ -53,11 +54,17 @@ def test_a_record_without_a_traceparent_reads_as_before_and_dumps_without_the_ke
 
 
 @pytest.mark.parametrize(("record", "wire"), RECORDS)
-def test_a_traceparent_beyond_the_bound_is_refused(
+def test_a_value_that_is_no_trace_context_is_carried_up_to_the_bound(
     record: type[PlaceEntry | PlaceView], wire
 ) -> None:
     longest = "x" * MAX_TRACEPARENT_LENGTH
 
     assert record.model_validate(wire | {"traceparent": longest}).traceparent == longest
+
+
+@pytest.mark.parametrize(("record", "wire"), RECORDS)
+def test_a_traceparent_beyond_the_bound_is_refused(
+    record: type[PlaceEntry | PlaceView], wire
+) -> None:
     with pytest.raises(ValidationError):
-        record.model_validate(wire | {"traceparent": longest + "x"})
+        record.model_validate(wire | {"traceparent": "x" * (MAX_TRACEPARENT_LENGTH + 1)})

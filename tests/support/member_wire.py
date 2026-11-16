@@ -3,12 +3,29 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
+from logline import current_traceparent, unit_trace
+from logline.trace import current_trace_id
 from pydantic import BaseModel, ValidationError
 
 from agents.figure_vocabulary import FigureGesture
 from agents.member import PlaceWindow
+
+
+@dataclass(frozen=True)
+class WakingTrace:
+    traceparent: str
+    trace_id: str
+
+
+def a_waking_trace() -> WakingTrace:
+    with unit_trace(None):
+        traceparent, trace_id = current_traceparent(), current_trace_id()
+    assert traceparent is not None
+    assert trace_id is not None
+    return WakingTrace(traceparent, trace_id)
 
 
 def window_from(wire: dict[str, Any]) -> PlaceWindow:

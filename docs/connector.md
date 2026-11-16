@@ -658,7 +658,7 @@ newest line that woke it, and the hearing front's `heard` writes the line's valu
 utterance was heard in. Records are strict, so a runner that predates the field refuses a record that
 carries it: readers raise their agents version before any app sets it. Proved by
 `tests/test_member_traceparent.py`, `test_the_heard_line_carries_the_trace_the_utterance_was_heard_in`
-and `test_an_answer_runs_in_the_trace_of_the_line_that_woke_it`.
+and `test_each_answer_runs_in_the_trace_of_the_line_that_woke_it`.
 
 **A place's view.** Every place serves the member a window. A place whose state is no
 conversation also serves a `PlaceView(revision, awaits_you, state, traceparent)` beside it: the window carries

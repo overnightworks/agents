@@ -6,6 +6,7 @@ from logline.trace import current_trace_id
 
 from tests.support import voice_support
 from tests.support.log_lines import log_lines
+from tests.support.member_wire import a_waking_trace
 from tests.support.voice_lines import a_line
 from tests.support.voice_support import RETURNED, PacedGateway, finish, piece
 
@@ -13,41 +14,31 @@ place = voice_support.place
 log_lines = log_lines
 
 MODEL_REQUEST = "model_request.ended"
-A_TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 
 
-def trace_ids_sent(gateway: PacedGateway) -> list[str]:
-    return [request.headers["traceparent"].split("-")[1] for request in gateway.requests]
+def trace_id_of(traceparent: str) -> str | None:
+    with unit_trace(traceparent):
+        return current_trace_id()
 
 
-def test_an_answer_runs_in_the_trace_of_the_line_that_woke_it(place):
-    trace = place.trace
-    gateway = PacedGateway(trace, [piece("Gern."), finish()])
-    waking_trace_id = A_TRACEPARENT.split("-")[1]
-
-    async def hearing(trace):
-        yield a_line(1, "Frage eins?").model_copy(update={"traceparent": A_TRACEPARENT})
-        await trace.settled()
-
-    assert place.run(hearing, gateway) == RETURNED
-
-    assert trace_ids_sent(gateway) == [waking_trace_id]
+def trace_ids_sent(gateway: PacedGateway) -> list[str | None]:
+    return [trace_id_of(request.headers["traceparent"]) for request in gateway.requests]
 
 
 def test_each_answer_runs_in_the_trace_of_the_line_that_woke_it(place, log_lines):
     trace = place.trace
-    other = A_TRACEPARENT.replace("4bf92f35", "5cf92f35")
+    first, second = a_waking_trace(), a_waking_trace()
     gateway = PacedGateway(trace, [piece("Gern."), finish()], [piece("Auch das."), finish()])
 
     async def hearing(trace):
-        yield a_line(1, "Frage eins?").model_copy(update={"traceparent": A_TRACEPARENT})
+        yield a_line(1, "Frage eins?").model_copy(update={"traceparent": first.traceparent})
         await trace.until(lambda: trace.played == ["Gern."])
-        yield a_line(2, "Frage zwei?").model_copy(update={"traceparent": other})
+        yield a_line(2, "Frage zwei?").model_copy(update={"traceparent": second.traceparent})
         await trace.settled()
 
     assert place.run(hearing, gateway) == RETURNED
 
-    waking_trace_ids = [t.split("-")[1] for t in (A_TRACEPARENT, other)]
+    waking_trace_ids = [first.trace_id, second.trace_id]
     assert trace_ids_sent(gateway) == waking_trace_ids
     assert [line["trace_id"] for line in log_lines.of(MODEL_REQUEST)] == waking_trace_ids
 
