@@ -78,43 +78,26 @@ def test_renew_state_and_live_answer_what_the_store_holds(
 
 
 @pytest.mark.parametrize(
-    ("read", "event"),
+    "read",
     [
-        pytest.param(
-            lambda leases, principal: leases.renew(principal), "lease_renewal.ended", id="renew"
-        ),
-        pytest.param(
-            lambda leases, principal: leases.state(principal),
-            "lease_state_lookup.ended",
-            id="state",
-        ),
-        pytest.param(
-            lambda leases, _principal: leases.live(), "lease_roster_lookup.ended", id="live"
-        ),
+        pytest.param(lambda leases, principal: leases.renew(principal), id="renew"),
+        pytest.param(lambda leases, principal: leases.state(principal), id="state"),
+        pytest.param(lambda leases, _principal: leases.live(), id="live"),
     ],
 )
-def test_a_failing_store_raises_place_store_error_from_each_call_and_writes_one_failed_line(
+def test_a_failing_store_raises_place_store_error_from_each_call(
     leases: MemberLeases,
     record: LeaseRecordFake,
     alice: Principal,
     log_lines: LogLines,
     read: Callable[[MemberLeases, Principal], Awaitable[object]],
-    event: str,
 ) -> None:
-    refusal = PlaceStoreError("the store did not answer")
-    refusal.__cause__ = PermissionError("no permission")
-    record.failure = refusal
+    record.failure = PlaceStoreError("the store did not answer")
     lease_call = read(leases, alice)
 
     with pytest.raises(PlaceStoreError):
         in_virtual_time(lease_call)
 
-    failed = log_lines.one(event)
-    assert (failed["outcome"], failed["error_type"], failed["cause_type"]) == (
-        "failed",
-        "PlaceStoreError",
-        "PermissionError",
-    )
     assert log_lines.of("member_lease.opened") == []
 
 
@@ -204,7 +187,7 @@ def test_a_failure_after_a_run_longer_than_the_pause_is_written_again(
     assert len(log_lines.of("lease_lapse_service.failed")) == 2
 
 
-def test_a_renewal_is_one_line_and_only_a_start_writes_an_opened_line_with_the_sub(
+def test_only_a_renewal_that_started_a_lease_writes_an_opened_line_with_the_sub(
     leases: MemberLeases, alice: Principal, log_lines: LogLines
 ) -> None:
     async def scenario() -> LeaseRenewal:
@@ -214,25 +197,8 @@ def test_a_renewal_is_one_line_and_only_a_start_writes_an_opened_line_with_the_s
 
     first = in_virtual_time(scenario())
 
-    renewals = log_lines.of("lease_renewal.ended")
-    assert [line["outcome"] for line in renewals] == ["ok", "ok"]
     assert log_lines.one("member_lease.opened")["sub"] == alice.sub
     assert first.generation not in log_lines.everything()
-
-
-def test_a_state_and_a_roster_read_are_one_line_each_with_the_count_of_holders(
-    leases: MemberLeases, alice: Principal, log_lines: LogLines
-) -> None:
-    async def scenario() -> None:
-        await leases.renew(alice)
-        await leases.state(alice)
-        await leases.live()
-
-    in_virtual_time(scenario())
-
-    assert log_lines.one("lease_state_lookup.ended")["outcome"] == "ok"
-    roster = log_lines.one("lease_roster_lookup.ended")
-    assert (roster["outcome"], roster["holder_count"]) == ("ok", 1)
 
 
 def test_a_lapse_writes_a_lapsed_line_with_the_sub_and_never_the_generation(

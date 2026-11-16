@@ -23,7 +23,6 @@ from agents.mcp_server.place_store import (
     LeaseStanding,
     PlaceStoreError,
     failure_type,
-    store_step,
 )
 from agents.turn import Principal
 
@@ -41,10 +40,8 @@ class MemberLeases:
     atomic step of its own store and applies it idempotently. A host compares a generation by
     equality only, never shows it to a person and never logs it; no line of this class carries one.
 
-    Each call of the store is one timed line (``lease_renewal.ended``, ``lease_state_lookup.ended``,
-    ``lease_roster_lookup.ended``); ``member_lease.opened`` is written when a renewal started a
-    lease and ``member_lease.lapsed`` for each lapse handed over, which may repeat as the handover
-    may.
+    ``member_lease.opened`` is written when a renewal started a lease and ``member_lease.lapsed``
+    for each lapse handed over, which may repeat as the handover may.
     """
 
     def __init__(
@@ -61,8 +58,7 @@ class MemberLeases:
         ``started`` is true when a new lease began; a host treats a generation other than the one
         it stored as a start, because the store may replay a renewal as ``started=False``.
         """
-        async with store_step("lease_renewal.ended", _LOG):
-            renewal = await self._store.renew(principal)
+        renewal = await self._store.renew(principal)
         if renewal.started:
             _LOG.info("member_lease.opened", extra={"sub": principal.sub})
         return renewal
@@ -74,16 +70,12 @@ class MemberLeases:
         ``LEASE_SECONDS`` with no generation: an add accepted then is caught only by the host's own
         reconcile.
         """
-        async with store_step("lease_state_lookup.ended", _LOG):
-            return await self._store.state(principal)
+        return await self._store.state(principal)
 
     async def live(self) -> LeaseRoster:
         """The principals whose lease runs; while the roster is not ``settled`` a principal that
         is missing may have lost its lease with the store."""
-        async with store_step("lease_roster_lookup.ended", _LOG) as step:
-            roster = await self._store.live()
-            step.add(holder_count=len(roster.holders))
-            return roster
+        return await self._store.live()
 
     @asynccontextmanager
     async def running(self) -> AsyncGenerator[None, None]:

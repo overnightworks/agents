@@ -503,7 +503,7 @@ when it has none; a failed line is a WARNING, because the turn reports the stop 
 | the model list's deadline | `failed`, `timed_out` |
 | the host's close | `cancelled` |
 
-The place store, the listen record and the lease write one `<noun>.ended` line per call of the
+The place store and the listen record write one `<noun>.ended` line per call of the
 store, with `duration_ms` and `outcome`; a call that fails is `failed` with `error_type`, the class
 of the failure. A failed call adds `cause_type`: the type of the innermost cause a `PlaceStoreError`
 stands for, such as the lost connection or the refusal the store library met, the name
@@ -516,8 +516,6 @@ No line carries a URI, a generation or content:
 | `listen_acknowledgement.ended` | `uri_count`, `turned_count` |
 | `listen_end.ended` | none; a failed end or one past its cap is `failed`, WARNING |
 | `listening_lookup.ended`, `listeners_lookup.ended` | `principal_count` on the second |
-| `lease_renewal.ended`, `lease_state_lookup.ended` | none |
-| `lease_roster_lookup.ended` | `holder_count` |
 
 State changes and background runs write their own lines, carrying `sub` where they name a person:
 
