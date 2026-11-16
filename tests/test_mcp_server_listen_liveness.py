@@ -604,6 +604,35 @@ def test_a_lapse_writes_one_line_with_its_counts_and_one_lapsed_line_for_the_pri
     assert log_lines.one("listening.lapsed")["sub"] == alice.sub
 
 
+def test_each_lapse_run_writes_its_lines_in_one_trace_of_its_own(
+    signalling_front: McpPersonFront,
+    place_store: PlaceStoreFake,
+    alice: Principal,
+    log_lines: LogLines,
+) -> None:
+    connection = listen_connection(signalling_front, alice, [STANDING_URI])
+
+    async def scenario() -> None:
+        async with signalling_front.running():
+            async with open_stream(connection):
+                pass
+            place_store.lapse_failure = PlaceStoreError("the store is down")
+            await asyncio.sleep(_PAST_THE_ALLOWANCE)
+            place_store.lapse_failure = None
+            await asyncio.sleep(2 * LAPSE_POLL_SECONDS)
+
+    served(scenario())
+
+    failed, ended = log_lines.of("listen_lapse.ended")
+    trace_of_failed_run = failed["trace_id"]
+    trace_of_ended_run = ended["trace_id"]
+    assert trace_of_failed_run
+    assert trace_of_ended_run
+    assert trace_of_failed_run != trace_of_ended_run
+    assert log_lines.one("listen_lapse.resumed")["trace_id"] == trace_of_ended_run
+    assert log_lines.one("listening.lapsed")["trace_id"] == trace_of_ended_run
+
+
 def test_two_pods_and_one_acknowledgement_write_one_opened_line_and_one_lapsed_line(
     app: MemberApp,
     alice: Principal,
