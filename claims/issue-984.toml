@@ -1,8 +1,0 @@
-claim_id = "23bbe54283074f4cbd36e73acf4a6a62"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "5feffabc0819ebae3bf5eb9cf0be7180f6f7013a"
-branch = "claude/issue-984-lapse-run-trace"
-scope = ["docs/connector.md", "src/agents/mcp_server/listen.py", "tests"]
-opened_commit = "82c0be88901662fffe23d510bb59eb63cef95a65"
-whole_reason = "one module change and its tests; tests is a directory only because the proof spans the unit and real-Redis suites"
