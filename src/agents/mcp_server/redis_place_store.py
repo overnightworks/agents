@@ -27,6 +27,7 @@ from datetime import timedelta
 from typing import Final, Literal, NoReturn, cast
 from uuid import uuid4
 
+from logline import current_traceparent
 from pydantic import TypeAdapter, ValidationError
 from tandem import (
     Client,
@@ -105,8 +106,9 @@ local function turn(direction, principal, uri, origin)
 end
 """
 
-# ARGV: stream, principal text, due in ms, origin, wake channel, record, then the URIs. A stream
-# whose record exists is a replay and writes nothing; deadline_set is the first write.
+# ARGV: stream, principal text, due in ms, origin, wake channel, record, the traceparent of the
+# caller (empty outside a trace), then the URIs. A stream whose record exists is a replay and
+# writes nothing; deadline_set is the first write.
 _ACKNOWLEDGED: Final = (
     _PRELUDE
     + r"""
@@ -125,18 +127,18 @@ if not due_in_ms then
 end
 local principal = cjson.decode(ARGV[2])
 local turned = {}
-for index = 7, #ARGV do
+for index = 8, #ARGV do
   if not held_by_another(ARGV[index], ARGV[2], stream) then
     turned[#turned + 1] = ARGV[index]
   end
 end
 tandem.deadline_set(keys, stream, due_in_ms)
 redis.call('HSET', streams, stream, ARGV[6])
-for index = 7, #ARGV do
+for index = 8, #ARGV do
   redis.call('ZADD', listens, 0, member(ARGV[index], ARGV[2], stream))
 end
 for _, uri in ipairs(turned) do
-  tandem.wake(ARGV[5], turn('listening-yes', principal, uri, ARGV[4]))
+  tandem.wake(ARGV[5], turn('listening-yes', principal, uri, ARGV[4]), ARGV[7])
 end
 return turned
 """
@@ -164,9 +166,10 @@ return 1
 """
 )
 
-# ARGV: stream, origin, wake channel. Only a claimed stream with a record lapses; the record is
-# decoded before the first write, and a principal's last stream of a URI publishes its no. The
-# reply is the principal text and the URIs turned to no, or empty when none turned.
+# ARGV: stream, origin, wake channel, the traceparent of the caller (empty outside a trace). Only a
+# claimed stream with a record lapses; the record is decoded before the first write, and a
+# principal's last stream of a URI publishes its no. The reply is the principal text and the URIs
+# turned to no, or empty when none turned.
 _LAPSED: Final = (
     _PRELUDE
     + r"""
@@ -197,7 +200,7 @@ for _, uri in ipairs(uris) do
   redis.call('ZREM', listens, member(uri, principal_text, stream))
 end
 for _, uri in ipairs(turned) do
-  tandem.wake(ARGV[3], turn('listening-no', principal, uri, ARGV[2]))
+  tandem.wake(ARGV[3], turn('listening-no', principal, uri, ARGV[2]), ARGV[4])
 end
 if #turned == 0 then
   return {}
@@ -229,18 +232,21 @@ def _encoded(signal: PlaceSignal) -> str:
             return json.dumps(["v1", "tools", principal.iss, principal.sub, None, origin])
 
 
-def _decoded(address: str) -> PlaceSignal | ListeningTurn | None:
-    """The signal or turn an address carries, or ``None`` for a payload no ``["v1", ...]``
-    address; a turn's origin is dropped."""
+def _decoded(address: str, traceparent: str | None) -> PlaceSignal | ListeningTurn | None:
+    """The signal or turn an address carries, in the sender's ``traceparent``, or ``None`` for a
+    payload no ``["v1", ...]`` address; a turn's origin is dropped."""
     try:
         match _ADDRESS.validate_json(address, strict=True):
             case ("v1", "resource", iss, sub, uri, origin):
-                return ResourceChange(Principal(iss=iss, sub=sub), uri, origin)
+                return ResourceChange(Principal(iss=iss, sub=sub), uri, origin, traceparent)
             case ("v1", "tools", iss, sub, None, origin):
-                return ToolsChange(Principal(iss=iss, sub=sub), origin)
+                return ToolsChange(Principal(iss=iss, sub=sub), origin, traceparent)
             case ("v1", ("listening-yes" | "listening-no") as direction, iss, sub, uri, _):
                 return ListeningTurn(
-                    Principal(iss=iss, sub=sub), uri, listens=direction == "listening-yes"
+                    Principal(iss=iss, sub=sub),
+                    uri,
+                    listens=direction == "listening-yes",
+                    traceparent=traceparent,
                 )
     except ValidationError:
         return None
@@ -318,7 +324,7 @@ class RedisPlaceStore:
                 if isinstance(event, TandemResubscribed):
                     yield Resubscribed()
                     continue
-                signal = _decoded(event.address)
+                signal = _decoded(event.address, event.traceparent)
                 if signal is None:
                     _LOG.warning(
                         "place_signal.refused",
@@ -340,6 +346,7 @@ class RedisPlaceStore:
             self._origin,
             self._wake_channel,
             record,
+            current_traceparent() or "",
             *distinct,
         ]
         with _store_errors():
@@ -411,7 +418,10 @@ class RedisPlaceStore:
             await self._leases.serve_lapses(hand_over, claimer=claimer, every=_LEASE_SWEEP_EVERY)
 
     async def _lapsed_turns(self, stream: str) -> list[ListeningTurn]:
-        reply = await self._lapse.run(self._keys, [stream, self._origin, self._wake_channel])
+        reply = await self._lapse.run(
+            self._keys,
+            [stream, self._origin, self._wake_channel, current_traceparent() or ""],
+        )
         texts = self._texts(reply)
         if not texts:
             return []

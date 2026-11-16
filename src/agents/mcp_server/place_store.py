@@ -57,19 +57,26 @@ async def store_step(
 
 @dataclass(frozen=True)
 class ResourceChange:
-    """The resource at ``uri`` of ``principal`` changed; ``origin`` names the publishing pod."""
+    """The resource at ``uri`` of ``principal`` changed; ``origin`` names the publishing pod.
+
+    ``traceparent`` is the publisher's trace as received, ``None`` when it had none; a publisher
+    sets none, the store sends the caller's current trace.
+    """
 
     principal: Principal
     uri: str
     origin: str
+    traceparent: str | None = None
 
 
 @dataclass(frozen=True)
 class ToolsChange:
-    """The tools offered to ``principal`` changed; ``origin`` names the publishing pod."""
+    """The tools offered to ``principal`` changed; ``origin`` names the publishing pod; the
+    ``traceparent`` is a ``ResourceChange``'s."""
 
     principal: Principal
     origin: str
+    traceparent: str | None = None
 
 
 type PlaceSignal = ResourceChange | ToolsChange
@@ -78,11 +85,13 @@ type PlaceSignal = ResourceChange | ToolsChange
 @dataclass(frozen=True)
 class ListeningTurn:
     """The answer to whether ``principal`` listens to ``uri`` turned to ``listens``; only the
-    record publishes one."""
+    record publishes one, in the trace of the call that turned it (``traceparent`` is a
+    ``ResourceChange``'s)."""
 
     principal: Principal
     uri: str
     listens: bool
+    traceparent: str | None = None
 
 
 @dataclass(frozen=True)

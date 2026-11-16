@@ -13,7 +13,9 @@ from datetime import timedelta
 
 import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
-from tandem import Deadlines
+from logline import unit_trace
+from logline.trace import current_trace_id
+from tandem import Deadlines, WakeChannel, wake_channel
 
 from agents.mcp_server import McpPersonFront, ResourceChanges
 from agents.mcp_server.asgi import LOGGER_NAME
@@ -97,10 +99,62 @@ def test_a_signal_one_pod_publishes_reaches_the_subscription_of_another(
     assert asyncio.run(scenario()) == [Resubscribed(), signal]
 
 
+async def _published_in_a_trace(store: RedisPlaceStore, how: str, redis_clock: RedisClock) -> None:
+    match how:
+        case "a resource change":
+            await store.publish(ResourceChange(_ALICE, STANDING_URI, "pod-a"))
+        case "a tool list change":
+            await store.publish(ToolsChange(_ALICE, "pod-a"))
+        case "a listen turned to yes":
+            await store.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
+        case "a listen lapsed to no":
+            await store.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
+            redis_clock.advance(_ALLOWANCE.total_seconds())
+            await store.lapse_due("pod-a")
+
+
+@pytest.mark.parametrize(
+    ("how", "wake_count"),
+    [
+        ("a resource change", 1),
+        ("a tool list change", 1),
+        ("a listen turned to yes", 1),
+        ("a listen lapsed to no", 2),
+    ],
+)
+def test_a_wake_carries_the_trace_of_the_pod_that_sent_it_to_the_pod_that_receives_it(
+    server: FakeServer, redis_clock: RedisClock, how: str, wake_count: int
+) -> None:
+    async def scenario() -> tuple[str | None, list[Event]]:
+        async with subscribed(a_pod(server)) as events:
+            with unit_trace(None):
+                sender_trace = current_trace_id()
+                await _published_in_a_trace(a_pod(server), how, redis_clock)
+            await delivered_up_to(a_pod(server), events, _AFTER_EVERYTHING)
+            return sender_trace, list(events)
+
+    sender_trace, events = asyncio.run(scenario())
+
+    wakes = events[1:-1]
+    assert sender_trace is not None
+    assert len(wakes) == wake_count
+    assert [(wake.traceparent or "").split("-")[1:2] for wake in wakes] == [
+        [sender_trace]
+    ] * wake_count
+
+
+def test_a_wake_sent_outside_a_trace_carries_none(server: FakeServer) -> None:
+    async def scenario() -> list[Event]:
+        async with subscribed(a_pod(server)) as events:
+            await a_pod(server).acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
+            return await delivered_up_to(a_pod(server), events, _AFTER_EVERYTHING)
+
+    assert asyncio.run(scenario()) == [Resubscribed(), _YES, _AFTER_EVERYTHING]
+
+
 def test_a_payload_that_is_no_address_is_skipped_and_refused_by_its_length_only(
     server: FakeServer, log_lines: LogLines
 ) -> None:
-    channel = "notes-agents:tandem:v1:wake"
     foreign = [
         "not json at all",
         json.dumps({"kind": "resource"}),
@@ -112,9 +166,9 @@ def test_a_payload_that_is_no_address_is_skipped_and_refused_by_its_length_only(
 
     async def scenario() -> list[Event]:
         async with subscribed(a_pod(server)) as events:
-            raw = FakeAsyncRedis(server=server)
+            foreign_pod = WakeChannel(FakeAsyncRedis(server=server), key_prefix=f"{_PREFIX}-agents")
             for payload in foreign:
-                await raw.publish(channel, payload)
+                await foreign_pod.publish(payload)
             await a_pod(server).publish(wake)
             await arrived(events, 2)
             return list(events)
@@ -145,7 +199,7 @@ def test_a_payload_that_is_no_utf8_is_skipped_and_the_subscription_goes_on(
     async def scenario() -> list[Event]:
         async with subscribed(a_pod(server)) as events:
             await FakeAsyncRedis(server=server).publish(
-                "notes-agents:tandem:v1:wake", no_utf8_payload
+                wake_channel(f"{_PREFIX}-agents"), no_utf8_payload
             )
             await a_pod(server).publish(wake)
             await arrived(events, 2)

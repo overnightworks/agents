@@ -23,6 +23,7 @@ import httpx2
 import pytest
 from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
+from tandem import wake_channel
 from tandem.keys import deadline_keys
 
 from agents.mcp_server import ResourceChanges
@@ -38,6 +39,7 @@ from tests.support.mcp_server_support import a_member, member_scope, rpc_body
 from tests.support.real_redis_pod import (
     LISTENERS_PATH,
     LISTENING_CHANGES_PATH,
+    LISTENING_TRACES_PATH,
     WRITE_PATH,
     WRITES_KEY,
     WRITTEN_MEMBER,
@@ -65,9 +67,12 @@ _SECOND_BARRIER = ResourceChange(a_member("bob"), STANDING_URI, "second")
 _SECONDS_PAST_THE_CLAIM = 10
 
 
-def request_of(body: bytes) -> tuple[bytes, dict[str, str]]:
+def request_of(body: bytes, *, traceparent: str | None = None) -> tuple[bytes, dict[str, str]]:
     scope = member_scope(WRITTEN_MEMBER, body)
-    return body, {name.decode(): value.decode() for name, value in scope["headers"]}
+    headers = {name.decode(): value.decode() for name, value in scope["headers"]}
+    if traceparent is not None:
+        headers["traceparent"] = traceparent
+    return body, headers
 
 
 class Frames:
@@ -89,11 +94,12 @@ class Frames:
 
 
 @contextmanager
-def listening_on(pod: Pod) -> Iterator[Frames]:
+def listening_on(pod: Pod, *, traceparent: str | None = None) -> Iterator[Frames]:
     body, headers = request_of(
         rpc_body(
             "subscriptions/listen", {"notifications": {"resourceSubscriptions": [STANDING_URI]}}
-        )
+        ),
+        traceparent=traceparent,
     )
     with (
         httpx2.Client(timeout=httpx2.Timeout(WAIT_SECONDS, read=None), trust_env=False) as http,
@@ -114,6 +120,10 @@ def listening_changes_heard_by(pod: Pod) -> list[list[str | bool]]:
     return httpx2.get(
         pod.url + LISTENING_CHANGES_PATH, timeout=WAIT_SECONDS, trust_env=False
     ).json()
+
+
+def listening_traces_heard_by(pod: Pod) -> list[str | None]:
+    return httpx2.get(pod.url + LISTENING_TRACES_PATH, timeout=WAIT_SECONDS, trust_env=False).json()
 
 
 def stream_shortened_to_the_allowance(admin: Redis) -> bool:
@@ -152,7 +162,7 @@ def test_the_pods_wake_each_other_on_agents_own_channel_and_not_the_hosts(
 ) -> None:
     channels = admin.pubsub_channels()
 
-    assert channels == [f"{PREFIX}-agents:tandem:v1:wake"]
+    assert channels == [wake_channel(f"{PREFIX}-agents")]
 
 
 def test_a_subscription_that_is_cut_resyncs_the_open_listen(
@@ -206,6 +216,19 @@ def test_a_listen_on_one_pod_is_listed_by_the_other_and_its_host_hears_the_yes(
 
         assert listeners_of(pod_b) == [[WRITTEN_MEMBER.iss, WRITTEN_MEMBER.sub]]
         wait_until(lambda: listening_changes_heard_by(pod_b) == [_YES], seconds=WAIT_SECONDS)
+
+
+def test_a_listen_on_one_pod_reaches_the_host_of_the_other_in_the_trace_of_its_request(
+    pods: tuple[Pod, Pod],
+) -> None:
+    pod_a, pod_b = pods
+    trace_id = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+    with listening_on(pod_a, traceparent=f"00-{trace_id}-00f067aa0ba902b7-01") as frames:
+        assert frames.next_method() == _ACKNOWLEDGED
+
+        wait_until(lambda: listening_changes_heard_by(pod_b) == [_YES], seconds=WAIT_SECONDS)
+        assert listening_traces_heard_by(pod_b) == [trace_id]
 
 
 def test_after_the_runner_closed_its_stream_and_its_pod_was_killed_the_other_pod_hears_one_no(
