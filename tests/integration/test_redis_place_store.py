@@ -373,7 +373,7 @@ def test_a_lapse_whose_claim_was_never_finished_is_done_again_by_the_next_claim_
     assert first == LapseRun(
         turns=(ListeningTurn(_ALICE, STANDING_URI, listens=False),),
         failed_count=1,
-        last_error_type="StoreError",
+        last_error_type="ConnectionError",
     )
     assert second == LapseRun(stream_count=1)
 

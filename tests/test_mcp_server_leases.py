@@ -78,24 +78,44 @@ def test_renew_state_and_live_answer_what_the_store_holds(
 
 
 @pytest.mark.parametrize(
-    "read",
+    ("read", "event"),
     [
-        pytest.param(lambda leases, principal: leases.renew(principal), id="renew"),
-        pytest.param(lambda leases, principal: leases.state(principal), id="state"),
-        pytest.param(lambda leases, _principal: leases.live(), id="live"),
+        pytest.param(
+            lambda leases, principal: leases.renew(principal), "lease_renewal.ended", id="renew"
+        ),
+        pytest.param(
+            lambda leases, principal: leases.state(principal),
+            "lease_state_lookup.ended",
+            id="state",
+        ),
+        pytest.param(
+            lambda leases, _principal: leases.live(), "lease_roster_lookup.ended", id="live"
+        ),
     ],
 )
-def test_a_failing_store_raises_place_store_error_from_each_call(
+def test_a_failing_store_raises_place_store_error_from_each_call_and_writes_one_failed_line(
     leases: MemberLeases,
     record: LeaseRecordFake,
     alice: Principal,
+    log_lines: LogLines,
     read: Callable[[MemberLeases, Principal], Awaitable[object]],
+    event: str,
 ) -> None:
-    record.failure = PlaceStoreError("the store did not answer")
+    refusal = PlaceStoreError("the store did not answer")
+    refusal.__cause__ = PermissionError("no permission")
+    record.failure = refusal
     lease_call = read(leases, alice)
 
     with pytest.raises(PlaceStoreError):
         in_virtual_time(lease_call)
+
+    failed = log_lines.one(event)
+    assert (failed["outcome"], failed["error_type"], failed["cause_type"]) == (
+        "failed",
+        "PlaceStoreError",
+        "PermissionError",
+    )
+    assert log_lines.of("member_lease.opened") == []
 
 
 def test_a_lapse_reaches_lease_ended_with_the_principal_and_the_generation_it_lapsed_with(
@@ -198,20 +218,6 @@ def test_a_renewal_is_one_line_and_only_a_start_writes_an_opened_line_with_the_s
     assert [line["outcome"] for line in renewals] == ["ok", "ok"]
     assert log_lines.one("member_lease.opened")["sub"] == alice.sub
     assert first.generation not in log_lines.everything()
-
-
-def test_a_failing_renewal_raises_and_writes_one_failed_line(
-    leases: MemberLeases, record: LeaseRecordFake, alice: Principal, log_lines: LogLines
-) -> None:
-    record.failure = PlaceStoreError("the store did not answer")
-    renewing = leases.renew(alice)
-
-    with pytest.raises(PlaceStoreError):
-        in_virtual_time(renewing)
-
-    failed = log_lines.one("lease_renewal.ended")
-    assert (failed["outcome"], failed["error_type"]) == ("failed", "PlaceStoreError")
-    assert log_lines.of("member_lease.opened") == []
 
 
 def test_a_state_and_a_roster_read_are_one_line_each_with_the_count_of_holders(

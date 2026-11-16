@@ -15,8 +15,6 @@ from contextlib import asynccontextmanager
 from typing import Final
 from uuid import uuid4
 
-from logline import StepTimer
-
 from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.place_store import (
     LeaseRecord,
@@ -25,6 +23,7 @@ from agents.mcp_server.place_store import (
     LeaseStanding,
     PlaceStoreError,
     failure_type,
+    store_step,
 )
 from agents.turn import Principal
 
@@ -62,7 +61,7 @@ class MemberLeases:
         ``started`` is true when a new lease began; a host treats a generation other than the one
         it stored as a start, because the store may replay a renewal as ``started=False``.
         """
-        async with StepTimer("lease_renewal.ended", _LOG):
+        async with store_step("lease_renewal.ended", _LOG):
             renewal = await self._store.renew(principal)
         if renewal.started:
             _LOG.info("member_lease.opened", extra={"sub": principal.sub})
@@ -75,13 +74,13 @@ class MemberLeases:
         ``LEASE_SECONDS`` with no generation: an add accepted then is caught only by the host's own
         reconcile.
         """
-        async with StepTimer("lease_state_lookup.ended", _LOG):
+        async with store_step("lease_state_lookup.ended", _LOG):
             return await self._store.state(principal)
 
     async def live(self) -> LeaseRoster:
         """The principals whose lease runs; while the roster is not ``settled`` a principal that
         is missing may have lost its lease with the store."""
-        async with StepTimer("lease_roster_lookup.ended", _LOG) as step:
+        async with store_step("lease_roster_lookup.ended", _LOG) as step:
             roster = await self._store.live()
             step.add(holder_count=len(roster.holders))
             return roster

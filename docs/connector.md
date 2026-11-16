@@ -505,8 +505,9 @@ when it has none; a failed line is a WARNING, because the turn reports the stop 
 
 The place store, the listen record and the lease write one `<noun>.ended` line per call of the
 store, with `duration_ms` and `outcome`; a call that fails is `failed` with `error_type`, the class
-of the failure. The listen record's lines add `cause_type` to a failed call: the type of the library
-failure a `PlaceStoreError` stands for, the name `listen_lapse.ended` carries as `last_error_type`.
+of the failure. A failed call adds `cause_type`: the type of the innermost cause a `PlaceStoreError`
+stands for, such as the lost connection or the refusal the store library met, the name
+`listen_lapse.ended` carries as `last_error_type`.
 No line carries a URI, a generation or content:
 
 | Line | Fields beside the timer's |
