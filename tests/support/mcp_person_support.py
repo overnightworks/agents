@@ -85,6 +85,12 @@ def post(front: McpPersonFront, body: bytes, *extra: tuple[bytes, bytes], **opti
     return asyncio.run(drive_scope(front, scope, body))
 
 
-async def call_read_note(front: McpPersonFront) -> CallToolResult:
+async def call_tool(
+    front: McpPersonFront, name: str, arguments: dict[str, Any] | None = None
+) -> CallToolResult:
     async with sdk_client(front) as client:
-        return await client.call_tool("read_note", {})
+        return await client.call_tool(name, arguments or {})
+
+
+async def call_read_note(front: McpPersonFront) -> CallToolResult:
+    return await call_tool(front, "read_note")

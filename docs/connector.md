@@ -761,6 +761,20 @@ rules for the runner and the app are CALLING-33 to CALLING-36 in [calling.md](ca
 outcome is the coarse word a person sees; the fine code behind it is in the `turn_ended ... code=`
 log line of the personas runner, where the operator finds it. Proved by `tests/test_member.py`.
 
+**A malformed member-tool call.** The person front checks a call of a member tool against the tool's
+arguments record before the handler runs, by the tool's name: `MEMBER_TOOL_ARGUMENTS` of `agents.member`
+maps each member tool name to its record, and `member_arguments(model, arguments)` parses a call as JSON
+(a `voices` list parses to its tuple) and raises a `ValidationError` when it does not fit. A call that
+does not fit is an `is_error` result whose text is `the arguments do not fit the tool: ` followed by each
+failing path in dots and its pydantic error type in parentheses, such as `figure.gestures.[key].url (value_error)`,
+once each and sorted. A key the caller chose, such as a gesture or a field the record lacks, is written
+`[key]`, and the text never carries an input value. The handler does not run, and the tool-call line is
+`refused` with reason `tool_error`. It is the tool's own answer to malformed input; none of the refusal codes
+above stands for it, so a host's handler never refuses a call that does not fit, and a host that types its
+own arguments uses `member_arguments` instead of a copy. A call that fits and cannot be served stays the
+host's refusal. A tool that is no member tool, such as one generated from a route, is not checked here.
+Proved by `tests/test_mcp_server_member_arguments.py`.
+
 How a person calls an agent to a place and sends it away is the same in every app:
 [calling.md](calling.md).
 

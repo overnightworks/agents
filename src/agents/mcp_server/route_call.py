@@ -29,7 +29,7 @@ from agents.tools import JsonObject, ToolOutcome
 from agents.turn import MAX_EVENT_BYTES
 
 _LOG: Final = logging.getLogger(LOGGER_NAME)
-_ARGUMENTS_REFUSED_TEXT: Final = "the arguments do not fit the tool"
+ARGUMENTS_REFUSED_TEXT: Final = "the arguments do not fit the tool"
 _ROUTE_FAILED_TEXT: Final = "the route did not give a usable answer"
 _CARRIED_SCOPE_KEYS: Final = (
     "type",
@@ -211,7 +211,7 @@ async def call_route(
     """Make the one request; an exception the app raises propagates to the front."""
     request = _inner_request(target, outer.get("root_path", ""), arguments)
     if request is None:
-        return ToolOutcome(_ARGUMENTS_REFUSED_TEXT, is_error=True)
+        return ToolOutcome(ARGUMENTS_REFUSED_TEXT, is_error=True)
     response = _Response()
     finished = anyio.Event()
     body_sent = False
