@@ -115,12 +115,12 @@ forbidden_modules =
     mcp
     mcp_types
 
-# logline reaches the client through the modules that write a line: the base modules and the voice
-# loop write none, so they import neither it nor structlog nor opentelemetry, which logline brings.
-# agents.backend.tool_result writes the tool call's line and stays outside the sources. The source
-# list is the http contract's plus every voice module.
-[importlinter:contract:client-base-and-voice-import-no-logline]
-name = the client base modules and agents.voice import no logline, structlog or opentelemetry
+# logline reaches the client through the modules that write a line or open a trace: the base modules
+# write none, so they import neither it nor structlog nor opentelemetry, which logline brings. The
+# voice loop imports logline's unit_trace alone and agents.backend.tool_result writes the tool call's
+# line, so both stay outside the sources. The source list is the http contract's.
+[importlinter:contract:client-base-imports-no-logline]
+name = the client base modules import no logline, structlog or opentelemetry
 type = forbidden
 as_packages = False
 source_modules =
@@ -135,8 +135,6 @@ source_modules =
     agents.tools
     agents.turn
     agents.turn_events
-    agents.voice
-    agents.voice.**
 forbidden_modules =
     logline
     structlog

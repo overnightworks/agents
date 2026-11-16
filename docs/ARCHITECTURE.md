@@ -80,7 +80,7 @@ flowchart TB
   restarts it after a failure, and the app's own store fences the action by generation.
   `agents.mcp_server` does not re-export `RedisPlaceStore`, so an app without `ResourceChanges` or
   `MemberLeases` never loads tandem.
-- The **`voice` extra** adds `syntok` for `agents.voice`: the voice loop
+- The **`voice` extra** adds `syntok` and logline's `unit_trace` for `agents.voice`: the voice loop
   (`voice.loop.run_voice_loop`) on the `AgentBackend` port, its ports `VoiceOut` and `WakeRule`
   and its events. `voice.reply` owns the reply markers, the protocol text composed from them and
   the sentence release, `voice.sentences` the syntok split, `voice.conversation` the running

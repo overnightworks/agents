@@ -66,9 +66,12 @@ end, or that session start.
 **HEARING-6 (L+A).** Only finished utterances are heard: one spoken line per utterance, under the
 speaker's shown name and the app's `kind`, and never provisional text as an entry; provisional text
 reaches a member only through HEARING-21. `heard` builds the line as
-`SpokenLine` (`spoken` true, `own` false) for every hearing member; the app appends only
-finished utterances. Proved by `test_heard_builds_one_spoken_line_of_the_utterance_for_the_hearing_members`
-and `test_the_line_is_spoken_and_not_the_members_own_and_becomes_a_place_entry_once_seq_is_added`.
+`SpokenLine` (`spoken` true, `own` false) for every hearing member, carrying as `traceparent` the
+trace `heard` runs in, so the app calls it inside the request that heard the utterance and a runner
+continues that trace in the turn the line wakes; the app appends only finished utterances. Proved
+by `test_heard_builds_one_spoken_line_of_the_utterance_for_the_hearing_members`,
+`test_the_heard_line_carries_the_trace_the_utterance_was_heard_in` and
+`test_the_line_is_spoken_and_not_the_members_own_and_becomes_a_place_entry_once_seq_is_added`.
 
 ## Where hearing ends
 
