@@ -23,6 +23,7 @@ import httpx2
 import pytest
 from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
+from logline.trace import current_trace_id
 from tandem import wake_channel
 from tandem.keys import deadline_keys
 
@@ -282,6 +283,40 @@ def test_two_pods_following_one_store_write_one_opened_line_and_one_lapsed_line(
     assert [line["sub"] for line in log_lines.of("listening.opened")] == [WRITTEN_MEMBER.sub]
     assert [line["sub"] for line in log_lines.of("listening.lapsed")] == [WRITTEN_MEMBER.sub]
     assert len(log_lines.of("listen_lapse.ended")) == 1
+
+
+def test_the_no_a_lapse_run_wakes_is_heard_in_the_trace_of_that_run(
+    redis_url: str, log_lines: LogLines
+) -> None:
+    traces_of_no: list[str | None] = []
+
+    def heard(_principal: Principal, _uri: str, listens: bool) -> None:
+        if not listens:
+            traces_of_no.append(current_trace_id())
+
+    async def scenario() -> None:
+        pod_a = ResourceChanges(a_store(redis_url), listening_changed=heard)
+        pod_b = ResourceChanges(a_store(redis_url), listening_changed=heard)
+        async with pod_a.following(), pod_b.following():
+            async with pod_a.opened(WRITTEN_MEMBER) as stream:
+                await pod_a.acknowledged(WRITTEN_MEMBER, stream, [STANDING_URI], tools=False)
+            await eventually(
+                lambda: _true(bool(traces_of_no)),
+                seconds=LISTEN_ALLOWANCE_SECONDS
+                + CLAIM_FOR.total_seconds()
+                + LAPSE_POLL_SECONDS
+                + 5,
+            )
+
+    asyncio.run(scenario())
+
+    run_trace = log_lines.one("listen_lapse.ended")["trace_id"]
+    assert run_trace
+    assert set(traces_of_no) == {run_trace}
+
+
+async def _true(value: bool) -> bool:
+    return value
 
 
 def test_a_claim_its_pod_cannot_finish_is_lapsed_by_another_pod_once_the_claim_ran_out(

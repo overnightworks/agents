@@ -823,6 +823,13 @@ by `test_a_wake_carries_the_trace_of_the_pod_that_sent_it_to_the_pod_that_receiv
 `test_a_turn_another_pod_published_is_handled_in_the_trace_it_carries` and, on two pods,
 `test_a_listen_on_one_pod_reaches_the_host_of_the_other_in_the_trace_of_its_request`.
 
+Each lapse run of the listen poll runs in a trace of its own,
+`logline.unit_trace(None)`, so its `listen_lapse.ended`, `listen_lapse.resumed` and
+`listening.lapsed` lines and the `listening-no` wake it writes share one trace id, and a pod that
+hears that wake handles it in it. A run that finds nothing writes no line. Proved by
+`test_each_lapse_run_writes_its_lines_in_one_trace_of_its_own` and
+`test_the_no_a_lapse_run_wakes_is_heard_in_the_trace_of_that_run`.
+
 `running()` yields at the first confirmed subscription, so a pod turns ready only once it hears
 changes; while Redis is unreachable it stays not ready, and a subscription the store refuses
 before that raises `PlaceStoreError` out of `running()`, which fails the host's startup. At every
