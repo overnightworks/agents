@@ -766,8 +766,9 @@ arguments record before the handler runs, by the tool's name: `MEMBER_TOOL_ARGUM
 maps each member tool name to its record, and `member_arguments(model, arguments)` parses a call as JSON
 (a `voices` list parses to its tuple) and raises a `ValidationError` when it does not fit. A call that
 does not fit is an `is_error` result whose text is `the arguments do not fit the tool: ` followed by each
-failing path in dots and its pydantic error type in parentheses, such as `figure.gestures.[key].url (value_error)`,
-once each and sorted. A key the caller chose, such as a gesture or a field the record lacks, is written
+failing path in dots and its pydantic error type in parentheses, such as `figure.gestures.wave.url (value_error)`,
+once each and sorted. A key that is a word of the vocabulary the record declares, such as a gesture, is written
+out; a key the caller chose, such as a word outside that vocabulary or a field the record lacks, is written
 `[key]`, and the text never carries an input value. The handler does not run, and the tool-call line is
 `refused` with reason `tool_error`. It is the tool's own answer to malformed input; none of the refusal codes
 above stands for it, so a host's handler never refuses a call that does not fit, and a host that types its

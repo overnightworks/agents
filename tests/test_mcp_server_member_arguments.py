@@ -124,13 +124,21 @@ def test_a_member_tool_call_that_fits_its_record_reaches_the_handler_as_sent(
             accept_wire(
                 figure=_FIGURE | {"gestures": {"wave": _FIGURE | {"url": "http://a.test"}}}
             ),
-            "figure.gestures.[key].url (value_error)",
-            id="a gesture entry names its key as a key",
+            "figure.gestures.wave.url (value_error)",
+            id="a key that is a word of the gesture vocabulary is written out",
         ),
         pytest.param(
             accept_wire(figure=_FIGURE | {"gestures": {"cartwheel-secret": _FIGURE}}),
             "figure.gestures.[key] (enum)",
             id="a key outside the vocabulary is named as a key",
+        ),
+        pytest.param(
+            accept_wire(
+                figure=_FIGURE
+                | {"gestures": {"cartwheel-secret": _FIGURE | {"url": "http://a.test"}}}
+            ),
+            "figure.gestures.[key] (enum), figure.gestures.[key].url (value_error)",
+            id="a caller key that is no vocabulary word stays a key under its entry too",
         ),
         pytest.param(
             accept_wire(figure=_FIGURE | {"gestures": {"url": _FIGURE}}),
@@ -170,6 +178,8 @@ def test_the_tool_error_names_paths_and_error_types_and_never_an_input_value(
 def test_a_tool_that_is_no_member_tool_is_not_checked_by_the_front(
     front: McpPersonFront, person: Person
 ) -> None:
-    asyncio.run(call_tool(front, "read_note", {"anything": [1, 2]}))
+    asyncio.run(call_tool(front, "read_note", accept_wire(epoch=-1)))
 
-    assert [name for name, _request, _arguments in person.calls] == ["read_note"]
+    assert [(name, sent) for name, _request, sent in person.calls] == [
+        ("read_note", accept_wire(epoch=-1))
+    ]

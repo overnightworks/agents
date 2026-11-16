@@ -22,9 +22,10 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Map
 from contextlib import AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from enum import StrEnum
 from functools import partial
 from http import HTTPStatus
-from typing import Any, Final, cast, get_args, get_origin
+from typing import Annotated, Any, Final, cast, get_args, get_origin
 
 import anyio.lowlevel
 from logline import StepTimer
@@ -490,38 +491,48 @@ def _models_in(annotation: object) -> tuple[type[BaseModel], ...]:
     return tuple(model for part in get_args(annotation) for model in _models_in(part))
 
 
-def _holds_keys(annotation: object) -> bool:
-    """Whether a field's annotation is a mapping at any depth: the next name in its paths is a
-    caller's key."""
+def _key_words(annotation: object) -> frozenset[str] | None:
+    """The words of the enum a field's mapping annotation keys by, at any depth; none when it
+    holds no mapping. The member records key their mappings by enums only."""
     origin = get_origin(annotation)
     if isinstance(origin, type) and issubclass(origin, Mapping):
-        return True
-    return any(_holds_keys(part) for part in get_args(annotation))
+        key_type = get_args(annotation)[0]
+        while get_origin(key_type) is Annotated:
+            key_type = get_args(key_type)[0]
+        return frozenset(word.value for word in cast(type[StrEnum], key_type))
+    return next(
+        (words for part in get_args(annotation) if (words := _key_words(part)) is not None), None
+    )
 
 
 def _declared_path(model: type[BaseModel], location: tuple[int | str, ...]) -> str:
-    """A failing field's path in dots; a name that is no declared field, or that follows a
-    mapping field, is a caller's key, which is never echoed."""
+    """A failing field's path in dots. A name that is no declared field, or that follows a mapping
+    field, is a caller's key and reads `[key]`, never echoed, unless it is a word of the
+    mapping's enum keys: a protocol word the model needs to tell which entry failed."""
     candidates = (model,)
-    keyed = False
+    key_words: frozenset[str] | None = None
     parts: list[str] = []
     for step in location:
         if isinstance(step, int):
             parts.append(str(step))
             continue
+        if key_words is not None and step in key_words:
+            parts.append(step)
+            key_words = None
+            continue
         declared = (
             None
-            if keyed
+            if key_words is not None
             else next((held for held in candidates if step in held.model_fields), None)
         )
         if declared is None:
-            keyed = False
+            key_words = None
             if not parts or parts[-1] != _KEY_PLACEHOLDER:
                 parts.append(_KEY_PLACEHOLDER)
             continue
         parts.append(step)
         annotation = declared.model_fields[step].annotation
-        keyed = _holds_keys(annotation)
+        key_words = _key_words(annotation)
         candidates = _models_in(annotation)
     return ".".join(parts)
 
