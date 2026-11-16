@@ -1,8 +1,0 @@
-claim_id = "4fed743035204b428976141528b5f4d7"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "b15e84f817114e9bd9aee2563f0a55245822d71a"
-branch = "claude/issue-975-store-log-events"
-scope = ["docs/connector.md", "pyproject.toml", "src/agents/mcp_server/leases.py", "src/agents/mcp_server/listen.py", "src/agents/mcp_server/place_store.py", "src/agents/mcp_server/redis_place_store.py", "tests", "uv.lock"]
-opened_commit = "2b474ecf3970be51aaab527dc03c0e00692473ef"
-whole_reason = "The place store's, the listen record's and the lease's lines share one field set and one port change a host adopts at once."
