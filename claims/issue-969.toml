@@ -1,0 +1,8 @@
+claim_id = "08a3e62c778746769a57b4e5ca8ecfe9"
+agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
+role = "builder"
+base = "38cfc9974b53a959e7943d824156728c19804f29"
+branch = "claude/issue-969-member-tool-errors"
+scope = ["docs/connector.md", "src/agents/mcp_server/person.py", "src/agents/member.py", "tests"]
+opened_commit = "2a52051ce46830fd61943d741e19531aa95a7807"
+whole_reason = "The validation owner, its error shape and the front's answer are one wire rule."
