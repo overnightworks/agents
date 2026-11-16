@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import json
 import logging
 import math
 import types
@@ -15,6 +16,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from logline import current_traceparent, unit_trace
 from pydantic import ValidationError
 
 from agents.mcp_server import Heard, MemberHearing, Sense, SpokenLine, Utterance
@@ -490,3 +492,27 @@ def test_nobody_is_seen_before_a_seeing_allow_and_again_after_an_end_and_a_rejoi
     allow_at(hearing, clock, 5.0)
 
     assert not hearing.allows(room, "seat-1", alice, Sense.SEEING)
+
+
+def test_the_heard_line_carries_the_trace_the_utterance_was_heard_in(
+    hearing: MemberHearing, clock: Clock
+) -> None:
+    allow_at(hearing, clock, 1.0)
+
+    with unit_trace(None):
+        heard = hearing.heard(utterance(2.0))
+        traceparent = current_traceparent()
+
+    assert traceparent is not None
+    assert heard.line.traceparent == traceparent
+
+
+def test_a_line_heard_outside_a_trace_carries_none_and_dumps_without_the_key(
+    hearing: MemberHearing, clock: Clock
+) -> None:
+    allow_at(hearing, clock, 1.0)
+
+    line = hearing.heard(utterance(2.0)).line
+
+    assert line.traceparent is None
+    assert "traceparent" not in json.loads(line.model_dump_json())

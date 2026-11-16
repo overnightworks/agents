@@ -619,7 +619,7 @@ the tool and the exception's class
 `agents.member` owns what an app and an agent say to each other about a member:
 `PlaceRef`, `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
 `STANDING_URI`, `member://standing`, answers with), `PlaceWindow(generation, starts_at, entries, talked_over, interrupted, voice_state)`
-of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act)`, `LEASE_SECONDS` (120),
+of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, traceparent)`, `LEASE_SECONDS` (120),
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
 `LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, figure, voices)` for the tool
 `ACCEPT_INVITATION_TOOL`, `DeclineInvitationArguments(place, invitation, epoch, reason)` for
@@ -647,8 +647,21 @@ is the `seq` the next line gets. A place's window is the resource `place_window_
 `place_ref_from_window_uri(uri)` returns the `PlaceRef` for that canonical spelling only and
 `None` for anything else. A URI is no credential.
 
+**A trace on a line and on a view.** `PlaceEntry` and `PlaceView` carry an optional `traceparent`,
+a W3C trace context the app set when the line entered or the view's `revision` moved: the app writes
+`logline.current_traceparent()`, which is `None` outside a trace, and a record without one dumps
+without the key. The only check here is a length of 256 characters at most, so a value that is no
+trace context is carried, and `logline.unit_trace` is the one reader that starts a new trace for it.
+The runner opens the turn a line or revision woke under `unit_trace` of that value, so the turn
+runs in the trace of the change that woke it; the voice loop does so for each decision, under the
+newest line that woke it, and the hearing front's `heard` writes the line's value from the trace the
+utterance was heard in. Records are strict, so a runner that predates the field refuses a record that
+carries it: readers raise their agents version before any app sets it. Proved by
+`tests/test_mcp_server_hearing.py`: `test_the_heard_line_carries_the_trace_the_utterance_was_heard_in`,
+and `tests/test_voice_trace.py`: `test_each_answer_runs_in_the_trace_of_the_line_that_woke_it`.
+
 **A place's view.** Every place serves the member a window. A place whose state is no
-conversation also serves a `PlaceView(revision, awaits_you, state)` beside it: the window carries
+conversation also serves a `PlaceView(revision, awaits_you, state, traceparent)` beside it: the window carries
 what happened there, in lines, and the view the place's newest state. `state` is the app's JSON
 object, carried untouched and never read by the library (a value that is no JSON value is
 refused); `revision`, an integer from 0, changes whenever the place moves on for this member, that

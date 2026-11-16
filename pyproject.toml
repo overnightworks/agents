@@ -26,6 +26,7 @@ redis = [
     "overnightworks-tandem>=0.8,<0.9",
 ]
 voice = [
+    "overnightworks-logline>=0.4,<0.5",
     "syntok>=1.4.4,<2",
 ]
 dev = [

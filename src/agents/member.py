@@ -66,6 +66,7 @@ __all__ = [
     "Interrupted",
     "Invitation",
     "MemberStanding",
+    "OptionalTraceparent",
     "ParentPlace",
     "PartialSpeech",
     "PlaceEntry",
@@ -596,13 +597,23 @@ class VoiceState(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+OptionalTraceparent = Annotated[
+    Annotated[str, StringConstraints(max_length=256)] | None,
+    Field(default=None, exclude_if=_is_none),
+]
+"""A W3C ``traceparent`` as an app stores it, left out of the JSON when absent. Only its length is
+bound here: logline's ``unit_trace`` is the one reader and starts a new trace for a value it
+cannot parse."""
+
+
 class PlaceEntry(StrictModel):
     """One line of a place; ``kind`` is the app's own text, ``own`` marks the member's line and
     ``spoken`` a line said aloud and heard, one finished utterance, rather than written. A line
     enters once its sentence has ended and is never changed; ``cut`` marks a spoken sentence cut
     before its end, whose ``text`` is the part heard up to the cut, or the whole sentence when the
     app cannot tell how far it played. ``act`` marks a written line that says what someone did
-    rather than what someone said: it is told and never calls the member to act."""
+    rather than what someone said: it is told and never calls the member to act. ``traceparent``
+    is the trace the line entered in, which a runner continues in the turn the line wakes."""
 
     seq: int = Field(ge=1)
     kind: NonEmptyUnicodeText
@@ -612,6 +623,7 @@ class PlaceEntry(StrictModel):
     spoken: bool = False
     cut: bool = Field(default=False, exclude_if=_is_false)
     act: bool = Field(default=False, exclude_if=_is_false)
+    traceparent: OptionalTraceparent
 
     @model_validator(mode="after")
     def _only_a_spoken_line_is_cut(self) -> Self:
@@ -683,12 +695,14 @@ class PlaceView(StrictModel):
     whenever the place moves on for this member, that is whenever what the member may do or must
     act on changes; parts of ``state`` that say only who is present may change without it.
     ``awaits_you`` says the place waits for this member to act; the app decides it from the state
-    at that revision, so one revision has one ``awaits_you``.
+    at that revision, so one revision has one ``awaits_you``. ``traceparent`` is the trace the
+    revision moved in, which a runner continues in the turn it wakes.
     """
 
     revision: int = Field(ge=0)
     awaits_you: bool
     state: JsonObject
+    traceparent: OptionalTraceparent
 
 
 def place_view_uri(place: PlaceRef) -> str:

@@ -108,3 +108,9 @@ what = 'import contract "only agents.mcp_server.redis_place_store imports tandem
 item = "overnightworks/agents#952"
 date = 2026-11-15
 reason = "a protected contract needs its module in the import graph and no agents module imports redis now; the same contract without redis replaces it, and the forbidden contracts keep redis out of agents"
+
+[[gate.loosened]]
+what = 'import contract "the client base modules and agents.voice import no logline, structlog or opentelemetry" changes source_modules'
+item = "overnightworks/agents#977"
+date = 2026-11-16
+reason = "agents.voice.loop opens the waking line's trace through logline's unit_trace; every other voice module stays a source and forbidden to import logline"
