@@ -5,11 +5,14 @@ from logline import unit_trace
 from logline.trace import current_trace_id
 
 from tests.support import voice_support
+from tests.support.log_lines import log_lines
 from tests.support.voice_lines import a_line
 from tests.support.voice_support import RETURNED, PacedGateway, finish, piece
 
 place = voice_support.place
+log_lines = log_lines
 
+MODEL_REQUEST = "model_request.ended"
 A_TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 
 
@@ -31,7 +34,7 @@ def test_an_answer_runs_in_the_trace_of_the_line_that_woke_it(place):
     assert trace_ids_sent(gateway) == [waking_trace_id]
 
 
-def test_each_answer_runs_in_the_trace_of_the_line_that_woke_it(place):
+def test_each_answer_runs_in_the_trace_of_the_line_that_woke_it(place, log_lines):
     trace = place.trace
     other = A_TRACEPARENT.replace("4bf92f35", "5cf92f35")
     gateway = PacedGateway(trace, [piece("Gern."), finish()], [piece("Auch das."), finish()])
@@ -44,11 +47,15 @@ def test_each_answer_runs_in_the_trace_of_the_line_that_woke_it(place):
 
     assert place.run(hearing, gateway) == RETURNED
 
-    assert trace_ids_sent(gateway) == [t.split("-")[1] for t in (A_TRACEPARENT, other)]
+    waking_trace_ids = [t.split("-")[1] for t in (A_TRACEPARENT, other)]
+    assert trace_ids_sent(gateway) == waking_trace_ids
+    assert [line["trace_id"] for line in log_lines.of(MODEL_REQUEST)] == waking_trace_ids
 
 
 @pytest.mark.parametrize("traceparent", [None, "not-a-traceparent"], ids=["absent", "malformed"])
-def test_a_waking_line_without_a_usable_traceparent_starts_a_trace_of_its_own(place, traceparent):
+def test_a_waking_line_without_a_usable_traceparent_starts_a_trace_of_its_own(
+    place, log_lines, traceparent
+):
     gateway = PacedGateway(place.trace, [piece("Gern."), finish()])
 
     async def hearing(trace):
@@ -63,3 +70,4 @@ def test_a_waking_line_without_a_usable_traceparent_starts_a_trace_of_its_own(pl
     assert ending == RETURNED
     assert len(sent) == 32
     assert sent != enclosing_trace_id
+    assert [line["trace_id"] for line in log_lines.of(MODEL_REQUEST)] == [sent]
