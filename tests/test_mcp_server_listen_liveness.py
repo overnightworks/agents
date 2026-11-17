@@ -569,14 +569,15 @@ def test_a_lapse_run_in_which_one_stream_failed_is_one_failed_line_with_its_coun
     assert failed["last_error_type"] == "StoreError"
 
 
+async def _idle_front(front: McpPersonFront, seconds: float) -> None:
+    async with front.running():
+        await asyncio.sleep(seconds)
+
+
 def test_a_lapse_run_that_found_nothing_writes_no_line(
     signalling_front: McpPersonFront, log_lines: LogLines
 ) -> None:
-    async def scenario() -> None:
-        async with signalling_front.running():
-            await asyncio.sleep(5 * LAPSE_POLL_SECONDS)
-
-    served(scenario())
+    served(_idle_front(signalling_front, 5 * LAPSE_POLL_SECONDS))
 
     assert log_lines.written_by("agents") == []
 
