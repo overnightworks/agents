@@ -30,7 +30,7 @@ __all__ = [
     "agent_tool",
     "inlined_schema",
     "not_an_agent_tool",
-    "plain_schema",
+    "untitled_schema",
     "tool_parameters",
 ]
 
@@ -196,7 +196,7 @@ def inlined_schema(
     return {**resolved, **siblings}
 
 
-def plain_schema(node: JsonValue) -> JsonValue:
+def untitled_schema(node: JsonValue) -> JsonValue:
     """The schema without ``title`` and the OpenAPI ``discriminator`` at any depth.
 
     A ``discriminator`` mapping holds references that no inlined schema resolves, and the ``const``
@@ -204,7 +204,7 @@ def plain_schema(node: JsonValue) -> JsonValue:
     data stay.
     """
     if isinstance(node, list):
-        return [plain_schema(item) for item in node]
+        return [untitled_schema(item) for item in node]
     if not isinstance(node, dict):
         return node
     kept: JsonObject = {}
@@ -212,23 +212,23 @@ def plain_schema(node: JsonValue) -> JsonValue:
         if key in _SCHEMA_DROPPED:
             continue
         if key in _SCHEMA_MAPPED and isinstance(value, dict):
-            kept[key] = {name: plain_schema(schema) for name, schema in value.items()}
+            kept[key] = {name: untitled_schema(schema) for name, schema in value.items()}
         elif key in _SCHEMA_VALUED or key in _SCHEMA_LISTED:
-            kept[key] = plain_schema(value)
+            kept[key] = untitled_schema(value)
         else:
             kept[key] = value
     return kept
 
 
 def tool_parameters(record: type[BaseModel]) -> JsonObject:
-    """The record as a tool's input schema: every local reference inlined, no ``$defs``, plain.
+    """The record as a tool's input schema: every local reference inlined, no ``$defs``, untitled.
 
-    Plain is ``plain_schema``. A tool declared from a record takes its parameters from here, so
-    the schema a model reads is the record's own. Raises ``ValueError`` for a recursive or non-local
-    reference.
+    Untitled is ``untitled_schema``. A tool declared from a record takes its parameters from here,
+    so the schema a model reads is the record's own. Raises ``ValueError`` for a recursive or
+    non-local reference.
     """
     schema = cast("JsonObject", record.model_json_schema())
     definitions = cast("JsonObject", schema.pop("$defs", {}))
     return cast(
-        "JsonObject", plain_schema(inlined_schema(schema, definitions, _RECORD_DEFINITIONS))
+        "JsonObject", untitled_schema(inlined_schema(schema, definitions, _RECORD_DEFINITIONS))
     )
