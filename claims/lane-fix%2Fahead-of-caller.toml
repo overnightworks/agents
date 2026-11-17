@@ -1,7 +1,0 @@
-claim_id = "c380d1bcad2541739681d8f867249371"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "b7452e1339853d00481a404c875136604d02f2fb"
-branch = "fix/ahead-of-caller"
-scope = [".aco/ahead-of-caller.toml"]
-opened_commit = "4ecca7e7b0183f1f77fd857cfd429792be29dbd1"
