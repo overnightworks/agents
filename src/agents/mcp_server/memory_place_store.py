@@ -54,10 +54,11 @@ class InMemoryPlaceStore:
 
     A subscription confirms as soon as it is entered, unless ``confirms_subscription`` is false:
     then none confirms until ``resubscribe``. A signal published before a subscription's
-    confirmation is never handed to it, as a store drops what it sent before the subscription. ``resubscribe`` confirms every subscription again,
-    as after a reconnect, and ``fail_subscriptions`` ends them for good; both let a test drive what
-    a store does that no call asks for. ``hold_signals`` keeps every subscription from handling
-    signals and turns until ``release_signals``, as a slow network does.
+    confirmation is never handed to it, as a store drops what it sent before the subscription.
+    ``resubscribe`` confirms every subscription again, as after a reconnect, and
+    ``fail_subscriptions`` ends them for good; both let a test drive what a store does that no call
+    asks for. ``hold_signals`` keeps every subscription from handling signals and turns until
+    ``release_signals``, as a slow network does.
     """
 
     def __init__(self, *, confirms_subscription: bool = True) -> None:
