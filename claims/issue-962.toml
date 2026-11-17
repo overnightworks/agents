@@ -1,0 +1,8 @@
+claim_id = "5fec10251ae24bf79556b0427e332b2e"
+agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
+role = "builder"
+base = "ba4e84e9b36f078e375224ede3b9be5bbd257da0"
+branch = "claude/issue-962-member-tool-wire"
+scope = [".github/workflows/ci.yml", ".github/workflows/release.yml", "AGENTS.md", "docs/connector.md", "scripts", "src/agents", "tests"]
+opened_commit = "acde2234dccf4aff29aafc133577df602fddc66e"
+whole_reason = "The snapshot generator, its committed output and the release step that diffs it are one capability."
