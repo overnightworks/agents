@@ -8,19 +8,29 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 import pytest
+from fakeredis import FakeAsyncRedis, FakeServer
+from logline.trace import current_trace_id
 from redis.asyncio import Redis
 
-from agents.mcp_server.place_store import ListeningTurn, PlaceSignal, Resubscribed
+from agents.mcp_server.place_store import ListeningTurn, PlaceSignal
 from agents.mcp_server.redis_place_store import RedisPlaceStore
 from agents.member import STANDING_URI
 from tests.support.mcp_server_support import a_member
 
-type Event = PlaceSignal | ListeningTurn | Resubscribed
+
+@dataclass(frozen=True)
+class Resynced:
+    """One call of a subscription's ``on_resync``."""
+
+
+type Event = PlaceSignal | ListeningTurn | Resynced | Exception
 
 _WAIT_SECONDS = 5
+KEY_PREFIX = "notes"
 
 # What a member of the record holds verbatim: a principal and a URI no script may re-encode.
 UNUSUAL_PRINCIPALS = [
@@ -32,6 +42,16 @@ UNUSUAL_URIS = [
     pytest.param(STANDING_URI, id="plain"),
     pytest.param("place://\U0001f600/standing", id="non-BMP"),
 ]
+
+
+@pytest.fixture
+def server() -> FakeServer:
+    return FakeServer()
+
+
+def a_pod(server: FakeServer, *, key_prefix: str = KEY_PREFIX) -> RedisPlaceStore:
+    """One pod's store on the fake server; pods of one server share an app by their prefix."""
+    return RedisPlaceStore(FakeAsyncRedis(server=server), key_prefix=key_prefix)
 
 
 @dataclass
@@ -56,30 +76,26 @@ def redis_clock(monkeypatch: pytest.MonkeyPatch) -> RedisClock:
 
 
 @asynccontextmanager
-async def subscribed(store: RedisPlaceStore) -> AsyncIterator[list[Event]]:
-    """The events one subscription yields, collected until the block ends; the block starts once
-    the subscription is confirmed."""
+async def subscribed(
+    store: RedisPlaceStore, traces: list[str | None] | None = None
+) -> AsyncIterator[list[Event]]:
+    """What one subscription calls, collected until the block ends: ``Resynced`` for each
+    ``on_resync``, each signal and turn, and the failure of a subscription that ended; the block
+    starts once the subscription is confirmed. ``traces`` gets the trace id each signal ran in."""
     events: list[Event] = []
-    first_event_or_end = asyncio.Event()
 
-    async def collect() -> None:
-        try:
-            async for event in store.received():
-                events.append(event)
-                first_event_or_end.set()
-        finally:
-            first_event_or_end.set()
+    def signalled(signal: PlaceSignal | ListeningTurn) -> None:
+        events.append(signal)
+        if traces is not None:
+            traces.append(current_trace_id())
 
-    task = asyncio.create_task(collect())
-    try:
-        async with asyncio.timeout(_WAIT_SECONDS):
-            await first_event_or_end.wait()
-        if task.done():
-            await task
+    async with store.following(
+        on_resync=lambda: events.append(Resynced()),
+        on_signal=signalled,
+        on_failed=events.append,
+        ready_within=timedelta(seconds=_WAIT_SECONDS),
+    ):
         yield events
-    finally:
-        task.cancel()
-        await asyncio.wait({task})
 
 
 async def arrived(events: list[Event], count: int) -> None:

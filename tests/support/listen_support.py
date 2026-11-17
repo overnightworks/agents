@@ -80,7 +80,7 @@ class ListeningHost:
     on_call: Callable[[Task], None] = lambda _task: None
 
     def changed(self, principal: Principal, uri: str, listens: bool) -> None:
-        task: Task = "signal" if asyncio.current_task() is self.store.signal_task else "request"
+        task: Task = "signal" if asyncio.current_task() in self.store.signal_tasks else "request"
         self.calls.append((principal, uri, listens, task))
         if task == "signal":
             self.followed[principal, uri] = listens

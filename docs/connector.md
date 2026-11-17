@@ -820,8 +820,16 @@ with the port, `resources.subscribe` true with `changes`, and `tools.listChanged
 
 **The place store.** `store` is a `PlaceStore` (exported by `agents.mcp_server`) shared by every
 pod of the app; `RedisPlaceStore(redis, *, key_prefix)`, imported from
-`agents.mcp_server.redis_place_store` and installed with the `redis` extra, is the one
-implementation, and is the `LeaseRecord` of [the lease](#the-lease) too. `changed` and
+`agents.mcp_server.redis_place_store` and installed with the `redis` extra, is the implementation
+of an app that runs more than one pod, and is the `LeaseRecord` of [the lease](#the-lease) too.
+`InMemoryPlaceStore()`, exported by `agents.mcp_server`, is the one a host's tests give
+`ResourceChanges`: every `ResourceChanges` handed the same instance is a pod of one app, it keeps
+its signals, its listen record and its subscriptions in the object, and it reads time off the
+running loop, so a virtual clock moves a stream's deadline. Built with
+`confirms_subscription=False`, it confirms no subscription until `resubscribe()` is called, which
+also confirms every subscription again as after a reconnect; `fail_subscriptions(failure)` ends them for good, and
+`hold_signals()` until `release_signals()` keeps them from handling a signal or a turn. It imports
+no store library. `changed` and
 `tools_changed` publish an address, never content, and every pod's front, the publishing one
 included, delivers it to its open streams, which read the app's own truth; a listening turn carries
 its direction as well, and the store holds the listen record that
@@ -831,7 +839,7 @@ name, the one segment (`[a-z0-9][a-z0-9-]*`) your app gives its own tandem. agen
 it stores, tandem's channel included, under `<prefix>-agents`, so its keys and wakes never meet your
 app's; it refuses a prefix ending in `-agents`. A member's lease keeps its keys beside the listen
 record's, `<prefix>-agents:tandem:v1:epoch` and `<prefix>-agents:tandem:v1:l:member:*`, on tandem's
-leases of family `member`; the `redis` extra names tandem by range (0.8, tag v0.8.0) and the host pins that tag itself, as it
+leases of family `member`; the `redis` extra names tandem by range (0.9, tag v0.9.1) and the host pins that tag itself, as it
 pins logline, because uv resolves one version.
 The client carries a `Retry` and sets
 `socket_timeout` and `socket_connect_timeout`: without the timeouts a publish to a silent Redis
@@ -844,17 +852,14 @@ UTF-8, so each one costs a resync (an open gap on overnightworks/tandem#2). The 
 read within `LISTEN_BOUND_SECONDS`.
 
 **The trace across a wake.** Every wake carries its sender's trace: `publish` sends the caller's
-current trace and the Lua scripts of the listen record send `logline.current_traceparent()`, so a
-`PlaceSignal` or `ListeningTurn` a pod receives holds the sender's `traceparent`, `None` for a
-sender outside a trace. The front handles each signal and turn under `logline.unit_trace` of it,
-so a `listening_changed` of a host runs in the trace of the listen request that turned the answer
-on another pod, and a host that implements the port passes the field through as received; the
-value is unvalidated, since `unit_trace` starts a new trace for a malformed one. Pods on tandem 0.8
-and on an earlier tandem share no wake channel and never hear each other, so every pod of a host
-moves to this release at once and restarts together, and a rollback goes back for all pods
-together, because a rolling update loses wakes until the last old pod is gone. Proved
-by `test_a_wake_carries_the_trace_of_the_pod_that_sent_it_to_the_pod_that_receives_it`,
-`test_a_turn_another_pod_published_is_handled_in_the_trace_it_carries` and, on two pods,
+current trace and the Lua scripts of the listen record send `logline.current_traceparent()`.
+tandem's `WakeChannel.following` runs each handler inside the trace of the wake's sender, so a
+`listening_changed` of a host runs in the trace of the listen request that turned the answer on
+another pod, and the signals and turns the port hands over carry no trace of their own. Pods on
+tandem 0.8.0 or later and pods on an earlier tandem share no wake channel and never hear each
+other, so a host moves across that line, or rolls back over it, with all its pods together,
+because a rolling update loses wakes until the last old pod is gone. Proved
+by `test_a_wake_is_handled_in_the_trace_of_the_pod_that_sent_it` and, on two pods,
 `test_a_listen_on_one_pod_reaches_the_host_of_the_other_in_the_trace_of_its_request`.
 
 Each lapse run of the listen poll runs in a trace of its own,
@@ -865,8 +870,14 @@ hears that wake handles it in it. A run that finds nothing writes no line. Prove
 `test_the_no_a_lapse_run_wakes_is_heard_in_the_trace_of_that_run`.
 
 `running()` yields at the first confirmed subscription, so a pod turns ready only once it hears
-changes; while Redis is unreachable it stays not ready, and a subscription the store refuses
-before that raises `PlaceStoreError` out of `running()`, which fails the host's startup. At every
+changes. The front enters the store's `following(*, on_resync, on_signal, on_failed,
+ready_within)` with `ready_within` ten seconds: a subscription the store refuses, or does not
+confirm in that time (Redis unreachable, say), raises `PlaceStoreError` out of `running()`, which
+fails the host's startup. A host that implements `PlaceStore` implements `following` as an async
+context manager: entering returns after the first confirmation and `on_resync` returned, `on_resync`
+runs at every confirmation, `on_signal` for each signal and turn after it, the handlers one at a
+time in arrival order, and a subscription that cannot recover afterwards calls `on_failed` once
+and leaves the context entered. At every
 later confirmation each open stream receives every URI it honored, and the tool list if it
 honored that, and the front writes `place_subscription.renewed`, because a change sent while the
 subscription was down is lost. When a publish fails, `changed` raises `PlaceStoreError` (a host never imports tandem or
@@ -875,7 +886,7 @@ next listen's read within `LISTEN_BOUND_SECONDS`. A payload on agents' channel t
 writes `place_signal.refused` with its length and is skipped. If the subscription fails for good
 after startup, the front writes `place_subscription.failed`, ends its open listens and answers
 every request with 503 until the pod restarts.
-Proved by `tests/test_mcp_server_place_wake.py`, `tests/integration/test_redis_place_store.py` and
+Proved by `tests/test_mcp_server_place_wake.py`, `tests/test_mcp_server_memory_place_store.py`, `tests/integration/test_redis_place_store.py` and
 the tests of `tests/integration/real_redis`, which `scripts/run_redis_tests.sh` runs.
 
 **The answers.** `resources/list` answers exactly `current`, sorted (a view only beside its
@@ -918,7 +929,7 @@ whose lapse has not yet run; `await changes.listeners(uri)` lists those principa
 later if the pod that claimed its lapse died. `PlaceStore.lapse_due` returns a `LapseRun` (the
 `turns` it published, the `stream_count` it lapsed, a `failed_count` with the `last_error_type`),
 which a host that implements the port builds, with `LapseRun`, `ListeningTurn`, `PlaceSignal`,
-`ResourceChange`, `ToolsChange` and `Resubscribed` imported from `agents.mcp_server`; `Principal`
+`ResourceChange` and `ToolsChange` imported from `agents.mcp_server`; `Principal`
 comes from `agents.turn`, its one owner, and `agents.mcp_server` does not re-export it. The run's
 pod writes `listening.lapsed` for each turn. Both read the place store on Redis time and raise
 `PlaceStoreError` when it fails; a host that gets the error does not offer the agent. An app that

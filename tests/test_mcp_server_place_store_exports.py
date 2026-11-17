@@ -13,7 +13,13 @@ def _named_types(annotation: object) -> set[object]:
         return {annotation, *_named_types(annotation.__value__)}
     arguments = typing.get_args(annotation)
     if arguments:
-        return {item for argument in arguments for item in _named_types(argument)}
+        # a Callable's parameter types arrive as one list
+        flattened = [
+            item
+            for argument in arguments
+            for item in (argument if isinstance(argument, list) else [argument])
+        ]
+        return {item for argument in flattened for item in _named_types(argument)}
     return {annotation}
 
 

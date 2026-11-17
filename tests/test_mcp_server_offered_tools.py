@@ -361,7 +361,7 @@ def test_a_stream_honoring_only_tools_counts_for_no_uri_and_signals_no_listening
 
     assert during == [False]
     assert heard == []
-    assert place_store.shared.stream_calls == []
+    assert place_store.stream_calls == []
 
 
 def test_the_sdk_client_hears_the_change_lists_the_new_offer_and_is_refused_the_old_tool(

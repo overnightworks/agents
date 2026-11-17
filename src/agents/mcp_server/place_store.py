@@ -5,14 +5,15 @@ tool list that changed, and the pod that receives it reads the app's own truth. 
 carries its direction as well. ``ListenRecord`` keeps which principal listens to which URI, on
 every pod alike. ``LeaseRecord`` keeps a member's lease, which survives the pod that renewed it. A
 host that runs more than one pod gives ``ResourceChanges`` and ``MemberLeases`` the implementation
-in ``agents.mcp_server.redis_place_store``.
+in ``agents.mcp_server.redis_place_store``; a host's tests give ``ResourceChanges``
+``InMemoryPlaceStore``, which keeps no lease.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Collection
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Awaitable, Callable, Collection
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import NoReturn, Protocol
@@ -57,26 +58,19 @@ async def store_step(
 
 @dataclass(frozen=True)
 class ResourceChange:
-    """The resource at ``uri`` of ``principal`` changed; ``origin`` names the publishing pod.
-
-    ``traceparent`` is the publisher's trace as received, ``None`` when it had none; a publisher
-    sets none, the store sends the caller's current trace.
-    """
+    """The resource at ``uri`` of ``principal`` changed; ``origin`` names the publishing pod."""
 
     principal: Principal
     uri: str
     origin: str
-    traceparent: str | None = None
 
 
 @dataclass(frozen=True)
 class ToolsChange:
-    """The tools offered to ``principal`` changed; ``origin`` names the publishing pod; the
-    ``traceparent`` is a ``ResourceChange``'s."""
+    """The tools offered to ``principal`` changed; ``origin`` names the publishing pod."""
 
     principal: Principal
     origin: str
-    traceparent: str | None = None
 
 
 type PlaceSignal = ResourceChange | ToolsChange
@@ -85,13 +79,11 @@ type PlaceSignal = ResourceChange | ToolsChange
 @dataclass(frozen=True)
 class ListeningTurn:
     """The answer to whether ``principal`` listens to ``uri`` turned to ``listens``; only the
-    record publishes one, in the trace of the call that turned it (``traceparent`` is a
-    ``ResourceChange``'s)."""
+    record publishes one."""
 
     principal: Principal
     uri: str
     listens: bool
-    traceparent: str | None = None
 
 
 @dataclass(frozen=True)
@@ -106,12 +98,6 @@ class LapseRun:
     last_error_type: str | None = None
 
 
-@dataclass(frozen=True)
-class Resubscribed:
-    """The subscription is confirmed, the first time and after every reconnect: a signal sent
-    while it was down is lost, so every pod re-reads what it serves."""
-
-
 class PlaceSignals(Protocol):
     async def publish(self, signal: PlaceSignal) -> None:
         """Sends the signal to every pod subscribed, this one included.
@@ -121,11 +107,27 @@ class PlaceSignals(Protocol):
         """
         ...
 
-    def received(self) -> AsyncIterator[PlaceSignal | ListeningTurn | Resubscribed]:
-        """The confirmation of every subscription and each signal and turn after it, until
-        cancelled.
+    def following(
+        self,
+        *,
+        on_resync: Callable[[], None],
+        on_signal: Callable[[PlaceSignal | ListeningTurn], None],
+        on_failed: Callable[[Exception], None],
+        ready_within: timedelta,
+    ) -> AbstractAsyncContextManager[None]:
+        """Follows the store's signals and turns for the caller while the context is open.
 
-        Raises ``PlaceStoreError`` when the subscription cannot recover.
+        Entering returns once the store confirmed the subscription and ``on_resync`` returned;
+        without that within ``ready_within``, a positive span, it raises ``PlaceStoreError``, and
+        so does a refusal. ``on_resync()`` runs at every confirmation, the first and after every
+        reconnect: a signal sent while the subscription was down is lost, so every pod re-reads
+        what it serves. ``on_signal`` runs for each signal and turn after it. The handlers are
+        synchronous and run one at a time in arrival order; an exception of one before the entry
+        returned is raised out of the entry.
+
+        A subscription that cannot recover afterwards calls ``on_failed`` once with the
+        failure, a ``PlaceStoreError`` for the store's own; the context stays entered. Leaving it
+        ends the subscription.
         """
         ...
 
