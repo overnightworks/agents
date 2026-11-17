@@ -485,8 +485,9 @@ def test_a_host_side_looks_type_refuses_what_the_accept_arguments_refuse(
 ) -> None:
     wire_text = json.dumps(ACCEPT_WIRE | {"looks": looks})
     looks_text = json.dumps(looks)
+    looks_adapter = TypeAdapter(Looks)
 
     with pytest.raises(ValidationError):
-        TypeAdapter(Looks).validate_json(looks_text)
+        looks_adapter.validate_json(looks_text)
     with pytest.raises(ValidationError):
         AcceptInvitationArguments.model_validate_json(wire_text)
