@@ -1,7 +1,0 @@
-claim_id = "b462d48a4dc4465e808ade5c2e413fc9"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "de80ee460cb54f319d13f5a154960d17c1bea36d"
-branch = "claude/issue-996-length-failure"
-scope = ["src/agents/mcp_server/person.py", "tests/test_mcp_server_member_arguments.py"]
-opened_commit = "1716e3c3b24073eb033a1b8707d211e895bbc0b3"
