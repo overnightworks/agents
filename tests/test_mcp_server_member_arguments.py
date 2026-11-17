@@ -156,6 +156,16 @@ def test_a_member_tool_call_that_fits_its_record_reaches_the_handler_as_sent(
             id="the voices list parses from JSON and a repeated voice is refused",
         ),
         pytest.param(
+            accept_wire(voices=[1, 2]),
+            "voices.0 (string_type), voices.1 (string_type)",
+            id="a list whose items all fail names the items and no length failure",
+        ),
+        pytest.param(
+            accept_wire(voices=[]),
+            "voices (too_short)",
+            id="a list that is really too short names its length",
+        ),
+        pytest.param(
             accept_wire(
                 epoch="bad-value",
                 figure=_FIGURE | {"gestures": {"first-secret": _FIGURE, "second-secret": _FIGURE}},

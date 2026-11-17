@@ -60,6 +60,7 @@ from mcp_types import (
     UnsupportedProtocolVersionErrorData,
 )
 from pydantic import BaseModel, JsonValue, StrictInt, TypeAdapter, ValidationError
+from pydantic_core import ErrorDetails
 
 from agents.mcp_server.asgi import (
     DISCOVER_METHOD,
@@ -540,11 +541,24 @@ def _declared_path(model: type[BaseModel], location: tuple[int | str, ...]) -> s
 
 
 def _arguments_refused_text(model: type[BaseModel], error: ValidationError) -> str:
-    """Each failing path and its error type, once and sorted, never an input value."""
+    """Each failing path and its error type, once and sorted, never an input value.
+
+    pydantic reports `too_short` for a list whose every item failed, because it drops the failed
+    items before it counts; a `too_short` above another failure is that artefact and is left out.
+    """
+    reported = error.errors()
     failures = {
-        f"{_declared_path(model, failure['loc'])} ({failure['type']})" for failure in error.errors()
+        f"{_declared_path(model, failure['loc'])} ({failure['type']})"
+        for failure in reported
+        if not (failure["type"] == "too_short" and _has_failure_below(failure["loc"], reported))
     }
     return f"{ARGUMENTS_REFUSED_TEXT}: {', '.join(sorted(failures))}"
+
+
+def _has_failure_below(loc: tuple[int | str, ...], reported: list[ErrorDetails]) -> bool:
+    return any(
+        other["loc"][: len(loc)] == loc and len(other["loc"]) > len(loc) for other in reported
+    )
 
 
 async def _offer(
