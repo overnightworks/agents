@@ -540,11 +540,23 @@ def _declared_path(model: type[BaseModel], location: tuple[int | str, ...]) -> s
 
 
 def _arguments_refused_text(model: type[BaseModel], error: ValidationError) -> str:
-    """Each failing path and its error type, once and sorted, never an input value."""
+    """Each failing path and its error type, once and sorted, never an input value.
+
+    pydantic reports `too_short` for a list whose every item failed, because it drops the failed
+    items before it counts; a `too_short` above another failure is that artefact and is left out.
+    """
+    reported = [(failure["loc"], failure["type"]) for failure in error.errors()]
+    locations = [loc for loc, _ in reported]
     failures = {
-        f"{_declared_path(model, failure['loc'])} ({failure['type']})" for failure in error.errors()
+        f"{_declared_path(model, loc)} ({kind})"
+        for loc, kind in reported
+        if not (kind == "too_short" and _has_failure_below(loc, locations))
     }
     return f"{ARGUMENTS_REFUSED_TEXT}: {', '.join(sorted(failures))}"
+
+
+def _has_failure_below(loc: tuple[int | str, ...], locations: list[tuple[int | str, ...]]) -> bool:
+    return any(other[: len(loc)] == loc and len(other) > len(loc) for other in locations)
 
 
 async def _offer(
