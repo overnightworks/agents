@@ -50,6 +50,7 @@ class MemberLeases:
         self._store = store
         self._lease_ended = lease_ended
         self._claimer = uuid4().hex
+        self._failed_run_count = 0
 
     async def renew(self, principal: Principal) -> LeaseRenewal:
         """Keeps the principal's lease for another ``LEASE_SECONDS``. Async, so a host calls it
@@ -82,11 +83,12 @@ class MemberLeases:
         """The lapse service as a task of its own, for as long as the block runs; the host enters
         it once in its lifespan, on every pod.
 
-        A failure of the service never ends it silently: the first of a streak is written by type,
-        and the service serves again after ``LAPSE_RESTART_SECONDS``. A streak ends when a restarted
-        service ran longer than that without failing. The block's exit cancels the service and
-        waits for it, so a handler still running is cut and its lapse returns after the store's
-        claim has run out. There is no readiness signal: a failing service is only written.
+        A failure of the service never ends it silently: the first of a streak is written by type
+        (``lease_lapse_service.failed``, a warning), and the service serves again after
+        ``LAPSE_RESTART_SECONDS``. A streak ends when a restarted service ran longer than that
+        without failing; ``lease_lapse_service.resumed`` then writes its ``failed_run_count``.
+        The block's exit cancels the service and waits for it, so a handler still running is cut and
+        its lapse returns after the store's claim has run out. There is no readiness signal: a failing service is only written.
         """
         service = asyncio.create_task(self._serve())
         try:
@@ -97,17 +99,26 @@ class MemberLeases:
 
     async def _serve(self) -> None:
         loop = asyncio.get_running_loop()
-        failing = False
         while True:
-            started = loop.time()
+            resumption = (
+                loop.call_later(LAPSE_RESTART_SECONDS, self._log_resumed)
+                if self._failed_run_count
+                else None
+            )
             try:
                 await self._store.serve_lapses(self._lapsed, claimer=self._claimer)
             except Exception as failure:
-                failing = failing and loop.time() - started <= LAPSE_RESTART_SECONDS
-                if not failing:
+                if not self._failed_run_count:
                     self._log_failure(failure)
-                failing = True
+                self._failed_run_count += 1
+            finally:
+                if resumption is not None:
+                    resumption.cancel()
             await asyncio.sleep(LAPSE_RESTART_SECONDS)
+
+    def _log_resumed(self) -> None:
+        _LOG.info("lease_lapse_service.resumed", extra={"failed_run_count": self._failed_run_count})
+        self._failed_run_count = 0
 
     async def _lapsed(self, principal: Principal, generation: str) -> None:
         _LOG.info("member_lease.lapsed", extra={"sub": principal.sub})
@@ -115,7 +126,7 @@ class MemberLeases:
 
     @staticmethod
     def _log_failure(failure: Exception) -> None:
-        _LOG.error(
+        _LOG.warning(
             "lease_lapse_service.failed",
             extra={"error_type": failure_type(failure)},
             exc_info=None if isinstance(failure, PlaceStoreError) else failure,

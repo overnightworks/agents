@@ -120,8 +120,6 @@ _INITIALIZE: Final = "initialize"
 _FINAL_FRAME_SECONDS: Final = 5
 _UNSUPPORTED_VERSION_TEXT: Final = "Unsupported protocol version"
 _PARSE_ERROR_TEXT: Final = "Parse error"
-_SDK_LOGGER_NAMES: Final = ("mcp.server", "mcp.shared")
-_ABOVE_ANY_RECORD: Final = logging.CRITICAL + 1
 _ECHOABLE_REQUEST_ID: Final[TypeAdapter[int | str]] = TypeAdapter(StrictInt | UnicodeText)
 _TOOL_ARGUMENTS: Final[TypeAdapter[JsonObject]] = TypeAdapter(JsonObject)
 
@@ -327,17 +325,9 @@ class McpPersonFront:
         and raises ``PlaceStoreError`` if that fails first. A subscription that fails later
         leaves it entered: the front logs the cause, ends its open listens and answers every
         request with 503 until the pod restarts.
-
-        The SDK logs request methods and handler failures with their content, so each of its
-        server loggers the host left unset is held above any record's level from here on: a
-        host's DEBUG on the root logger never reaches it, and a level the host sets on it wins.
         """
         if self._manager is not None:
             raise RuntimeError("the person front is already running")
-        for name in _SDK_LOGGER_NAMES:
-            sdk_logger = logging.getLogger(name)
-            if sdk_logger.level == logging.NOTSET:
-                sdk_logger.setLevel(_ABOVE_ANY_RECORD)
         manager = StreamableHTTPSessionManager(
             self._server,
             json_response=True,

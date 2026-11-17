@@ -169,8 +169,8 @@ class _Response:
         self.complete = not message.get("more_body", False)
 
 
-class _RouteRefusal(StrEnum):
-    """Why a route's answer is no usable result: the ``reason`` of ``route_answer.refused``."""
+class _RouteFailure(StrEnum):
+    """Why a route's answer is no usable result: the ``reason`` of ``route_answer.failed``."""
 
     NO_STATUS = "no_status"
     INCOMPLETE = "incomplete"
@@ -179,30 +179,30 @@ class _RouteRefusal(StrEnum):
     NOT_TEXT = "not_text"
 
 
-def _failure(reason: _RouteRefusal, status: int | None) -> ToolOutcome:
+def _failure(reason: _RouteFailure, status: int | None) -> ToolOutcome:
     fields = {"reason": reason} if status is None else {"reason": reason, "status": status}
-    _LOG.warning("route_answer.refused", extra=fields)
+    _LOG.warning("route_answer.failed", extra=fields)
     return ToolOutcome(_ROUTE_FAILED_TEXT, is_error=True)
 
 
 def _outcome(response: _Response) -> ToolOutcome:
     status = response.status
     if status is None:
-        return _failure(_RouteRefusal.NO_STATUS, status)
+        return _failure(_RouteFailure.NO_STATUS, status)
     if response.overflowed:
-        return _failure(_RouteRefusal.TOO_LARGE, status)
+        return _failure(_RouteFailure.TOO_LARGE, status)
     if not response.complete:
-        return _failure(_RouteRefusal.INCOMPLETE, status)
+        return _failure(_RouteFailure.INCOMPLETE, status)
     if HTTPStatus.OK <= status < HTTPStatus.MULTIPLE_CHOICES:
         is_error = False
     elif HTTPStatus.BAD_REQUEST <= status < HTTPStatus.INTERNAL_SERVER_ERROR:
         is_error = True
     else:
-        return _failure(_RouteRefusal.STATUS, status)
+        return _failure(_RouteFailure.STATUS, status)
     try:
         return ToolOutcome(b"".join(response.chunks).decode("utf-8"), is_error=is_error)
     except UnicodeDecodeError:
-        return _failure(_RouteRefusal.NOT_TEXT, status)
+        return _failure(_RouteFailure.NOT_TEXT, status)
 
 
 async def call_route(
