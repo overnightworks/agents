@@ -5,7 +5,8 @@ tool list that changed, and the pod that receives it reads the app's own truth. 
 carries its direction as well. ``ListenRecord`` keeps which principal listens to which URI, on
 every pod alike. ``LeaseRecord`` keeps a member's lease, which survives the pod that renewed it. A
 host that runs more than one pod gives ``ResourceChanges`` and ``MemberLeases`` the implementation
-in ``agents.mcp_server.redis_place_store``; a host's tests give them ``InMemoryPlaceStore``.
+in ``agents.mcp_server.redis_place_store``; a host's tests give ``ResourceChanges``
+``InMemoryPlaceStore``, which keeps no lease.
 """
 
 from __future__ import annotations
