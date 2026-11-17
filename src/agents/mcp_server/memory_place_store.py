@@ -53,7 +53,8 @@ class InMemoryPlaceStore:
     """A ``PlaceStore`` whose signals, listen record and subscriptions live in this object.
 
     A subscription confirms as soon as it is entered, unless ``confirms_subscription`` is false:
-    then none confirms until ``resubscribe``. ``resubscribe`` confirms every subscription again,
+    then none confirms until ``resubscribe``. A signal published before a subscription's
+    confirmation is never handed to it, as a store drops what it sent before the subscription. ``resubscribe`` confirms every subscription again,
     as after a reconnect, and ``fail_subscriptions`` ends them for good; both let a test drive what
     a store does that no call asks for. ``hold_signals`` keeps every subscription from handling
     signals and turns until ``release_signals``, as a slow network does.
@@ -167,17 +168,19 @@ class InMemoryPlaceStore:
     async def _follow(
         self, follower: _Follower, ready: asyncio.Future[None], entered: asyncio.Event
     ) -> None:
+        confirmed = False
         try:
             while True:
                 event = await follower.inbox.get()
                 if isinstance(event, Exception):
                     raise event
                 if isinstance(event, _Resync):
+                    confirmed = True
                     follower.on_resync()
                     if not ready.done():
                         ready.set_result(None)
                         await entered.wait()
-                else:
+                elif confirmed:
                     await self._released.wait()
                     follower.on_signal(event)
         except Exception as failure:
