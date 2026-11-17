@@ -99,6 +99,12 @@ def test_a_member_tool_call_that_does_not_fit_its_record_is_a_tool_error_and_nev
             ACCEPT_INVITATION_TOOL,
             accept_wire(figure=_FIGURE | {"gestures": {"wave": _FIGURE}}),
         ),
+        (
+            ACCEPT_INVITATION_TOOL,
+            accept_wire(
+                looks=[{"kind": "video", "name": "studio-1"}, {"kind": "figure"} | _FIGURE]
+            ),
+        ),
         (DECLINE_INVITATION_TOOL, decline_wire()),
         (SPEAK_TOOL, speak_wire(mood="happy")),
         (STOP_SPEAKING_TOOL, stop_wire()),
@@ -144,6 +150,21 @@ def test_a_member_tool_call_that_fits_its_record_reaches_the_handler_as_sent(
             accept_wire(figure=_FIGURE | {"gestures": {"url": _FIGURE}}),
             "figure.gestures.[key] (enum)",
             id="a key spelled like a field of the value model is still named as a key",
+        ),
+        pytest.param(
+            accept_wire(looks=[{"kind": "video", "name": "a"}, {"kind": "video", "name": "a"}]),
+            "looks (value_error)",
+            id="a video look named twice is refused",
+        ),
+        pytest.param(
+            accept_wire(looks=[{"kind": "figure"} | _FIGURE | {"url": "http://a.test"}]),
+            "looks.0.[key].url (value_error)",
+            id="the kind tag of a failing look is named as a key",
+        ),
+        pytest.param(
+            accept_wire(looks=[{"kind": "hologram-secret"}]),
+            "looks.0 (union_tag_invalid)",
+            id="a kind outside the union is named at its look",
         ),
         pytest.param(
             accept_wire(**{"unknown-secret": 1}),

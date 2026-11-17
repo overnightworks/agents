@@ -108,7 +108,7 @@ def _overlap(first: str, second: str) -> bool:
 
 
 def _schema(node: JsonValue, components: JsonObject, where: str) -> JsonObject:
-    """The node as a schema object with every reference inlined and no title; else a breach."""
+    """The node as a schema object with every reference inlined, untitled; else a breach."""
     return _object(untitled_schema(inlined_schema(node, components, _SCHEMA_REFERENCE)), where)
 
 
