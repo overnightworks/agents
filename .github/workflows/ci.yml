@@ -54,6 +54,11 @@ jobs:
           uv run --locked --no-sync python scripts/generate_agents_vocabulary.py
           git diff --exit-code -- src/agents/agents-vocabulary.json
 
+      - name: The member-tool wire is what the person front declares
+        run: |
+          uv run --locked --no-sync python scripts/generate_member_tool_wire.py
+          git diff --exit-code -- scripts/member-tool-wire.json
+
       - name: Ruff
         run: uv run --locked --no-sync ruff check src tests scripts
 

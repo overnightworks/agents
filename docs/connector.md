@@ -66,6 +66,14 @@ reads that one member. Its `version` is the file's shape version: a changed toke
 new set key keeps the version, only a changed shape raises it. CI fails when the file and the code
 differ, and the release refuses a wheel whose member differs from the committed file.
 
+`scripts/member-tool-wire.json` is the member-tool wire a person front declares: for each tool of
+`MEMBER_TOOL_ARGUMENTS`, the schema of its arguments and of each answer record in
+`MEMBER_TOOL_RESULTS`, refusals included. `scripts/generate_member_tool_wire.py` writes it and CI
+fails when it and the code differ. Every release note ends with a `**Member-tool wire:**` line
+that says `unchanged` or `changed` with the names of the tools whose arguments or results differ
+from the previous release's snapshot (`scripts/member_tool_wire_diff.py`), so a runner that serves
+an app reads it there.
+
 `AssistantTextEvent` is a piece of the assistant's text, yielded as the gateway streams it, before
 its round is judged. Pieces come from every round, including a round that ends in tool calls: its
 pieces come before its `ToolCallEvent`s. `FinalEvent.text` is the last round's judged text only, so

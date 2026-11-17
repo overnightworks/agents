@@ -1,3 +1,4 @@
+# ruff: noqa: T201 - the command line's one output owner; it prints the note line
 """Prints the release-note line that says whether the member-tool wire changed.
 
 Takes the current snapshot (``scripts/member-tool-wire.json``) and, optionally, the previous
@@ -24,7 +25,9 @@ def note_line(previous: Path | None, current: Path) -> str:
     if previous is None:
         return f"{LABEL} changed (the previous release has no snapshot to compare)."
     before, after = _tools(previous), _tools(current)
-    changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
+    changed = sorted(
+        name for name in before.keys() | after.keys() if before.get(name) != after.get(name)
+    )
     if not changed:
         return f"{LABEL} unchanged."
     return f"{LABEL} changed: {', '.join(changed)}."
@@ -33,7 +36,7 @@ def note_line(previous: Path | None, current: Path) -> str:
 def main(argv: Sequence[str]) -> int:
     """``previous`` is a snapshot path or ``-`` for none; ``current`` is the snapshot to judge."""
     previous, current = argv
-    print(note_line(None if previous == "-" else Path(previous), Path(current)))  # noqa: T201
+    print(note_line(None if previous == "-" else Path(previous), Path(current)))
     return 0
 
 
