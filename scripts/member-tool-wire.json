@@ -1,0 +1,710 @@
+{
+  "tools": {
+    "accept_invitation": {
+      "arguments": {
+        "additionalProperties": false,
+        "description": "The arguments of ``accept_invitation``: the place and the invitation's id and epoch, and\noptionally the agent's ``figure`` and its ``voices``, the names of the voices it would speak\nwith, first choice first; an absent one means the app's own default. The app passes the\n``voices`` unchanged and in order to its speech service, which picks the voice.",
+        "properties": {
+          "epoch": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "figure": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "description": "Where an agent's 3D figure is (see ``HttpsFileRef``) and, optionally, its own clips: for a\ngesture of figure's base set, the file that replaces figure's neutral clip on this figure\nonly. A gesture has at most one clip, and ``gestures`` is left out of the JSON when empty.",
+                "properties": {
+                  "gestures": {
+                    "additionalProperties": {
+                      "additionalProperties": false,
+                      "description": "Where a file is and the digest its bytes must have: ``url`` is an absolute ``https``\naddress with a host and no user part, query or fragment, and ``sha256`` is 64 lowercase\nhexadecimal characters. The record checks the form only; whether to fetch the file is the\napp's decision.",
+                      "properties": {
+                        "sha256": {
+                          "pattern": "^[0-9a-f]{64}$",
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "url",
+                        "sha256"
+                      ],
+                      "type": "object"
+                    },
+                    "propertyNames": {
+                      "description": "A gesture figure can play.",
+                      "enum": [
+                        "wave"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url",
+                  "sha256"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "invitation": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "place": {
+            "additionalProperties": false,
+            "description": "A place the member is in, opaque to everyone but the app: its kind and its id.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "voices": {
+            "anyOf": [
+              {
+                "items": {
+                  "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "place",
+          "invitation",
+          "epoch"
+        ],
+        "type": "object"
+      },
+      "results": [
+        {
+          "$defs": {
+            "AcceptInvitationRefusal": {
+              "description": "Why the app does not accept an invitation: ``stale_invitation`` when the invitation is no\nlonger standing, has expired, or its id or epoch no longer matches, or the member holds no\nlease; ``two_seats`` when the person who brought the member does not hold exactly\none seat in the place, the inviting one; ``sponsor_away`` when that person's seat lost its\nconnection and waits to resume; ``busy`` when the place has no free seat.",
+              "enum": [
+                "stale_invitation",
+                "two_seats",
+                "sponsor_away",
+                "busy"
+              ],
+              "title": "AcceptInvitationRefusal",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "What ``accept_invitation`` answers on a refusal, as JSON in an ``is_error`` result.",
+          "properties": {
+            "refused": {
+              "$ref": "#/$defs/AcceptInvitationRefusal"
+            }
+          },
+          "required": [
+            "refused"
+          ],
+          "title": "AcceptInvitationRefused",
+          "type": "object"
+        }
+      ]
+    },
+    "continue_speaking": {
+      "arguments": {
+        "additionalProperties": false,
+        "description": "The arguments of ``continue_speaking``: the place and the hold (``PlaceWindow.interrupted``)\nwhose held sentence goes on.",
+        "properties": {
+          "interrupted": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "place": {
+            "additionalProperties": false,
+            "description": "A place the member is in, opaque to everyone but the app: its kind and its id.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "place",
+          "interrupted"
+        ],
+        "type": "object"
+      },
+      "results": [
+        {
+          "additionalProperties": false,
+          "description": "What ``continue_speaking`` answers on success, as JSON: the held sentence's rest plays,\nfaded back in, then the queue; the field is exactly the JSON ``true``.",
+          "properties": {
+            "continued": {
+              "title": "Continued",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "continued"
+          ],
+          "title": "ContinuedSpeaking",
+          "type": "object"
+        },
+        {
+          "$defs": {
+            "ContinueSpeakingRefusal": {
+              "description": "Why the app does not continue: ``not_active`` when the member left, was removed or is\npaused; ``not_interrupted`` when ``interrupted`` names a hold that does not stand.",
+              "enum": [
+                "not_active",
+                "not_interrupted"
+              ],
+              "title": "ContinueSpeakingRefusal",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "What ``continue_speaking`` answers on a refusal, as JSON in an ``is_error`` result.",
+          "properties": {
+            "refused": {
+              "$ref": "#/$defs/ContinueSpeakingRefusal"
+            }
+          },
+          "required": [
+            "refused"
+          ],
+          "title": "ContinueSpeakingRefused",
+          "type": "object"
+        }
+      ]
+    },
+    "decline_invitation": {
+      "arguments": {
+        "additionalProperties": false,
+        "description": "The arguments of ``decline_invitation``: the place, the invitation's id and epoch, and the\nreason; a decline needs no lease, as it seats nothing.",
+        "properties": {
+          "epoch": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "invitation": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "place": {
+            "additionalProperties": false,
+            "description": "A place the member is in, opaque to everyone but the app: its kind and its id.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "reason": {
+            "description": "Why the runner declines an invitation: ``busy`` when the runner is at its own limit of how\nmany places it is in at once; not ``AcceptInvitationRefusal.BUSY``, which is the app's full\nplace.",
+            "enum": [
+              "busy"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "place",
+          "invitation",
+          "epoch",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "results": [
+        {
+          "$defs": {
+            "DeclineInvitationRefusal": {
+              "description": "Why the app does not take a decline: ``stale_invitation`` when the invitation is not that\nmember's, no longer stands, has expired, or its id or epoch no longer matches.",
+              "enum": [
+                "stale_invitation"
+              ],
+              "title": "DeclineInvitationRefusal",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "What ``decline_invitation`` answers on a refusal, as JSON in an ``is_error`` result.",
+          "properties": {
+            "refused": {
+              "$ref": "#/$defs/DeclineInvitationRefusal"
+            }
+          },
+          "required": [
+            "refused"
+          ],
+          "title": "DeclineInvitationRefused",
+          "type": "object"
+        }
+      ]
+    },
+    "gesture": {
+      "arguments": {
+        "additionalProperties": false,
+        "description": "The place and the gesture your figure makes there.",
+        "properties": {
+          "gesture": {
+            "description": "A gesture figure can play.",
+            "enum": [
+              "wave"
+            ],
+            "type": "string"
+          },
+          "place": {
+            "additionalProperties": false,
+            "description": "A place the member is in, opaque to everyone but the app: its kind and its id.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "place",
+          "gesture"
+        ],
+        "type": "object"
+      },
+      "results": [
+        {
+          "additionalProperties": false,
+          "description": "What ``gesture`` answers, as JSON and without ``is_error``, when the app has handed the\ngesture to the people at the place; the field is exactly the JSON ``true``. It does not say\nthat a page played it.",
+          "properties": {
+            "relayed": {
+              "title": "Relayed",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "relayed"
+          ],
+          "title": "Relayed",
+          "type": "object"
+        },
+        {
+          "$defs": {
+            "GestureRefusal": {
+              "description": "Why the app does not relay a gesture: ``not_active`` when the member left, was removed or\nis paused.",
+              "enum": [
+                "not_active"
+              ],
+              "title": "GestureRefusal",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "What ``gesture`` answers on a refusal, as JSON in an ``is_error`` result.",
+          "properties": {
+            "refused": {
+              "$ref": "#/$defs/GestureRefusal"
+            }
+          },
+          "required": [
+            "refused"
+          ],
+          "title": "GestureRefused",
+          "type": "object"
+        }
+      ]
+    },
+    "set_turn_state": {
+      "arguments": {
+        "additionalProperties": false,
+        "description": "The arguments of ``set_turn_state``: the place and why the member's turns there stop; an\nabsent ``stopped`` states that they answer. The value is a closed outcome, never free text.",
+        "properties": {
+          "place": {
+            "additionalProperties": false,
+            "description": "A place the member is in, opaque to everyone but the app: its kind and its id.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "stopped": {
+            "anyOf": [
+              {
+                "description": "What a stopped turn means to a person; an app words only this, never the code.",
+                "enum": [
+                  "not_enabled",
+                  "busy",
+                  "budget_spent",
+                  "unavailable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "place"
+        ],
+        "type": "object"
+      },
+      "results": [
+        {
+          "$defs": {
+            "SetTurnStateRefusal": {
+              "description": "Why the app does not take a statement: ``not_held`` when the caller holds no seat, active or\npaused, at the place.",
+              "enum": [
+                "not_held"
+              ],
+              "title": "SetTurnStateRefusal",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "What ``set_turn_state`` answers on a refusal, as JSON in an ``is_error`` result.",
+          "properties": {
+            "refused": {
+              "$ref": "#/$defs/SetTurnStateRefusal"
+            }
+          },
+          "required": [
+            "refused"
+          ],
+          "title": "SetTurnStateRefused",
+          "type": "object"
+        }
+      ]
+    },
+    "speak": {
+      "arguments": {
+        "additionalProperties": false,
+        "description": "The arguments of ``speak``: the place and one sentence, whose length the app bounds, and\noptionally the ``language`` of that sentence, the ``style`` it should sound in, which the app\npasses on unchanged, and the ``mood`` the agent's figure shows while it speaks; an absent one\nmeans the app's own default, and an app that draws no figure ignores the ``mood``.\n``interrupted`` names the hold (``PlaceWindow.interrupted``) the sentence answers instead of\nthe held rest; without it, a held member refuses the sentence.",
+        "properties": {
+          "interrupted": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "language": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z]{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "mood": {
+            "anyOf": [
+              {
+                "description": "A mood figure can show on a face.",
+                "enum": [
+                  "happy",
+                  "angry",
+                  "sad",
+                  "relaxed",
+                  "surprised"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "place": {
+            "additionalProperties": false,
+            "description": "A place the member is in, opaque to everyone but the app: its kind and its id.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "text": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "place",
+          "text"
+        ],
+        "type": "object"
+      },
+      "results": [
+        {
+          "additionalProperties": false,
+          "description": "What ``speak`` answers, as JSON and without ``is_error``, when the sentence starts to play;\nthe field is exactly the JSON ``true``. It carries no length: the sentence's end reaches the\nmember as its own line in the window.",
+          "properties": {
+            "spoken": {
+              "title": "Spoken",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "spoken"
+          ],
+          "title": "Spoken",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "What ``speak`` answers, as JSON and without ``is_error``, when the app could not voice the\nsentence for a failure of its voice and posted it at the place as the member's written line\ninstead; the field is exactly the JSON ``true``.",
+          "properties": {
+            "written": {
+              "title": "Written",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "written"
+          ],
+          "title": "Written",
+          "type": "object"
+        },
+        {
+          "$defs": {
+            "SpeakRefusal": {
+              "description": "Why the app does not speak a sentence: ``language_unavailable`` when the app's voice does\nnot speak the language the sentence names, ``style_unavailable`` for every refusal of the\n``style`` by the voice (it takes none, it is too long or it is not supported), ``stopped``\nfor a queued sentence that a ``stop_speaking`` or a ``speak`` naming the hold dropped,\n``held`` when the member is held and the sentence names no hold, ``not_interrupted`` when the\nsentence names a hold that does not stand, and ``unavailable`` when the app neither voices nor\nwrites the sentence now: a social reason, a limit of its own or a failed voice at a place\nwithout a chat. ``held`` and ``not_interrupted`` change nothing and answer at once. No\nrefusal is ever turned into a written line.",
+              "enum": [
+                "not_active",
+                "too_long",
+                "language_unavailable",
+                "style_unavailable",
+                "stopped",
+                "held",
+                "not_interrupted",
+                "unavailable"
+              ],
+              "title": "SpeakRefusal",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "What ``speak`` answers on a refusal, as JSON in an ``is_error`` result.",
+          "properties": {
+            "refused": {
+              "$ref": "#/$defs/SpeakRefusal"
+            }
+          },
+          "required": [
+            "refused"
+          ],
+          "title": "SpeakRefused",
+          "type": "object"
+        }
+      ]
+    },
+    "stop_speaking": {
+      "arguments": {
+        "additionalProperties": false,
+        "description": "The arguments of ``stop_speaking``: the place whose sentence and queue of the member are\ncut, and optionally ``interrupted``, the hold (``PlaceWindow.interrupted``) the stop ends; a\nstale one is refused.",
+        "properties": {
+          "interrupted": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "place": {
+            "additionalProperties": false,
+            "description": "A place the member is in, opaque to everyone but the app: its kind and its id.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "place"
+        ],
+        "type": "object"
+      },
+      "results": [
+        {
+          "additionalProperties": false,
+          "description": "What ``stop_speaking`` answers on success, as JSON: the text of the cut sentence's line,\nthe heard part when the app knows it, else the whole sentence.",
+          "properties": {
+            "cut": {
+              "minLength": 1,
+              "title": "Cut",
+              "type": "string"
+            }
+          },
+          "required": [
+            "cut"
+          ],
+          "title": "StoppedSpeaking",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "What ``stop_speaking`` answers, as JSON, when it cut no sentence that had started: it\ndropped a held sentence that had not started, or the queue; the field is exactly the JSON\n``true``.",
+          "properties": {
+            "dropped": {
+              "title": "Dropped",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "dropped"
+          ],
+          "title": "DroppedSpeaking",
+          "type": "object"
+        },
+        {
+          "$defs": {
+            "StopSpeakingRefusal": {
+              "description": "Why the app does not stop: ``not_active`` when the member left, was removed or is paused;\n``nothing_playing`` when the member is silent, so nothing was cut or dropped;\n``not_interrupted`` when ``interrupted`` names a hold that does not stand.",
+              "enum": [
+                "not_active",
+                "nothing_playing",
+                "not_interrupted"
+              ],
+              "title": "StopSpeakingRefusal",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "What ``stop_speaking`` answers on a refusal, as JSON in an ``is_error`` result.",
+          "properties": {
+            "refused": {
+              "$ref": "#/$defs/StopSpeakingRefusal"
+            }
+          },
+          "required": [
+            "refused"
+          ],
+          "title": "StopSpeakingRefused",
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "version": 1
+}

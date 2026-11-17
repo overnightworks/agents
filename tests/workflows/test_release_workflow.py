@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
 
-_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "release.yml"
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+_WORKFLOW = _REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
+_WIRE_SCRIPT = Path("scripts/member_tool_wire_diff.py")
+_WIRE_SNAPSHOT = Path("scripts/member-tool-wire.json")
+NO_SNAPSHOT = "changed (the previous release has no snapshot to compare)."
+_GIT_ENV = {
+    "PATH": "/usr/bin:/bin",
+    "GIT_AUTHOR_NAME": "t",
+    "GIT_AUTHOR_EMAIL": "t@example.invalid",
+    "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@example.invalid",
+}
 _WITHIN_STEP = r"(?:(?!      - ).*\n)*?"
 
 
@@ -45,12 +58,14 @@ def _run_step(
     """Run one step's script in `tmp_path`, with `tmp_path/bin` first on the path."""
     output = tmp_path / "github_output"
     output.touch()
+    (tmp_path / "runner_temp").mkdir(exist_ok=True)
     return subprocess.run(
         ["/bin/bash", "-e", "-c", _run_script(step_name)],
         cwd=tmp_path,
         env={
             "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin",
             "GITHUB_OUTPUT": str(output),
+            "RUNNER_TEMP": str(tmp_path / "runner_temp"),
             "GITHUB_REPOSITORY": release.repository,
             "VERSION": release.version,
             "COMMIT": release.commit,
@@ -63,19 +78,12 @@ def _run_step(
 
 def _checkout_at_head(tmp_path: Path, release: _Release) -> _Release:
     """Make `tmp_path` a git checkout and return the scenario that gated its head commit."""
-    git_env = {
-        "PATH": "/usr/bin:/bin",
-        "GIT_AUTHOR_NAME": "t",
-        "GIT_AUTHOR_EMAIL": "t@example.invalid",
-        "GIT_COMMITTER_NAME": "t",
-        "GIT_COMMITTER_EMAIL": "t@example.invalid",
-    }
     for command in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "head"]):
-        subprocess.run(["git", *command], cwd=tmp_path, env=git_env, check=True)
+        subprocess.run(["git", *command], cwd=tmp_path, env=_GIT_ENV, check=True)
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=tmp_path,
-        env=git_env,
+        env=_GIT_ENV,
         capture_output=True,
         text=True,
         check=True,
@@ -140,9 +148,38 @@ def test_a_missing_or_extra_wheel_is_refused(tmp_path, release):
     assert (missing.returncode, extra.returncode) == (1, 1)
 
 
-def _release_note(tmp_path: Path, release: _Release) -> str:
+def _snapshot(arguments: str) -> str:
+    return json.dumps({"version": 1, "tools": {"say": {"arguments": arguments}}})
+
+
+def _checkout_with_wire(
+    tmp_path: Path, current_snapshot: str, previous_tags: dict[str, str | None]
+) -> None:
+    """Make `tmp_path` a checkout holding the wire script, the current snapshot and tagged releases.
+
+    `previous_tags` maps a release tag to the snapshot it committed, or None for a release without.
+    """
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(_REPOSITORY_ROOT / _WIRE_SCRIPT, tmp_path / _WIRE_SCRIPT)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, env=_GIT_ENV, check=True)
+    for tag, snapshot in previous_tags.items():
+        (tmp_path / _WIRE_SNAPSHOT).unlink(missing_ok=True)
+        if snapshot is not None:
+            (tmp_path / _WIRE_SNAPSHOT).write_text(snapshot, encoding="utf-8")
+        for command in (["add", "-A"], ["commit", "-q", "--allow-empty", "-m", tag], ["tag", tag]):
+            subprocess.run(["git", *command], cwd=tmp_path, env=_GIT_ENV, check=True)
+    (tmp_path / _WIRE_SNAPSHOT).write_text(current_snapshot, encoding="utf-8")
+
+
+def _release_note(
+    tmp_path: Path,
+    release: _Release,
+    previous_tags: dict[str, str | None] | None = None,
+    current_snapshot: str = "{}",
+) -> str:
+    _checkout_with_wire(tmp_path, current_snapshot, previous_tags or {})
     result = _run_step("Write the release note naming the git tag", tmp_path, release)
-    assert result.returncode == 0
+    assert result.returncode == 0, result.stderr
     return (tmp_path / "github_output").read_text(encoding="utf-8")
 
 
@@ -161,6 +198,36 @@ def test_the_release_note_is_written_in_the_multiline_output_form(tmp_path, rele
 
     _, delimiter = lines[0].split("<<")
     assert lines[-1] == delimiter
+
+
+@pytest.mark.parametrize(
+    ("version", "previous_tags", "expected"),
+    [
+        ("0.3.0", {"v0.2.0": _snapshot("a")}, "unchanged."),
+        ("0.3.0", {"v0.2.0": _snapshot("b")}, "changed: say."),
+        ("0.3.0", {"v0.2.0": None}, NO_SNAPSHOT),
+        ("0.3.0", {}, NO_SNAPSHOT),
+        ("0.10.0", {"v0.2.0": _snapshot("b"), "v0.9.0": _snapshot("a")}, "unchanged."),
+        ("0.3.0", {"v0.3.0": _snapshot("a"), "v0.4.0": _snapshot("a")}, NO_SNAPSHOT),
+    ],
+    ids=[
+        "previous snapshot equal",
+        "previous snapshot differs",
+        "previous tag without snapshot",
+        "no previous tag",
+        "the nearest earlier tag in version order",
+        "only the dispatched version and a later tag",
+    ],
+)
+def test_the_release_note_ends_with_the_member_tool_wire_line_against_the_previous_tag(
+    tmp_path, release, version, previous_tags, expected
+):
+    note = _release_note(
+        tmp_path, replace(release, version=version), previous_tags, _snapshot("a")
+    ).splitlines()
+
+    assert note[-2] == f"**Member-tool wire:** {expected}"
+    assert note[-1] == note[0].split("<<")[1]
 
 
 def test_a_release_run_value_never_interpolates_an_expression():

@@ -9,6 +9,7 @@
 - `uv run pyright`: type-check `src` and `scripts` in strict mode.
 - `uvx --from "git+https://github.com/overnightworks/quality@<sha>" quality check`: the gate's local check; `<sha>` is the one `.github/workflows/ci.yml` pins for quality's gate.
 - `uv run python scripts/generate_figure_vocabulary.py`: regenerate `src/agents/figure_vocabulary.py` from the figure release pinned in `scripts/figure_vocabulary_pin.toml`; CI requires an empty diff. Add `--pin <url> <integrity>` to raise the pin to a newer release.
+- `uv run python scripts/generate_member_tool_wire.py`: regenerate `scripts/member-tool-wire.json` from `MEMBER_TOOL_ARGUMENTS` and `MEMBER_TOOL_RESULTS`; CI requires an empty diff.
 - `uv build`: build the wheel; run it after `uv sync`.
 - `gh workflow run release.yml -f version=X.Y.Z`: dispatch a release; the pull request before it raises `version` in `pyproject.toml`.
 

@@ -43,6 +43,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
       - name: Refuse unless the checkout is the commit the gate judged
         run: |
           head=$(git rev-parse HEAD)
@@ -82,6 +84,13 @@ jobs:
       - name: Write the release note naming the git tag
         id: install
         run: |
+          previous_tag=$({ git tag --list 'v*'; echo "v${VERSION}"; } | sort -V -u \
+            | awk -v me="v${VERSION}" '$0 == me { print previous; exit } { previous = $0 }')
+          previous_snapshot=
+          if [ -n "$previous_tag" ]; then
+            previous_snapshot=$(git show "${previous_tag}:scripts/member-tool-wire.json" 2> /dev/null || true)
+          fi
+          wire_line=$(printf '%s' "$previous_snapshot" | python3 scripts/member_tool_wire_diff.py)
           {
             echo 'install<<INSTALL_LINES'
             echo '**Install.** Pin the git tag.'
@@ -89,6 +98,8 @@ jobs:
             echo '```'
             echo "overnightworks-agents @ git+https://github.com/${GITHUB_REPOSITORY}@v${VERSION}"
             echo '```'
+            echo
+            echo "$wire_line"
             echo 'INSTALL_LINES'
           } >> "$GITHUB_OUTPUT"
 

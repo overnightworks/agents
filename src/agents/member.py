@@ -46,6 +46,7 @@ __all__ = [
     "LISTEN_ALLOWANCE_SECONDS",
     "LISTEN_BOUND_SECONDS",
     "MEMBER_TOOL_ARGUMENTS",
+    "MEMBER_TOOL_RESULTS",
     "SET_TURN_STATE_TOOL",
     "SPEAK_TOOL",
     "STANDING_URI",
@@ -574,6 +575,22 @@ class GestureRefused(StrictModel):
     """What ``gesture`` answers on a refusal, as JSON in an ``is_error`` result."""
 
     refused: Annotated[GestureRefusal, Field(strict=False)]
+
+
+MEMBER_TOOL_RESULTS: Final[Mapping[str, tuple[type[StrictModel], ...]]] = MappingProxyType(
+    {
+        ACCEPT_INVITATION_TOOL: (AcceptInvitationRefused,),
+        DECLINE_INVITATION_TOOL: (DeclineInvitationRefused,),
+        SPEAK_TOOL: (Spoken, Written, SpeakRefused),
+        STOP_SPEAKING_TOOL: (StoppedSpeaking, DroppedSpeaking, StopSpeakingRefused),
+        CONTINUE_SPEAKING_TOOL: (ContinuedSpeaking, ContinueSpeakingRefused),
+        GESTURE_TOOL: (Relayed, GestureRefused),
+        SET_TURN_STATE_TOOL: (SetTurnStateRefused,),
+    }
+)
+"""The answer records each member tool may return, as JSON, by the tool's name; the keys are
+those of ``MEMBER_TOOL_ARGUMENTS``. A success the app does not pin to a record (an accepted
+invitation, a decline, a turn state) lists only its refusal."""
 
 
 def gesture_tool() -> ToolDeclaration:
