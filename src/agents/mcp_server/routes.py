@@ -25,8 +25,8 @@ from agents.tools import (
     ToolMark,
     ToolOutcome,
     inlined_schema,
+    plain_schema,
     read_decision,
-    untitled_schema,
 )
 
 _SUPPORTED_METHODS: Final = frozenset({"get", "post", "put", "patch", "delete"})
@@ -108,8 +108,8 @@ def _overlap(first: str, second: str) -> bool:
 
 
 def _schema(node: JsonValue, components: JsonObject, where: str) -> JsonObject:
-    """The node as a schema object with every reference inlined and no title; else a breach."""
-    return _object(untitled_schema(inlined_schema(node, components, _SCHEMA_REFERENCE)), where)
+    """The node as a schema object with every reference inlined, plain; else a breach."""
+    return _object(plain_schema(inlined_schema(node, components, _SCHEMA_REFERENCE)), where)
 
 
 def _scalar(schema: JsonObject) -> bool:

@@ -71,13 +71,6 @@
             "anyOf": [
               {
                 "items": {
-                  "discriminator": {
-                    "mapping": {
-                      "figure": "#/$defs/FigureLook",
-                      "video": "#/$defs/VideoLook"
-                    },
-                    "propertyName": "kind"
-                  },
                   "oneOf": [
                     {
                       "additionalProperties": false,
