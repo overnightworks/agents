@@ -3,7 +3,7 @@
     "accept_invitation": {
       "arguments": {
         "additionalProperties": false,
-        "description": "The arguments of ``accept_invitation``: the place and the invitation's id and epoch, and\noptionally the agent's ``figure`` and its ``voices``, the names of the voices it would speak\nwith, first choice first; an absent one means the app's own default. The app passes the\n``voices`` unchanged and in order to its speech service, which picks the voice.",
+        "description": "The arguments of ``accept_invitation``: the place and the invitation's id and epoch, and\noptionally the agent's ``looks``, first choice first, its ``figure`` and its ``voices``, the\nnames of the voices it would speak with, first choice first; an absent one means the app's own\ndefault. The app shows the first look it can; ``figure`` is read only while ``looks`` is\nabsent. The app passes the ``voices`` unchanged and in order to its speech service, which\npicks the voice.",
         "properties": {
           "epoch": {
             "minimum": 0,
@@ -66,6 +66,92 @@
           "invitation": {
             "minLength": 1,
             "type": "string"
+          },
+          "looks": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "description": "A look of the agent that is its 3D figure: the fields of ``FigureRef`` and ``kind``, the\n``figure`` tag that tells the look from a ``VideoLook``. A figure look plays gestures.",
+                      "properties": {
+                        "gestures": {
+                          "additionalProperties": {
+                            "additionalProperties": false,
+                            "description": "Where a file is and the digest its bytes must have: ``url`` is an absolute ``https``\naddress with a host and no user part, query or fragment, and ``sha256`` is 64 lowercase\nhexadecimal characters. The record checks the form only; whether to fetch the file is the\napp's decision.",
+                            "properties": {
+                              "sha256": {
+                                "pattern": "^[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "url",
+                              "sha256"
+                            ],
+                            "type": "object"
+                          },
+                          "propertyNames": {
+                            "description": "A gesture figure can play.",
+                            "enum": [
+                              "wave"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "kind": {
+                          "const": "figure",
+                          "type": "string"
+                        },
+                        "sha256": {
+                          "pattern": "^[0-9a-f]{64}$",
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "url",
+                        "sha256",
+                        "kind"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "description": "A look of the agent that a video service renders, named by ``name``: the app's video\nservice decides which look the name stands for.",
+                      "properties": {
+                        "kind": {
+                          "const": "video",
+                          "type": "string"
+                        },
+                        "name": {
+                          "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "name"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "place": {
             "additionalProperties": false,

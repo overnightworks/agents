@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated, Final, Self
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote, unquote
 
 from pydantic import (
     AfterValidator,
@@ -28,11 +28,21 @@ from pydantic import (
     StrictBool,
     StringConstraints,
     ValidationError,
-    field_validator,
     model_validator,
 )
 
 from agents.figure_vocabulary import FigureGesture, FigureMood
+from agents.member_presentation import (
+    FigureLook,
+    FigureRef,
+    HttpsFileRef,
+    Look,
+    LookName,
+    Looks,
+    VideoLook,
+    VoiceName,
+    Voices,
+)
 from agents.tools import ToolDeclaration, ToolEffect, tool_parameters
 from agents.turn import JsonObject, NonEmptyUnicodeText, StopOutcome, StrictModel, UnicodeText
 
@@ -63,6 +73,7 @@ __all__ = [
     "DeclineInvitationRefusal",
     "DeclineInvitationRefused",
     "DroppedSpeaking",
+    "FigureLook",
     "FigureRef",
     "GestureArguments",
     "GestureRefusal",
@@ -70,6 +81,9 @@ __all__ = [
     "HttpsFileRef",
     "Interrupted",
     "Invitation",
+    "Look",
+    "LookName",
+    "Looks",
     "MemberStanding",
     "OptionalTraceparent",
     "ParentPlace",
@@ -96,6 +110,7 @@ __all__ = [
     "StopSpeakingRefused",
     "StoppedSpeaking",
     "TalkedOver",
+    "VideoLook",
     "VoiceName",
     "VoiceState",
     "VoiceStyle",
@@ -205,89 +220,18 @@ class MemberStanding(StrictModel):
     standings: tuple[Standing, ...]
 
 
-_FORBIDDEN_HOST_CHARACTERS: Final = frozenset('%"<>^`{|}')
-
-
-class HttpsFileRef(StrictModel):
-    """Where a file is and the digest its bytes must have: ``url`` is an absolute ``https``
-    address with a host and no user part, query or fragment, and ``sha256`` is 64 lowercase
-    hexadecimal characters. The record checks the form only; whether to fetch the file is the
-    app's decision."""
-
-    url: str
-    sha256: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-
-    @field_validator("url")
-    @classmethod
-    def _url_is_a_plain_https_address(cls, url: str) -> str:
-        message = "a url is an absolute https address without user part, query or fragment"
-        if (
-            not url.isprintable()
-            or any(character.isspace() or character == "\\" for character in url)
-            or "?" in url
-            or "#" in url
-        ):
-            raise ValueError(message)
-        try:
-            parts = urlsplit(url)
-            parts.port  # noqa: B018 - reading the port is what validates it
-        except ValueError as error:
-            raise ValueError(message) from error
-        if (
-            parts.scheme != "https"
-            or not parts.hostname
-            or "@" in parts.netloc
-            or any(character in _FORBIDDEN_HOST_CHARACTERS for character in parts.hostname)
-        ):
-            raise ValueError(message)
-        return url
-
-
-def _is_empty(value: dict[FigureGesture, HttpsFileRef]) -> bool:
-    return not value
-
-
-class FigureRef(HttpsFileRef):
-    """Where an agent's 3D figure is (see ``HttpsFileRef``) and, optionally, its own clips: for a
-    gesture of figure's base set, the file that replaces figure's neutral clip on this figure
-    only. A gesture has at most one clip, and ``gestures`` is left out of the JSON when empty."""
-
-    gestures: dict[Annotated[FigureGesture, Field(strict=False)], HttpsFileRef] = Field(
-        default_factory=dict[FigureGesture, HttpsFileRef], exclude_if=_is_empty
-    )
-
-
-VoiceName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,64}$")]
-"""The name of a voice an agent would speak with: 1 to 64 ASCII letters of either case, digits,
-``.``, ``_`` or ``-``. The name is passed through unchanged; the app's speech service decides
-whether it offers that voice."""
-
-
-def _name_no_voice_twice(voices: tuple[str, ...]) -> tuple[str, ...]:
-    if len(set(voices)) != len(voices):
-        raise ValueError("a voice is named at most once")
-    return voices
-
-
-Voices = Annotated[
-    tuple[VoiceName, ...],
-    Field(min_length=1, max_length=8),
-    AfterValidator(_name_no_voice_twice),
-]
-"""The voices an agent would speak with, first choice first: 1 to 8 ``VoiceName`` entries, none
-twice. A host types its own voice list with it to refuse a malformed one before an accept, by the
-same rule ``AcceptInvitationArguments.voices`` applies."""
-
-
 class AcceptInvitationArguments(StrictModel):
     """The arguments of ``accept_invitation``: the place and the invitation's id and epoch, and
-    optionally the agent's ``figure`` and its ``voices``, the names of the voices it would speak
-    with, first choice first; an absent one means the app's own default. The app passes the
-    ``voices`` unchanged and in order to its speech service, which picks the voice."""
+    optionally the agent's ``looks``, first choice first, its ``figure`` and its ``voices``, the
+    names of the voices it would speak with, first choice first; an absent one means the app's own
+    default. The app shows the first look it can; ``figure`` is read only while ``looks`` is
+    absent. The app passes the ``voices`` unchanged and in order to its speech service, which
+    picks the voice."""
 
     place: PlaceRef
     invitation: NonEmptyUnicodeText
     epoch: int = Field(ge=0)
+    looks: Looks | None = Field(default=None, exclude_if=_is_none)
     figure: FigureRef | None = Field(default=None, exclude_if=_is_none)
     voices: Voices | None = Field(default=None, exclude_if=_is_none)
 
@@ -595,7 +539,7 @@ invitation, a decline, a turn state) lists only its refusal."""
 
 def gesture_tool() -> ToolDeclaration:
     """The declaration of ``GESTURE_TOOL`` as an agent sees it. An app offers it only while the
-    seat's accept carried a figure; its schema's enum is the gestures the agent can make."""
+    seat's shown look plays gestures; its schema's enum is the gestures the agent can make."""
     return ToolDeclaration(
         name=GESTURE_TOOL,
         description="Make a gesture with your figure at a place, as a person waves.",

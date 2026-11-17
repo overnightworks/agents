@@ -174,34 +174,66 @@ offer (CALLING-1, "The lease" in [connector.md](connector.md#the-standard-path))
 failure from silence or from timers. An app that admits a member's calls but fails them keeps the
 seat unmarked; that is the app's own failure, not this rule's.
 
-## The figure
+## The look
 
-**CALLING-37.** An agent makes a gesture with its figure with `gesture(place, gesture)`
-(`agents.member`):
+A **look** is how an agent appears at a place: a 3D figure or a picture a video service renders. In
+`agents`, "look" means only this.
+
+**CALLING-41.** An accept may carry `looks` (`agents.member`), the agent's looks, first choice
+first: a figure look `{kind: "figure", url, sha256, gestures}` or a video look
+`{kind: "video", name}`, the name 1 to 64 ASCII letters of either case, digits, `.`, `_` or `-`. At
+most one look is a figure and no video name stands twice. The record checks only that form. The app
+decides which look it can show and shows the first it can, so a look it cannot show (a kind it does
+not draw, a name its video service does not offer, a look that fails to start) is skipped for the
+next; with none it can show, it shows no look of the accept's and still accepts. The old `figure`
+of an accept stays beside `looks`: an accept with `figure` and no `looks` has the one figure look,
+and an accept with both is read by its `looks` alone.
+
+**CALLING-37.** An agent makes a gesture with `gesture(place, gesture)` (`agents.member`):
 
 - `gesture` is a token of figure's base set, `FigureGesture`, which `agents` generates from the
   figure release it pins; the enum in the tool's schema is the agent's whole list of gestures, the
   same for every agent. A token outside it fails the schema.
-- An app offers the tool, `gesture_tool()`, to a member only while the seat's accept carried a
-  figure, so the tool has no refusal for a missing figure.
+- An app offers the tool, `gesture_tool()`, to a member only while the shown look plays gestures,
+  so the tool has no refusal for a look without them. A look of kind figure plays gestures, a
+  video look does not, and the offer follows the shown look when the app moves to the next
+  (CALLING-46).
 - The app checks that the caller's seat at the place is active, or refuses with `not_active`. It
-  hands the gesture to the people at the place whose page draws the figure and answers
-  `{"relayed": true}`. That does not say a page played it: a page plays one gesture at a time and
-  drops one it cannot play, and nothing reports a dropped gesture.
+  hands the gesture to the shown look and answers `{"relayed": true}`. That does not say the look
+  played it: a look plays one gesture at a time and drops one it cannot play, and nothing reports a
+  dropped gesture (CALLING-43, CALLING-45).
 
 **CALLING-38.** `speak` may carry a `mood`, a closed token of figure's moods, `FigureMood`, beside
-the free `style`, which stays for the voice. An app that draws the agent's figure shows the mood
-on it; an app that draws no figure ignores the mood and does not refuse the speak.
+the free `style`, which stays for the voice. An app whose shown look plays a mood shows it; an app
+whose shown look plays no mood ignores it and does not refuse the speak. A look of kind figure
+plays moods and a video look does not.
 
-**CALLING-39.** The `figure` of an accept may carry `gestures`: for a gesture of figure's base set,
-the `{url, sha256}` of the persona's own clip, which replaces figure's neutral clip for that
-gesture on this figure only. A gesture has at most one clip, and clips cannot be sent without a
-figure. The app treats a clip as it treats the figure: it fetches from sources it allows and
+**CALLING-39.** A figure look, or the old `figure`, may carry `gestures`: for a gesture of figure's
+base set, the `{url, sha256}` of the persona's own clip, which replaces figure's neutral clip for
+that gesture on this figure only. A gesture has at most one clip, and clips cannot be sent without
+a figure. The app treats a clip as it treats the figure: it fetches from sources it allows and
 serves only bytes whose digest matches.
 
-**CALLING-40.** A runner sends `mood` or `figure.gestures` only to an app that has the `agents`
-release carrying them, because the records refuse a key they do not know. The order is: `agents`
-releases, the apps pin the release and deploy, then the runner sends.
+**CALLING-40.** A runner sends `mood`, `looks` or `figure.gestures` only to an app that has the
+`agents` release carrying them, because the records refuse a key they do not know. The order is:
+`agents` releases, the apps pin the release and deploy, then the runner sends.
+
+The rules below hold for every look the app shows; the app, not the library, shows the look.
+
+**CALLING-42.** The app reports facts about the call and the look decides the motion they make.
+
+**CALLING-43.** A fact a look cannot show is dropped, never refused, and never delays the voice.
+
+**CALLING-44.** When facts hold together, the look shows speaking over thinking over listening over
+idle.
+
+**CALLING-45.** A gesture is a moment: the look shows one at a time and queues none.
+
+**CALLING-46.** A look ends with one closed signal and stays ended; the app then shows the next
+look the agent named that it can show, or none.
+
+**CALLING-47.** The voice is the app's: a look that draws in the browser taps it, and a look that a
+server draws receives it and returns it with the picture.
 
 ## The group
 
@@ -232,8 +264,9 @@ streams. The standard adds no store, directory or list.
 - the mapping of its refusal codes and decline reasons, many to one, onto the control's reasons and
   outcomes;
 - its channel to its page;
-- when it draws agents' figures, the `gesture` tool, the `mood` of a speak and the clips of an
-  accept (CALLING-37 to CALLING-39); and
+- when it shows agents' looks, which look it shows (CALLING-41), the `gesture` tool, the `mood` of
+  a speak and the clips of an accept (CALLING-37 to CALLING-39), and the rules of the look
+  (CALLING-42 to CALLING-47); and
 - when its place lies inside another app's place, the `parent` of its standing (CALLING-27).
 
 ## The steps
@@ -266,9 +299,9 @@ decides when an agent leaves it without being sent away (CALLING-13).
 **CALLING-23.** Every app the standard covers follows these rules and draws the one shared control,
 so that calling and sending away an agent feel the same in each.
 
-**CALLING-24.** This file owns the rules; the shared design kit holds the control's look, the words
+**CALLING-24.** This file owns the rules; the shared design kit holds the control's appearance, the words
 of its reasons and the sentence of an empty list, and the one part that draws a stated turn outcome
-(CALLING-35), its look and its words in de and en, so no app words it again. The standard covers
+(CALLING-35), its appearance and its words in de and en, so no app words it again. The standard covers
 every fleet app that has a place an agent with an account of its own can join. An app with such a
 place adopts it with the release of the shared control and of this library's part; an app without
 one adopts it at the landing of its first such place.

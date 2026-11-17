@@ -628,12 +628,12 @@ the tool and the exception's class
 `STANDING_URI`, `member://standing`, answers with), `PlaceWindow(generation, starts_at, entries, talked_over, interrupted, voice_state)`
 of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, traceparent)`, `LEASE_SECONDS` (120),
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
-`LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, figure, voices)` for the tool
+`LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, looks, figure, voices)` for the tool
 `ACCEPT_INVITATION_TOOL`, `DeclineInvitationArguments(place, invitation, epoch, reason)` for
 `DECLINE_INVITATION_TOOL`, `SetTurnStateArguments(place, stopped)` for `SET_TURN_STATE_TOOL`,
 `GestureArguments(place, gesture)` for `GESTURE_TOOL` with its answer `Relayed` and its refusal
-`GestureRefused`, `gesture_tool()` (the finished declaration an app offers, whose schema's enum is
-figure's gestures), `SpeakArguments(place, text, language, style, mood, interrupted)`,
+`GestureRefused`, `gesture_tool()` (the finished declaration an app offers while the shown look plays gestures, whose
+schema's enum is figure's gestures), `SpeakArguments(place, text, language, style, mood, interrupted)`,
 and the records of the tools `SPEAK_TOOL`, `STOP_SPEAKING_TOOL` and `CONTINUE_SPEAKING_TOOL`
 (`StopSpeakingArguments(place, interrupted)`, `DroppedSpeaking`, `StopSpeakingAnswer`,
 `ContinueSpeakingArguments(place, interrupted)`, `ContinuedSpeaking`, `ContinueSpeakingRefused`
@@ -702,15 +702,27 @@ holds. No app writes act lines at a place until its runner has the field. Proved
 `tests/test_mcp_server_resources.py`, `tests/test_mcp_server_listen_view.py` and
 `tests/test_voice_loop.py`.
 
-An accept may name the agent's 3D figure, `figure` as `FigureRef(url, sha256, gestures)`, and the voices it
-would speak with, `voices` as a list of voice names, the persona's order of preference with the
-first choice first; both are optional, and an accept without them dumps without their keys. The
-record checks only their form: `url` is an absolute `https` address with a host and no user part,
-query or fragment, `sha256` is 64 lowercase hexadecimal characters, and `voices` is the `Voices` type, 1 to 8
-names, none twice (a host types its own voice list with it), each 1 to 64 ASCII letters of either case, digits, `.`, `_` or `-`. The app
-decides the rest:
+An accept may name the agent's looks, `looks` as a list of `FigureLook(kind, url, sha256, gestures)` and
+`VideoLook(kind, name)`, first choice first; its 3D figure, `figure` as `FigureRef(url, sha256, gestures)`;
+and the voices it would speak with, `voices` as a list of voice names, the persona's order of
+preference with the first choice first; all are optional, and an accept without them dumps without
+their keys. The record checks only their form: `url` is an absolute `https` address with a host and
+no user part, query or fragment, `sha256` is 64 lowercase hexadecimal characters, `voices` is the
+`Voices` type, 1 to 8 names, none twice (a host types its own voice list with it), each 1 to 64
+ASCII letters of either case, digits, `.`, `_` or `-`, and `looks` is the `Looks` type (a host types
+its own look list with it): at least one `Look`, told by `kind`, at most one `FigureLook` and no
+`VideoLook` name twice, a name being a `LookName`, the form of a voice name. The app decides the
+rest ([CALLING-41](calling.md)):
 
-- It fetches a figure only from sources it allows, and serves only bytes whose sha256 matches.
+- It shows the first look of `looks` it can show; the library decides the order and the form,
+  never what an app can show. A look it cannot show is skipped for the next, and with none the
+  accept still stands. An accept with `figure` and no `looks` has the one figure look, and with
+  both only `looks` is read; `figure` stays beside `looks` until every app reads `looks`. It offers
+  `gesture_tool()` and shows a `mood` only while the shown look plays them, which a figure look
+  does and a video look does not ([CALLING-37](calling.md), [CALLING-38](calling.md)).
+- It fetches a figure only from sources it allows, and serves only bytes whose sha256 matches. A
+  video look's `name` is passed unchanged to its video service, which decides whether it offers
+  that look.
 - `gestures` maps a token of figure's base set (`FigureGesture`) to an `HttpsFileRef(url, sha256)`,
   the persona's own clip for that gesture on this figure only; it is left out of the JSON when
   empty, a gesture has at most one clip and a clip cannot be sent without a figure. `HttpsFileRef`
@@ -1032,7 +1044,7 @@ line a heard utterance becomes, is `MemberHearing`; the rules are in [hearing.md
 one sentence and optionally its `language`, a lowercase ISO 639-1 code of two letters such as `de`
 or `en`, its `style`, free text such as `louder and angrier` that the app passes on unchanged and
 neither bounds nor checks, and its `mood`, a `FigureMood`, one of figure's moods and no free text;
-a speak without one dumps without the key, and an app that draws no figure ignores the `mood`
+a speak without one dumps without the key, and an app whose shown look plays no mood ignores the `mood`
 ([CALLING-38](calling.md)), and optionally `interrupted`, the id of the hold the sentence answers
 instead of the held rest ([Holding and going on](#holding-and-going-on)); without it, the key stays
 out of the JSON. The record checks only their form; the app decides the rest ([HEARING-20](hearing.md)), and the speech service owns the

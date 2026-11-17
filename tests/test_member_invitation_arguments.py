@@ -16,6 +16,7 @@ from agents.member import (
     DeclineInvitationArguments,
     DeclineInvitationReason,
     Invitation,
+    Looks,
     PlaceRef,
     Standing,
     StandingState,
@@ -109,6 +110,8 @@ def test_decline_invitation_arguments_with_a_malformed_field_are_refused(
 
 FIGURE_WIRE = {"url": "https://figures.example/a.glb", "sha256": "ab12" * 16}
 CLIP_WIRE = {"url": "https://figures.example/wave.vrma", "sha256": "cd34" * 16}
+FIGURE_LOOK_WIRE = {"kind": "figure"} | FIGURE_WIRE
+VIDEO_LOOK_WIRE = {"kind": "video", "name": "studio-1"}
 
 
 @pytest.mark.parametrize(
@@ -160,7 +163,19 @@ def clip_with(**fields: Any) -> dict[str, Any]:
     return {"figure": FIGURE_WIRE | {"gestures": clips}}
 
 
-@pytest.fixture(params=[figure_with, clip_with], ids=["figure", "clip"])
+def look_with(**fields: Any) -> dict[str, Any]:
+    return {"looks": [FIGURE_LOOK_WIRE | fields]}
+
+
+def look_clip_with(**fields: Any) -> dict[str, Any]:
+    clips = {gesture.value: CLIP_WIRE | fields for gesture in FigureGesture}
+    return {"looks": [FIGURE_LOOK_WIRE | {"gestures": clips}]}
+
+
+@pytest.fixture(
+    params=[figure_with, clip_with, look_with, look_clip_with],
+    ids=["figure", "clip", "look", "look-clip"],
+)
 def ref_with(request: pytest.FixtureRequest) -> Callable[..., dict[str, Any]]:
     return request.param
 
@@ -353,5 +368,126 @@ def test_a_figure_refuses_clips_that_name_no_base_gesture_or_are_no_file_referen
 def test_clips_cannot_be_given_without_a_figure() -> None:
     wire_text = json.dumps(ACCEPT_WIRE | {"gestures": {"wave": CLIP_WIRE}})
 
+    with pytest.raises(ValidationError):
+        AcceptInvitationArguments.model_validate_json(wire_text)
+
+
+@pytest.mark.parametrize(
+    "looks",
+    [
+        [FIGURE_LOOK_WIRE],
+        [VIDEO_LOOK_WIRE],
+        [VIDEO_LOOK_WIRE, FIGURE_LOOK_WIRE],
+        [FIGURE_LOOK_WIRE, VIDEO_LOOK_WIRE | {"name": "a" * 64}],
+        [VIDEO_LOOK_WIRE, VIDEO_LOOK_WIRE | {"name": "Studio-1"}, FIGURE_LOOK_WIRE],
+        [FIGURE_LOOK_WIRE | {"gestures": {"wave": CLIP_WIRE}}],
+    ],
+    ids=[
+        "figure",
+        "video",
+        "video-before-figure",
+        "name-of-64-characters",
+        "names-differing-in-case-only",
+        "figure-with-a-clip",
+    ],
+)
+def test_accept_invitation_arguments_keep_the_looks_in_order_and_read_them_back(
+    looks: list[dict[str, Any]],
+) -> None:
+    wire = ACCEPT_WIRE | {"looks": looks}
+
+    arguments = AcceptInvitationArguments.model_validate_json(json.dumps(wire))
+
+    assert json.loads(arguments.model_dump_json()) == wire
+
+
+def test_an_accept_without_looks_dumps_without_the_key_and_the_figure_stays_beside_them() -> None:
+    without = AcceptInvitationArguments.model_validate_json(json.dumps(ACCEPT_WIRE))
+    both = ACCEPT_WIRE | {"looks": [VIDEO_LOOK_WIRE], "figure": FIGURE_WIRE}
+
+    assert "looks" not in json.loads(without.model_dump_json())
+    assert (
+        json.loads(
+            AcceptInvitationArguments.model_validate_json(json.dumps(both)).model_dump_json()
+        )
+        == both
+    )
+
+
+@pytest.mark.parametrize(
+    "looks",
+    [
+        [],
+        [FIGURE_LOOK_WIRE, FIGURE_LOOK_WIRE],
+        [
+            FIGURE_LOOK_WIRE,
+            VIDEO_LOOK_WIRE,
+            FIGURE_LOOK_WIRE | {"url": "https://figures.example/b"},
+        ],
+        [VIDEO_LOOK_WIRE, VIDEO_LOOK_WIRE],
+        [VIDEO_LOOK_WIRE, FIGURE_LOOK_WIRE, VIDEO_LOOK_WIRE],
+        [{"name": "studio-1"}],
+        [FIGURE_WIRE],
+        [{"kind": "hologram", "name": "studio-1"}],
+        [VIDEO_LOOK_WIRE | {"url": "https://figures.example/a.glb"}],
+        [VIDEO_LOOK_WIRE | {"gestures": {}}],
+        [FIGURE_LOOK_WIRE | {"name": "studio-1"}],
+        [{"kind": "video"}],
+        [VIDEO_LOOK_WIRE | {"name": ""}],
+        [VIDEO_LOOK_WIRE | {"name": "a" * 65}],
+        [VIDEO_LOOK_WIRE | {"name": "studio 1"}],
+        [VIDEO_LOOK_WIRE | {"name": "studi\u00f6"}],
+        [VIDEO_LOOK_WIRE | {"name": "studio-1\n"}],
+        [VIDEO_LOOK_WIRE | {"name": 1}],
+        "studio-1",
+        [{"kind": "figure", "look": "studio-1"}],
+    ],
+    ids=[
+        "empty-list",
+        "two-figures-equal",
+        "two-figures-apart",
+        "video-name-twice",
+        "video-name-twice-apart",
+        "no-kind",
+        "figure-ref-without-kind",
+        "unknown-kind",
+        "video-with-a-url",
+        "video-with-gestures",
+        "figure-with-a-name",
+        "video-without-a-name",
+        "empty-name",
+        "65-characters",
+        "space",
+        "non-ascii-letter",
+        "trailing-newline",
+        "non-string-name",
+        "bare-name",
+        "figure-with-an-unknown-key",
+    ],
+)
+def test_accept_invitation_arguments_refuse_looks_outside_the_form(looks: Any) -> None:
+    wire_text = json.dumps(ACCEPT_WIRE | {"looks": looks})
+
+    with pytest.raises(ValidationError):
+        AcceptInvitationArguments.model_validate_json(wire_text)
+
+
+@pytest.mark.parametrize(
+    "looks",
+    [
+        [FIGURE_LOOK_WIRE, FIGURE_LOOK_WIRE],
+        [VIDEO_LOOK_WIRE, VIDEO_LOOK_WIRE],
+    ],
+    ids=["two-figures", "video-name-twice"],
+)
+def test_a_host_side_looks_type_refuses_what_the_accept_arguments_refuse(
+    looks: list[dict[str, Any]],
+) -> None:
+    wire_text = json.dumps(ACCEPT_WIRE | {"looks": looks})
+    looks_text = json.dumps(looks)
+    looks_adapter = TypeAdapter(Looks)
+
+    with pytest.raises(ValidationError):
+        looks_adapter.validate_json(looks_text)
     with pytest.raises(ValidationError):
         AcceptInvitationArguments.model_validate_json(wire_text)

@@ -292,10 +292,10 @@ for the agent's own model to read in that turn
 `allow` and `Sense.SEEING`, apart from hearing: one switch never moves the other, and every end of
 HEARING-7 ends both. Nobody is seen before a seeing `allow` is recorded, and the app records none
 when a member joins, so the switch starts off for every member, the person's own agent included,
-each time it joins a place; a look the switch does not allow answers a refusal and no picture. The
-app owns the rest: its look tool, the capture and what it captures, its bound on looks, the mark at
-each look and how long it holds a picture. The library keeps a picture only in the turn that reads
-it and writes it to no log record. Proved by
+each time it joins a place; a request to see that the switch does not allow answers a refusal and
+no picture. The app owns the rest: its seeing tool, the capture and what it captures, its bound on
+pictures, the mark at each picture and how long it holds a picture. The library keeps a picture only
+in the turn that reads it and writes it to no log record. Proved by
 `test_a_seeing_switch_is_its_own_and_lets_no_member_hear`,
 `test_nobody_is_seen_before_a_seeing_allow_and_again_after_an_end_and_a_rejoin`,
 `test_an_end_ends_seeing_as_it_ends_hearing` and

@@ -56,7 +56,7 @@ LIMIT_EXCEEDED = (TurnStopKind.FAILED, FailureCode.LIMIT_EXCEEDED)
 BUSY = (TurnStopKind.REFUSED, RejectionCode.BUSY)
 
 
-def a_look(text: str, image, *, is_error: bool = False):
+def a_seeing_answer(text: str, image, *, is_error: bool = False):
     """The answer of a tool that lets the agent see."""
 
     async def answer() -> ToolOutcome:
@@ -369,7 +369,7 @@ def test_a_handler_that_stops_the_turn_leaves_after_side_effect_as_the_connector
 def test_a_returned_error_is_one_refused_line_with_the_name_and_id_never_arguments_or_content(
     shop, log_lines, image
 ):
-    shop.add_tool("lookup", answer=a_look("content-canary", image, is_error=True))
+    shop.add_tool("lookup", answer=a_seeing_answer("content-canary", image, is_error=True))
 
     shop.run(tool_round(tool_call("c1", "lookup", {"k": "argument-canary"})), completion("ok"))
 
@@ -617,10 +617,10 @@ def tool_message_of(gateway, request_index: int) -> dict:
 
 def test_an_image_result_reaches_the_model_as_an_image_part_inside_its_tool_message(shop):
     image = a_tool_image()
-    shop.add_tool("look", answer=a_look("a doorway", image))
+    shop.add_tool("see", answer=a_seeing_answer("a doorway", image))
 
     events, stopped, gateway = shop.run(
-        tool_round(tool_call("c1", "look", {})), completion("A doorway.")
+        tool_round(tool_call("c1", "see", {})), completion("A doorway.")
     )
 
     assert stopped is None
@@ -635,9 +635,9 @@ def test_an_image_result_reaches_the_model_as_an_image_part_inside_its_tool_mess
 @pytest.mark.parametrize("text", ["", " \n\t"], ids=["empty", "blank"])
 def test_an_image_with_no_text_is_sent_as_the_image_part_alone(shop, text):
     image = a_tool_image()
-    shop.add_tool("look", answer=a_look(text, image))
+    shop.add_tool("see", answer=a_seeing_answer(text, image))
 
-    _, stopped, gateway = shop.run(tool_round(tool_call("c1", "look", {})), completion("ok"))
+    _, stopped, gateway = shop.run(tool_round(tool_call("c1", "see", {})), completion("ok"))
 
     assert stopped is None
     (image_part,) = tool_message_of(gateway, 1)["content"]
@@ -646,9 +646,9 @@ def test_an_image_with_no_text_is_sent_as_the_image_part_alone(shop, text):
 
 
 def test_an_error_outcome_with_an_image_sends_the_error_text_beside_it(shop):
-    shop.add_tool("look", answer=a_look("no light", a_tool_image(), is_error=True))
+    shop.add_tool("see", answer=a_seeing_answer("no light", a_tool_image(), is_error=True))
 
-    _, _, gateway = shop.run(tool_round(tool_call("c1", "look", {})), completion("ok"))
+    _, _, gateway = shop.run(tool_round(tool_call("c1", "see", {})), completion("ok"))
 
     image_part, text_part = tool_message_of(gateway, 1)["content"]
     assert image_part["type"] == "image_url"
@@ -656,11 +656,11 @@ def test_an_error_outcome_with_an_image_sends_the_error_text_beside_it(shop):
 
 
 def test_every_later_round_of_the_turn_resends_the_image(shop):
-    shop.add_tool("look", answer=a_look("a doorway", a_tool_image()))
+    shop.add_tool("see", answer=a_seeing_answer("a doorway", a_tool_image()))
     shop.add_tool("note")
 
     _, stopped, gateway = shop.run(
-        tool_round(tool_call("c1", "look", {})),
+        tool_round(tool_call("c1", "see", {})),
         tool_round(tool_call("c2", "note", {})),
         completion("ok"),
     )
@@ -686,13 +686,13 @@ def test_an_image_result_over_the_event_bound_is_replaced_and_the_side_effect_st
 ):
     image = a_tool_image(image_bytes)
     shop.add_tool(
-        "look",
+        "see",
         effect=ToolEffect.SIDE_EFFECTING,
-        answer=a_look("a" * text_bytes, image),
+        answer=a_seeing_answer("a" * text_bytes, image),
     )
 
     events, stopped, gateway = shop.run(
-        tool_round(tool_call("c1", "look", {})), Reply(429), max_tool_calls=3
+        tool_round(tool_call("c1", "see", {})), Reply(429), max_tool_calls=3
     )
 
     result = events[1]
@@ -705,12 +705,12 @@ def test_an_image_result_over_the_event_bound_is_replaced_and_the_side_effect_st
 
 def test_two_full_size_images_and_a_third_stop_the_turn_before_a_request_over_the_bound(shop):
     shop.add_tool(
-        "look",
+        "see",
         effect=ToolEffect.SIDE_EFFECTING,
-        answer=a_look("", a_tool_image(MAX_EVENT_BYTES)),
+        answer=a_seeing_answer("", a_tool_image(MAX_EVENT_BYTES)),
     )
 
-    rounds = [tool_round(tool_call(f"c{number}", "look", {})) for number in range(5)]
+    rounds = [tool_round(tool_call(f"c{number}", "see", {})) for number in range(5)]
     _, stopped, gateway = shop.run(*rounds, max_tool_calls=100)
 
     assert ending(stopped) == LIMIT_EXCEEDED
