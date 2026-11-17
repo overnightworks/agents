@@ -1,8 +1,0 @@
-claim_id = "494a36dbaa364ae7b3f9335d2aa112bb"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "b7452e1339853d00481a404c875136604d02f2fb"
-branch = "claude/issue-999-port-exports"
-scope = ["docs/connector.md", "src/agents/mcp_server/__init__.py", "tests"]
-opened_commit = "5f29502f3bf43cb97dde16a283d0d235c21fa473"
-whole_reason = "The export, its test and the doc line are one change; tests is the only directory."
