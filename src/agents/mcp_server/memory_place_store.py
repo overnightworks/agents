@@ -59,6 +59,9 @@ class InMemoryPlaceStore:
     ``fail_subscriptions`` ends them for good; both let a test drive what a store does that no call
     asks for. ``hold_signals`` keeps every subscription from handling signals and turns until
     ``release_signals``, as a slow network does.
+
+    The port's calls are async and this store waits for nothing in most of them, so those carry
+    ``NOSONAR(S7503)``.
     """
 
     def __init__(self, *, confirms_subscription: bool = True) -> None:
@@ -68,7 +71,7 @@ class InMemoryPlaceStore:
         self._released = asyncio.Event()
         self._released.set()
 
-    async def publish(self, signal: PlaceSignal) -> None:
+    async def publish(self, signal: PlaceSignal) -> None:  # NOSONAR(S7503)
         self._broadcast(signal)
 
     @asynccontextmanager
@@ -108,7 +111,7 @@ class InMemoryPlaceStore:
             with suppress(asyncio.CancelledError):
                 await following
 
-    async def acknowledged(
+    async def acknowledged(  # NOSONAR(S7503)
         self, stream: str, principal: Principal, uris: Collection[str], holds_for: timedelta
     ) -> frozenset[str]:
         if stream in self._streams:
@@ -120,19 +123,19 @@ class InMemoryPlaceStore:
             self._broadcast(ListeningTurn(principal, uri, listens=True))
         return turned
 
-    async def ended(self, stream: str, holds_for: timedelta) -> None:
+    async def ended(self, stream: str, holds_for: timedelta) -> None:  # NOSONAR(S7503)
         record = self._streams.get(stream)
         shortened = asyncio.get_running_loop().time() + holds_for.total_seconds()
         if record is not None and record.due > shortened:
             record.due = shortened
 
-    async def listens_to(self, principal: Principal, uri: str) -> bool:
+    async def listens_to(self, principal: Principal, uri: str) -> bool:  # NOSONAR(S7503)
         return principal in self._listeners(uri)
 
-    async def listeners(self, uri: str) -> frozenset[Principal]:
+    async def listeners(self, uri: str) -> frozenset[Principal]:  # NOSONAR(S7503)
         return self._listeners(uri)
 
-    async def lapse_due(self, claimer: str) -> LapseRun:
+    async def lapse_due(self, claimer: str) -> LapseRun:  # NOSONAR(S7503)
         del claimer
         now = asyncio.get_running_loop().time()
         due = [name for name, record in self._streams.items() if record.due <= now]

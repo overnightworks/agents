@@ -43,8 +43,9 @@ def test_following_raises_place_store_error_when_the_subscription_is_not_confirm
         ):
             pytest.fail("the subscription was entered without a confirmation")
 
+    entering = scenario()
     with pytest.raises(PlaceStoreError):
-        asyncio.run(scenario())
+        asyncio.run(entering)
 
 
 def test_a_subscription_that_redis_refuses_after_the_entry_calls_on_failed_once_with_the_cause(

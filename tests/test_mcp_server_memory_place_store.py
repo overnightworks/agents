@@ -80,8 +80,9 @@ def test_entering_raises_place_store_error_once_ready_within_passes_without_a_co
 
     async def scenario() -> float:
         started = asyncio.get_running_loop().time()
+        entering = following.open(timedelta(seconds=10))
         with pytest.raises(PlaceStoreError):
-            async with following.open(timedelta(seconds=10)):
+            async with entering:
                 pytest.fail("entered without a confirmation")
         return asyncio.get_running_loop().time() - started
 
@@ -95,8 +96,9 @@ def test_a_signal_published_while_the_subscription_is_unconfirmed_is_never_handl
 
     async def scenario() -> None:
         publishing = asyncio.create_task(store.publish(ToolsChange(_ALICE, _ANOTHER_POD)))
+        entering = following.open()
         with pytest.raises(PlaceStoreError):
-            async with following.open():
+            async with entering:
                 pytest.fail("entered without a confirmation")
         await publishing
 
@@ -115,8 +117,9 @@ def test_entering_with_a_ready_within_that_is_not_positive_raises_value_error(
         async with following.open(ready_within):
             pytest.fail("entered with no time to confirm")
 
+    entering = scenario()
     with pytest.raises(ValueError, match="ready_within"):
-        in_virtual_time(scenario())
+        in_virtual_time(entering)
 
 
 def test_every_reconfirmation_calls_on_resync_again() -> None:
@@ -200,8 +203,9 @@ def test_a_handler_that_raises_before_the_entry_returns_is_raised_out_of_the_ent
         async with following.open():
             pytest.fail("entered although the first resync raised")
 
+    entering = scenario()
     with pytest.raises(RuntimeError, match="the host's resync failed"):
-        in_virtual_time(scenario())
+        in_virtual_time(entering)
 
     assert following.failures == []
 
@@ -214,8 +218,9 @@ def test_a_timeout_error_from_a_handler_before_the_entry_is_raised_as_it_is() ->
         async with following.open():
             pytest.fail("entered although the first resync raised")
 
+    entering = scenario()
     with pytest.raises(TimeoutError, match="the host's resync timed out") as raised:
-        in_virtual_time(scenario())
+        in_virtual_time(entering)
 
     assert not isinstance(raised.value, PlaceStoreError)
 

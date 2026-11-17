@@ -183,8 +183,9 @@ def test_running_raises_place_store_error_when_the_subscription_is_not_confirmed
 
     async def scenario() -> float:
         started = asyncio.get_running_loop().time()
+        serving = front.running()
         with pytest.raises(PlaceStoreError):
-            async with front.running():
+            async with serving:
                 pytest.fail("the front served without a confirmed subscription")
         return asyncio.get_running_loop().time() - started
 
@@ -220,8 +221,9 @@ def test_running_raises_place_store_error_when_the_subscription_is_refused_befor
             place_store.fail_subscriptions(PlaceStoreError("the subscription was refused"))
 
         refusing = asyncio.create_task(refuse())
+        serving = front.running()
         with pytest.raises(PlaceStoreError):
-            async with front.running():
+            async with serving:
                 pytest.fail("the front served without a confirmed subscription")
         await refusing
 
