@@ -905,7 +905,10 @@ whose lapse has not yet run; `await changes.listeners(uri)` lists those principa
 `LISTEN_ALLOWANCE_SECONDS` after it ends, at the next lapse poll (about a second), or `claim_for`
 later if the pod that claimed its lapse died. `PlaceStore.lapse_due` returns a `LapseRun` (the
 `turns` it published, the `stream_count` it lapsed, a `failed_count` with the `last_error_type`),
-which a host that implements the port builds, with `LapseRun`, `ListeningTurn`, `ResourceChange`, `ToolsChange` and `Resubscribed` imported from `agents.mcp_server`; the run's pod writes `listening.lapsed` for each turn. Both read the place store on Redis time and raise
+which a host that implements the port builds, with `LapseRun`, `ListeningTurn`, `PlaceSignal`,
+`ResourceChange`, `ToolsChange` and `Resubscribed` imported from `agents.mcp_server`; `Principal`
+comes from `agents.turn`, its one owner, and `agents.mcp_server` does not re-export it. The run's
+pod writes `listening.lapsed` for each turn. Both read the place store on Redis time and raise
 `PlaceStoreError` when it fails; a host that gets the error does not offer the agent. An app that
 offers an agent only while it can answer an invitation asks for `STANDING_URI`. The allowance lets a
 runner that listens again at once (the connection and one `current` call, a few milliseconds plus the
