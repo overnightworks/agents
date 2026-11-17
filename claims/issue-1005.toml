@@ -3,6 +3,6 @@ agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
 role = "builder"
 base = "c97839d985692f8de0c4b16c3da8621c7e500ee9"
 branch = "claude/issue-1005-looks-on-accept"
-scope = ["docs/calling.md", "docs/connector.md", "scripts/member-tool-wire.json", "src/agents/member.py", "tests"]
+scope = [".importlinter", "docs/calling.md", "docs/connector.md", "docs/hearing.md", "scripts/member-tool-wire.json", "src/agents/mcp_server/routes.py", "src/agents/member.py", "src/agents/member_presentation.py", "src/agents/tools.py", "tests"]
 opened_commit = "f2a73610a4e7ba53976e046e2eda1c90c8b35b01"
 whole_reason = "One accept field with its rules, its wire snapshot and tests"
