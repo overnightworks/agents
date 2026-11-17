@@ -176,7 +176,7 @@ def test_a_payload_that_is_no_address_is_skipped_and_refused_by_its_length_only(
     assert asyncio.run(scenario()) == [Resubscribed(), wake]
     refused = log_lines.of("place_signal.refused")
     assert [(line["level"], line["reason"], line["character_count"]) for line in refused] == [
-        ("warning", "not_an_address", len(payload)) for payload in foreign
+        ("info", "not_an_address", len(payload)) for payload in foreign
     ]
     assert "not json at all" not in log_lines.everything()
 

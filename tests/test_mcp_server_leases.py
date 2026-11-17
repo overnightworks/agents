@@ -132,7 +132,7 @@ def test_a_lease_ended_that_raises_reaches_the_store_and_is_not_swallowed(
     assert len(record.serve_calls) == 1
 
 
-def test_a_lapse_service_that_fails_writes_one_error_line_by_type_and_serves_again_after_the_pause(
+def test_a_lapse_service_that_fails_writes_one_warning_by_type_and_serves_again_after_the_pause(
     leases: MemberLeases, record: LeaseRecordFake, log_lines: LogLines
 ) -> None:
     refusal = PlaceStoreError("the secret detail")
@@ -150,7 +150,7 @@ def test_a_lapse_service_that_fails_writes_one_error_line_by_type_and_serves_aga
 
     assert (before, len(record.serve_calls), serving) == (1, 2, True)
     failed = log_lines.one("lease_lapse_service.failed")
-    assert (failed["level"], failed["error_type"]) == ("error", "PermissionError")
+    assert (failed["level"], failed["error_type"]) == ("warning", "PermissionError")
     assert "exception" not in failed
     assert "secret detail" not in log_lines.everything()
 
@@ -185,6 +185,34 @@ def test_a_failure_after_a_run_longer_than_the_pause_is_written_again(
     in_virtual_time(scenario())
 
     assert len(log_lines.of("lease_lapse_service.failed")) == 2
+
+
+def test_a_service_that_ran_past_the_pause_after_failures_writes_resumed_with_the_failed_run_count(
+    leases: MemberLeases, record: LeaseRecordFake, log_lines: LogLines
+) -> None:
+    record.serve_failures = [RuntimeError("one"), RuntimeError("two")]
+
+    async def scenario() -> None:
+        async with leases.running():
+            await asyncio.sleep(3 * LAPSE_RESTART_SECONDS)
+
+    in_virtual_time(scenario())
+
+    resumed = log_lines.one("lease_lapse_service.resumed")
+    assert (resumed["level"], resumed["failed_run_count"]) == ("info", 2)
+    assert len(log_lines.of("lease_lapse_service.failed")) == 1
+
+
+def test_a_service_that_never_failed_writes_no_resumed_line(
+    leases: MemberLeases, log_lines: LogLines
+) -> None:
+    async def scenario() -> None:
+        async with leases.running():
+            await asyncio.sleep(3 * LAPSE_RESTART_SECONDS)
+
+    in_virtual_time(scenario())
+
+    assert log_lines.of("lease_lapse_service.resumed") == []
 
 
 def test_only_a_renewal_that_started_a_lease_writes_an_opened_line_with_the_sub(

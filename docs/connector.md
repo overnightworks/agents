@@ -486,9 +486,9 @@ gateway client adds `tool_call_id`, the person front has none
 
 The person front writes single lines for what it holds back: `answer.withheld` (`method` from the
 served methods, and `tool_name` for an offered tool), `listen_stream.cut`, `tool_offer.failed` and
-`resource_lookup.failed` (`method` and `error_type`). The route writes `route_answer.refused` with
-`reason` (`no_status`, `incomplete`, `too_large`, `status`, `not_text`) and `status` when the app
-sent one. The inner route request carries the outer trace id under a new span id.
+`resource_lookup.failed` (`method` and `error_type`). The route writes `route_answer.failed`, a
+WARNING, with `reason` (`no_status`, `incomplete`, `too_large`, `status`, `not_text`) and `status`
+when the app sent one. The inner route request carries the outer trace id under a new span id.
 
 Each request to the gateway writes one line when it ends: `model_request.ended` per round of a
 turn, `picture_request.ended` and `model_list_request.ended`. A line carries `duration_ms`,
@@ -539,9 +539,10 @@ State changes and background runs write their own lines, carrying `sub` where th
 | `listen_lapse.resumed` | the first run after failed ones, with `failed_run_count`; a streak of failed runs writes only its first |
 | `place_subscription.renewed` | a later confirmation of the subscription, with `stream_count` |
 | `place_subscription.failed` | the subscription failed for good, ERROR, `error_type` of its cause |
-| `place_signal.refused` | a payload on the channel that is no address: `reason` `not_an_address` and `character_count`, WARNING |
+| `place_signal.refused` | a payload on the channel that is no address: `reason` `not_an_address` and `character_count`, INFO |
 | `host_callback.failed` | `listening_changed` or `listening_resynced` raised: `callback` and `error_type`, ERROR |
-| `lease_lapse_service.failed` | the lapse service failed, ERROR, `error_type`, the first of a streak; a traceback only for an unexpected exception |
+| `lease_lapse_service.failed` | the lapse service failed, WARNING, `error_type`, the first of a streak; a traceback only for an unexpected exception |
+| `lease_lapse_service.resumed` | the restarted service ran longer than the pause without failing, INFO, with `failed_run_count` |
 
 ## The person front
 
@@ -614,11 +615,9 @@ and nothing of its message reaches the wire or the log
 that carries the signature of the request's own bearer is replaced by an empty 500
 (`test_a_result_carrying_the_request_bearer_is_withheld_and_the_log_names_no_caller_text`).
 
-From the first `running()` on, whichever of the SDK's server loggers (`mcp.server`, `mcp.shared`)
-the host left unset is held above every level, and stays held after `running()` ends, so a
-credential the SDK would log (a request's method, a handler failure) reaches no log even when the
-host sets its root logger to DEBUG. A level the host sets on one of those loggers itself wins
-(`test_running_holds_only_an_sdk_logger_the_host_left_unset`). The front's own logger names only
+The front sets no level on any logger: the SDK's server loggers follow the host's logging setup
+(`logline.configure` caps the `mcp` tree at WARNING), and
+`test_running_leaves_the_level_of_every_sdk_logger_as_the_host_set_it` proves it. The front's own logger names only
 the tool and the exception's class
 (`test_no_credential_marker_reaches_any_log_under_debug_or_normal_logging`).
 
@@ -1001,8 +1000,9 @@ mid-handling hands it to another. So the app's lapse action is idempotent and fe
 generation, one atomic step in the app's own store that acts only if the generation it stored is
 the lapsed one; a lease that started again meanwhile has another generation and is left alone. A
 failure of the lapse service, a refusal or an unexpected exception, writes `lease_lapse_service.failed`
-once per streak, by type, and the service serves again after 5 s; it never ends silently and no readiness signal reflects
-it. The block's exit cancels the service and waits for it. Proved by
+once per streak, by type, and the service serves again after 5 s, writing
+`lease_lapse_service.resumed` once it has run that long without failing; it never ends silently and
+no readiness signal reflects it. The block's exit cancels the service and waits for it. Proved by
 `tests/test_mcp_server_leases.py`, `tests/integration/test_redis_leases.py` and the real-Redis
 cells of `tests/integration/real_redis`: a lease renewed on one pod still holds, with its
 generation, on another after the first was killed, and its lapse reaches `lease_ended` once with that
@@ -1256,7 +1256,7 @@ waits until the response is complete and answers `http.disconnect`
 **Outcomes.** A 2xx gives the body text, never an image, and a 4xx a failed result with the route's body. A 3xx, a
 5xx, a body over `MAX_EVENT_BYTES` (no byte past it is kept), a body that is not UTF-8 and an app
 that returns before its response is complete give a failed result with one fixed text; only the
-status and the closed `reason` are logged (`route_answer.refused`). An exception the app raises
+status and the closed `reason` are logged (`route_answer.failed`). An exception the app raises
 propagates to the front, which answers its own fixed text and writes the tool call's `failed`
 line. Proved by `test_a_2xx_gives_the_body_and_a_4xx_gives_a_failed_result_with_the_routes_body`,
 `test_an_unusable_response_gives_one_failed_result_that_repeats_nothing_of_the_body`,

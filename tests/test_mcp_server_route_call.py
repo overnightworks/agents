@@ -348,10 +348,10 @@ def test_an_unusable_response_gives_one_failed_result_that_repeats_nothing_of_th
 ) -> None:
     outcome = run(app, echo_target, {"value": "x"})
 
-    refused = log_lines.one("route_answer.refused")
+    failed = log_lines.one("route_answer.failed")
     assert outcome.is_error
     assert outcome == run(replying(500, b"other"), echo_target, {"value": "x"})
-    assert (refused["reason"], refused.get("status"), refused["level"]) == (
+    assert (failed["reason"], failed.get("status"), failed["level"]) == (
         reason,
         status,
         "warning",

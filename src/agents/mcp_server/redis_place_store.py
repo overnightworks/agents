@@ -326,7 +326,7 @@ class RedisPlaceStore:
                     continue
                 signal = _decoded(event.address, event.traceparent)
                 if signal is None:
-                    _LOG.warning(
+                    _LOG.info(
                         "place_signal.refused",
                         extra={"reason": "not_an_address", "character_count": len(event.address)},
                     )
