@@ -1,0 +1,8 @@
+claim_id = "9873d83a26914febaafa39137b6b65a5"
+agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
+role = "builder"
+base = "9b6751dcd849b339aebc9d39222dd3860a7311b4"
+branch = "claude/issue-998-log-conformance"
+scope = ["docs/connector.md", "src/agents/mcp_server/leases.py", "src/agents/mcp_server/person.py", "src/agents/mcp_server/redis_place_store.py", "src/agents/mcp_server/route_call.py", "tests"]
+opened_commit = "93884bef508defe3a3fde860fa97a60417e77bf6"
+whole_reason = "One conformance pass of agents' own log lines against one standard; each change is a few lines."
