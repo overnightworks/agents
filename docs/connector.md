@@ -486,9 +486,9 @@ gateway client adds `tool_call_id`, the person front has none
 
 The person front writes single lines for what it holds back: `answer.withheld` (`method` from the
 served methods, and `tool_name` for an offered tool), `listen_stream.cut`, `tool_offer.failed` and
-`resource_lookup.failed` (`method` and `error_type`). The route writes `route_answer.failed`, a WARNING, with
-`reason` (`no_status`, `incomplete`, `too_large`, `status`, `not_text`) and `status` when the app
-sent one. The inner route request carries the outer trace id under a new span id.
+`resource_lookup.failed` (`method` and `error_type`). The route writes `route_answer.failed`, a
+WARNING, with `reason` (`no_status`, `incomplete`, `too_large`, `status`, `not_text`) and `status`
+when the app sent one. The inner route request carries the outer trace id under a new span id.
 
 Each request to the gateway writes one line when it ends: `model_request.ended` per round of a
 turn, `picture_request.ended` and `model_list_request.ended`. A line carries `duration_ms`,
@@ -1000,8 +1000,9 @@ mid-handling hands it to another. So the app's lapse action is idempotent and fe
 generation, one atomic step in the app's own store that acts only if the generation it stored is
 the lapsed one; a lease that started again meanwhile has another generation and is left alone. A
 failure of the lapse service, a refusal or an unexpected exception, writes `lease_lapse_service.failed`
-once per streak, by type, and the service serves again after 5 s, writing `lease_lapse_service.resumed` once it has run that long without failing; it never ends silently and no readiness signal reflects
-it. The block's exit cancels the service and waits for it. Proved by
+once per streak, by type, and the service serves again after 5 s, writing
+`lease_lapse_service.resumed` once it has run that long without failing; it never ends silently and
+no readiness signal reflects it. The block's exit cancels the service and waits for it. Proved by
 `tests/test_mcp_server_leases.py`, `tests/integration/test_redis_leases.py` and the real-Redis
 cells of `tests/integration/real_redis`: a lease renewed on one pod still holds, with its
 generation, on another after the first was killed, and its lapse reaches `lease_ended` once with that
