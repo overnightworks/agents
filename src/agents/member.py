@@ -17,7 +17,7 @@ import json
 from collections.abc import Mapping
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Annotated, Final, Self
+from typing import Annotated, Final, Literal, Self
 from urllib.parse import quote, unquote, urlsplit
 
 from pydantic import (
@@ -63,6 +63,7 @@ __all__ = [
     "DeclineInvitationRefusal",
     "DeclineInvitationRefused",
     "DroppedSpeaking",
+    "FigureLook",
     "FigureRef",
     "GestureArguments",
     "GestureRefusal",
@@ -70,6 +71,9 @@ __all__ = [
     "HttpsFileRef",
     "Interrupted",
     "Invitation",
+    "Look",
+    "LookName",
+    "Looks",
     "MemberStanding",
     "OptionalTraceparent",
     "ParentPlace",
@@ -96,6 +100,7 @@ __all__ = [
     "StopSpeakingRefused",
     "StoppedSpeaking",
     "TalkedOver",
+    "VideoLook",
     "VoiceName",
     "VoiceState",
     "VoiceStyle",
@@ -257,10 +262,17 @@ class FigureRef(HttpsFileRef):
     )
 
 
-VoiceName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,64}$")]
+_NAME_PATTERN: Final = r"^[A-Za-z0-9._-]{1,64}$"
+
+VoiceName = Annotated[str, StringConstraints(pattern=_NAME_PATTERN)]
 """The name of a voice an agent would speak with: 1 to 64 ASCII letters of either case, digits,
 ``.``, ``_`` or ``-``. The name is passed through unchanged; the app's speech service decides
 whether it offers that voice."""
+
+LookName = Annotated[str, StringConstraints(pattern=_NAME_PATTERN)]
+"""The name of a video look: 1 to 64 ASCII letters of either case, digits, ``.``, ``_`` or ``-``,
+the form of a ``VoiceName``. The name is passed through unchanged; the app's video service decides
+whether it offers that look."""
 
 
 def _name_no_voice_twice(voices: tuple[str, ...]) -> tuple[str, ...]:
@@ -279,15 +291,56 @@ twice. A host types its own voice list with it to refuse a malformed one before 
 same rule ``AcceptInvitationArguments.voices`` applies."""
 
 
+class FigureLook(FigureRef):
+    """A look of the agent that is its 3D figure: the fields of ``FigureRef`` and ``kind``, the
+    ``figure`` tag that tells the look from a ``VideoLook``. A figure look plays gestures."""
+
+    kind: Literal["figure"]
+
+
+class VideoLook(StrictModel):
+    """A look of the agent that a video service renders, named by ``name``: the app's video
+    service decides which look the name stands for."""
+
+    kind: Literal["video"]
+    name: LookName
+
+
+Look = Annotated[FigureLook | VideoLook, Field(discriminator="kind")]
+"""One look of an agent: a ``FigureLook`` or a ``VideoLook``, told by ``kind``."""
+
+
+def _name_at_most_one_figure_and_no_video_twice(looks: tuple[Look, ...]) -> tuple[Look, ...]:
+    if sum(isinstance(look, FigureLook) for look in looks) > 1:
+        raise ValueError("a figure look is named at most once")
+    video_names = [look.name for look in looks if isinstance(look, VideoLook)]
+    if len(set(video_names)) != len(video_names):
+        raise ValueError("a video look is named at most once")
+    return looks
+
+
+Looks = Annotated[
+    tuple[Look, ...],
+    Field(min_length=1),
+    AfterValidator(_name_at_most_one_figure_and_no_video_twice),
+]
+"""The looks an agent has, first choice first: at least one ``Look``, at most one of kind
+``figure``, no video name twice. A host types its own look list with it to refuse a malformed one
+before an accept, by the same rule ``AcceptInvitationArguments.looks`` applies."""
+
+
 class AcceptInvitationArguments(StrictModel):
     """The arguments of ``accept_invitation``: the place and the invitation's id and epoch, and
-    optionally the agent's ``figure`` and its ``voices``, the names of the voices it would speak
-    with, first choice first; an absent one means the app's own default. The app passes the
-    ``voices`` unchanged and in order to its speech service, which picks the voice."""
+    optionally the agent's ``looks``, first choice first, its ``figure`` and its ``voices``, the
+    names of the voices it would speak with, first choice first; an absent one means the app's own
+    default. The app shows the first look it can; ``figure`` is read only while ``looks`` is
+    absent. The app passes the ``voices`` unchanged and in order to its speech service, which
+    picks the voice."""
 
     place: PlaceRef
     invitation: NonEmptyUnicodeText
     epoch: int = Field(ge=0)
+    looks: Looks | None = Field(default=None, exclude_if=_is_none)
     figure: FigureRef | None = Field(default=None, exclude_if=_is_none)
     voices: Voices | None = Field(default=None, exclude_if=_is_none)
 
@@ -595,7 +648,7 @@ invitation, a decline, a turn state) lists only its refusal."""
 
 def gesture_tool() -> ToolDeclaration:
     """The declaration of ``GESTURE_TOOL`` as an agent sees it. An app offers it only while the
-    seat's accept carried a figure; its schema's enum is the gestures the agent can make."""
+    seat's shown look plays gestures; its schema's enum is the gestures the agent can make."""
     return ToolDeclaration(
         name=GESTURE_TOOL,
         description="Make a gesture with your figure at a place, as a person waves.",
