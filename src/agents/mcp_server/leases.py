@@ -88,7 +88,8 @@ class MemberLeases:
         ``LAPSE_RESTART_SECONDS``. A streak ends when a restarted service ran longer than that
         without failing; ``lease_lapse_service.resumed`` then writes its ``failed_run_count``.
         The block's exit cancels the service and waits for it, so a handler still running is cut and
-        its lapse returns after the store's claim has run out. There is no readiness signal: a failing service is only written.
+        its lapse returns after the store's claim has run out.
+        There is no readiness signal: a failing service is only written.
         """
         service = asyncio.create_task(self._serve())
         try:
