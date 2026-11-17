@@ -23,7 +23,7 @@ jobs:
       checks: read
       contents: read
       pull-requests: read
-    uses: overnightworks/quality/.github/workflows/release-gate.yml@be32abeb120d29f75ee7ea456d6e510ae001de04 # v0.12.0
+    uses: overnightworks/quality/.github/workflows/release-gate.yml@853a9545c26aaa884896223b87a2505d2b918e31 # v0.17.0
     with:
       version: ${{ inputs.version }}
 
