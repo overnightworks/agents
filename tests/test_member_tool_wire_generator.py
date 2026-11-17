@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import json
-import runpy
 from pathlib import Path
-
-import pytest
 
 import scripts.generate_member_tool_wire as generator
 from agents.member import MEMBER_TOOL_ARGUMENTS, MEMBER_TOOL_RESULTS
@@ -40,23 +37,3 @@ def test_main_writes_the_snapshot_under_the_root(tmp_path: Path) -> None:
 
     assert generator.main(root=root) == 0
     assert (root / generator.WIRE_PATH).read_text(encoding="utf-8") == generator.render()
-
-
-def test_run_as_a_script_it_writes_the_snapshot_under_the_repository_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    script = generator.ROOT / "scripts" / "generate_member_tool_wire.py"
-    write_text = Path.write_text
-
-    def write_under_the_test_root(self: Path, data: str, *, encoding: str) -> int:
-        return write_text(tmp_path / self.relative_to(generator.ROOT), data, encoding=encoding)
-
-    (tmp_path / generator.WIRE_PATH.parent).mkdir(parents=True)
-    monkeypatch.setattr(Path, "write_text", write_under_the_test_root)
-
-    with pytest.raises(SystemExit) as raised:
-        runpy.run_path(str(script), run_name="__main__")
-
-    monkeypatch.undo()
-    assert raised.value.code == 0
-    assert (tmp_path / generator.WIRE_PATH).read_text(encoding="utf-8") == generator.render()

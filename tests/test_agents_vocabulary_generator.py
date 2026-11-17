@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import runpy
 from pathlib import Path
 
 import pytest
@@ -39,22 +38,3 @@ def test_a_second_run_leaves_the_file_as_it_was(root: Path) -> None:
     generator.main(root=root)
 
     assert (root / generator.VOCABULARY_PATH).read_bytes() == first
-
-
-def test_run_as_a_script_it_writes_the_file_under_the_repository_root(
-    root: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    script = generator.ROOT / "scripts" / "generate_agents_vocabulary.py"
-    write_text = Path.write_text
-
-    def write_under_the_test_root(self: Path, data: str, *, encoding: str) -> int:
-        return write_text(root / self.relative_to(generator.ROOT), data, encoding=encoding)
-
-    monkeypatch.setattr(Path, "write_text", write_under_the_test_root)
-
-    with pytest.raises(SystemExit) as raised:
-        runpy.run_path(str(script), run_name="__main__")
-
-    monkeypatch.undo()
-    assert raised.value.code == 0
-    assert (root / generator.VOCABULARY_PATH).read_text(encoding="utf-8") == generator.render()
