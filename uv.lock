@@ -554,10 +554,10 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'mcp-server'", specifier = ">=2.3,<3" },
     { name = "overnightworks-agents", extras = ["backend", "mcp-server", "redis", "voice"], marker = "extra == 'dev'" },
     { name = "overnightworks-agents", extras = ["mcp-server"], marker = "extra == 'redis'" },
-    { name = "overnightworks-logline", marker = "extra == 'backend'", specifier = ">=0.4,<0.7" },
-    { name = "overnightworks-logline", marker = "extra == 'mcp-server'", specifier = ">=0.4,<0.7" },
-    { name = "overnightworks-logline", marker = "extra == 'voice'", specifier = ">=0.4,<0.7" },
-    { name = "overnightworks-tandem", marker = "extra == 'redis'", specifier = ">=0.8.2,<0.9" },
+    { name = "overnightworks-logline", marker = "extra == 'backend'", specifier = ">=0.4,<0.8" },
+    { name = "overnightworks-logline", marker = "extra == 'mcp-server'", specifier = ">=0.4,<0.8" },
+    { name = "overnightworks-logline", marker = "extra == 'voice'", specifier = ">=0.4,<0.8" },
+    { name = "overnightworks-tandem", marker = "extra == 'redis'", specifier = ">=0.9.1,<0.10" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = "==1.1.414" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1,<10" },
@@ -573,14 +573,14 @@ provides-extras = ["backend", "mcp-server", "redis", "voice", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "overnightworks-logline", git = "https://github.com/overnightworks/logline?tag=v0.6.0" },
-    { name = "overnightworks-tandem", git = "https://github.com/overnightworks/tandem?tag=v0.8.2" },
+    { name = "overnightworks-logline", git = "https://github.com/overnightworks/logline?tag=v0.7.0" },
+    { name = "overnightworks-tandem", git = "https://github.com/overnightworks/tandem?tag=v0.9.1" },
 ]
 
 [[package]]
 name = "overnightworks-logline"
-version = "0.6.0"
-source = { git = "https://github.com/overnightworks/logline?tag=v0.6.0#6b5365d471aa3fd915e003e751f5ad9006577afb" }
+version = "0.7.0"
+source = { git = "https://github.com/overnightworks/logline?tag=v0.7.0#4897df98b14d3f974a3fc99b65ea596874ac86ba" }
 dependencies = [
     { name = "opentelemetry-api" },
     { name = "structlog" },
@@ -588,8 +588,8 @@ dependencies = [
 
 [[package]]
 name = "overnightworks-tandem"
-version = "0.8.2"
-source = { git = "https://github.com/overnightworks/tandem?tag=v0.8.2#9d35d5d6af60e1656c5ecec73dce1834e4ceceb5" }
+version = "0.9.1"
+source = { git = "https://github.com/overnightworks/tandem?tag=v0.9.1#1e48aef19b0a407bdbf1fede850a6f51bb2e1380" }
 dependencies = [
     { name = "overnightworks-logline" },
     { name = "redis" },

@@ -55,7 +55,6 @@ from agents.mcp_server.place_store import (
     PlaceStore,
     PlaceStoreError,
     ResourceChange,
-    Resubscribed,
     ToolsChange,
     failure_type,
     store_step,
@@ -74,6 +73,7 @@ _LOG: Final = logging.getLogger(LOGGER_NAME)
 
 LAPSE_POLL_SECONDS: Final = 1
 _END_CAP_SECONDS: Final = 5
+_SUBSCRIPTION_READY_WITHIN: Final = timedelta(seconds=10)
 _HOLDS_OPEN: Final = timedelta(seconds=LISTEN_BOUND_SECONDS + LISTEN_ALLOWANCE_SECONDS)
 _HOLDS_ENDED: Final = timedelta(seconds=LISTEN_ALLOWANCE_SECONDS)
 
@@ -180,6 +180,7 @@ class ResourceChanges:
         self._listening_resynced = listening_resynced
         self._ending: set[asyncio.Task[None]] = set()
         self._dead = False
+        self._confirmed = False
 
     async def changed(self, recipient: Principal, uri: str) -> None:
         """Signal every registered stream of the recipient on every pod; a stream that has ended
@@ -208,33 +209,35 @@ class ResourceChanges:
 
     @asynccontextmanager
     async def following(self) -> AsyncGenerator[None, None]:
-        """The store's subscription as a task of its own, for as long as the block runs.
+        """The store's subscription for as long as the block runs.
 
-        Yields at the first ``Resubscribed`` and raises ``PlaceStoreError`` if the subscription
-        fails or ends before it. A failure after it writes ``place_subscription.failed`` with the
-        type of the cause, ends every open stream and turns ``dead``; the block stays entered. The
-        task runs outside the SDK manager's task group, so its failure never reaches one. A second
-        task lapses the streams of the place store that ended, about every ``LAPSE_POLL_SECONDS``;
-        it runs until the block ends and writes ``listen_lapse.ended`` only for a run that lapsed
-        or failed a stream. A failure of one poll, whatever it is, is written by type once per
-        streak, and the next poll goes on.
+        Yields once the store confirmed the subscription, within ``_SUBSCRIPTION_READY_WITHIN``,
+        and raises ``PlaceStoreError`` if it is refused or not confirmed by then. A failure after
+        it writes ``place_subscription.failed`` with the type of the cause, ends every open stream
+        and turns ``dead``; the block stays entered. The subscription runs outside the SDK
+        manager's task group, so its failure never reaches one. A task lapses the streams of the
+        place store that ended, about every ``LAPSE_POLL_SECONDS``; it runs until the block ends and
+        writes ``listen_lapse.ended`` only for a run that lapsed or failed a stream. A failure of
+        one poll, whatever it is, is written by type once per streak, and the next poll goes on.
 
         The exit waits for the ends of listens still in flight, each capped at ``_END_CAP_SECONDS``.
         A second cancellation stops that wait at once, and a stream whose end is then not recorded
         lapses by its open deadline: ``LISTEN_BOUND_SECONDS`` plus ``LISTEN_ALLOWANCE_SECONDS``.
         """
-        confirmed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-        tasks = [asyncio.create_task(self._follow(confirmed))]
-        try:
-            await confirmed
-            tasks.append(asyncio.create_task(self._lapse_ended_streams()))
-            yield
-        finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.wait(tasks)
-            if self._ending:
-                await asyncio.wait(tuple(self._ending))
+        async with self._store.following(
+            on_resync=self._resubscribed,
+            on_signal=self._received,
+            on_failed=self._die,
+            ready_within=_SUBSCRIPTION_READY_WITHIN,
+        ):
+            lapsing = asyncio.create_task(self._lapse_ended_streams())
+            try:
+                yield
+            finally:
+                lapsing.cancel()
+                await asyncio.wait([lapsing])
+                if self._ending:
+                    await asyncio.wait(tuple(self._ending))
 
     async def _lapse_ended_streams(self) -> None:
         failed_run_count = 0
@@ -266,34 +269,18 @@ class ResourceChanges:
             step.end()
         return 0
 
-    async def _follow(self, confirmed: asyncio.Future[None]) -> None:
-        try:
-            async for event in self._store.received():
-                match event:
-                    case Resubscribed():
-                        self._resync()
-                        self._resynced()
-                        if confirmed.done():
-                            _LOG.info(
-                                "place_subscription.renewed",
-                                extra={"stream_count": self._stream_count()},
-                            )
-                        else:
-                            confirmed.set_result(None)
-                    case ListeningTurn(principal, uri, listens, traceparent):
-                        with unit_trace(traceparent):
-                            self._signal(principal, uri, listens=listens)
-                    case ResourceChange() | ToolsChange():
-                        with unit_trace(event.traceparent):
-                            self._deliver(event)
-            raise PlaceStoreError("the place store's subscription ended")
-        except Exception as failure:
-            if confirmed.done():
-                self._die(failure)
-            else:
-                unconfirmed = PlaceStoreError("the place store did not confirm its subscription")
-                unconfirmed.__cause__ = failure
-                confirmed.set_exception(unconfirmed)
+    def _resubscribed(self) -> None:
+        self._resync()
+        self._resynced()
+        if self._confirmed:
+            _LOG.info("place_subscription.renewed", extra={"stream_count": self._stream_count()})
+        self._confirmed = True
+
+    def _received(self, event: PlaceSignal | ListeningTurn) -> None:
+        if isinstance(event, ListeningTurn):
+            self._signal(event.principal, event.uri, listens=event.listens)
+        else:
+            self._deliver(event)
 
     def _deliver(self, signal: PlaceSignal) -> None:
         pulse: _Pulse

@@ -25,14 +25,17 @@ from agents.mcp_server.place_store import (
     PlaceSignal,
     PlaceStoreError,
     ResourceChange,
-    Resubscribed,
     ToolsChange,
 )
 from agents.mcp_server.redis_place_store import CLAIM_FOR, RedisPlaceStore
 from agents.member import LISTEN_ALLOWANCE_SECONDS, LISTEN_BOUND_SECONDS, STANDING_URI
 from agents.turn import Principal
 from tests.support import redis_listen_support
-from tests.support.faulty_redis import EvalshaStopsAfter, LostReplyRedis, retrying
+from tests.support.faulty_redis import (
+    EvalshaStopsAfter,
+    LostReplyRedis,
+    retrying,
+)
 from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import (
     MemberApp,
@@ -48,6 +51,8 @@ from tests.support.redis_listen_support import (
     UNUSUAL_URIS,
     Event,
     RedisClock,
+    Resynced,
+    a_pod,
     arrived,
     delivered_up_to,
     namespace_of,
@@ -56,6 +61,7 @@ from tests.support.redis_listen_support import (
 )
 
 redis_clock = redis_listen_support.redis_clock
+server = redis_listen_support.server
 log_lines = log_lines
 
 _PREFIX = "notes"
@@ -68,15 +74,6 @@ _NO = ListeningTurn(_ALICE, STANDING_URI, listens=False)
 _AFTER_EVERYTHING = ResourceChange(_BOB, STANDING_URI, "test")
 _BEFORE_THE_LAPSE = ResourceChange(_BOB, STANDING_URI, "before the lapse")
 _AFTER_THE_LAPSE = ResourceChange(_BOB, STANDING_URI, "after the lapse")
-
-
-@pytest.fixture
-def server() -> FakeServer:
-    return FakeServer()
-
-
-def a_pod(server: FakeServer, *, key_prefix: str = _PREFIX) -> RedisPlaceStore:
-    return RedisPlaceStore(FakeAsyncRedis(server=server), key_prefix=key_prefix)
 
 
 @pytest.mark.parametrize(
@@ -96,7 +93,7 @@ def test_a_signal_one_pod_publishes_reaches_the_subscription_of_another(
             await arrived(events, 2)
             return list(events)
 
-    assert asyncio.run(scenario()) == [Resubscribed(), signal]
+    assert asyncio.run(scenario()) == [Resynced(), signal]
 
 
 async def _published_in_a_trace(store: RedisPlaceStore, how: str, redis_clock: RedisClock) -> None:
@@ -122,34 +119,22 @@ async def _published_in_a_trace(store: RedisPlaceStore, how: str, redis_clock: R
         ("a listen lapsed to no", 2),
     ],
 )
-def test_a_wake_carries_the_trace_of_the_pod_that_sent_it_to_the_pod_that_receives_it(
+def test_a_wake_is_handled_in_the_trace_of_the_pod_that_sent_it(
     server: FakeServer, redis_clock: RedisClock, how: str, wake_count: int
 ) -> None:
-    async def scenario() -> tuple[str | None, list[Event]]:
-        async with subscribed(a_pod(server)) as events:
+    async def scenario() -> tuple[str | None, list[str | None]]:
+        traces: list[str | None] = []
+        async with subscribed(a_pod(server), traces) as events:
             with unit_trace(None):
                 sender_trace = current_trace_id()
                 await _published_in_a_trace(a_pod(server), how, redis_clock)
             await delivered_up_to(a_pod(server), events, _AFTER_EVERYTHING)
-            return sender_trace, list(events)
+            return sender_trace, traces[:-1]
 
-    sender_trace, events = asyncio.run(scenario())
+    sender_trace, wake_traces = asyncio.run(scenario())
 
-    wakes = events[1:-1]
     assert sender_trace is not None
-    assert len(wakes) == wake_count
-    assert [(wake.traceparent or "").split("-")[1:2] for wake in wakes] == [
-        [sender_trace]
-    ] * wake_count
-
-
-def test_a_wake_sent_outside_a_trace_carries_none(server: FakeServer) -> None:
-    async def scenario() -> list[Event]:
-        async with subscribed(a_pod(server)) as events:
-            await a_pod(server).acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
-            return await delivered_up_to(a_pod(server), events, _AFTER_EVERYTHING)
-
-    assert asyncio.run(scenario()) == [Resubscribed(), _YES, _AFTER_EVERYTHING]
+    assert wake_traces == [sender_trace] * wake_count
 
 
 def test_a_payload_that_is_no_address_is_skipped_and_refused_by_its_length_only(
@@ -173,7 +158,7 @@ def test_a_payload_that_is_no_address_is_skipped_and_refused_by_its_length_only(
             await arrived(events, 2)
             return list(events)
 
-    assert asyncio.run(scenario()) == [Resubscribed(), wake]
+    assert asyncio.run(scenario()) == [Resynced(), wake]
     refused = log_lines.of("place_signal.refused")
     assert [(line["level"], line["reason"], line["character_count"]) for line in refused] == [
         ("info", "not_an_address", len(payload)) for payload in foreign
@@ -205,7 +190,7 @@ def test_a_payload_that_is_no_utf8_is_skipped_and_the_subscription_goes_on(
             await arrived(events, 2)
             return list(events)
 
-    assert asyncio.run(scenario()) == [Resubscribed(), wake]
+    assert asyncio.run(scenario()) == [Resynced(), wake]
     (warning,) = caplog.records
     assert warning.levelno == logging.WARNING
     assert warning.payload_bytes == len(no_utf8_payload)  # type: ignore[attr-defined]
@@ -303,7 +288,7 @@ def test_a_listen_through_one_store_is_listed_by_another_and_wakes_its_subscript
     turned, seen, listeners, alice_listens, bob_listens, window_listens = asyncio.run(scenario())
 
     assert turned == frozenset({STANDING_URI})
-    assert seen == [Resubscribed(), _YES, _AFTER_EVERYTHING]
+    assert seen == [Resynced(), _YES, _AFTER_EVERYTHING]
     assert listeners == frozenset({_ALICE})
     assert (alice_listens, bob_listens, window_listens) == (True, False, False)
 
@@ -334,7 +319,7 @@ def test_an_open_stream_that_never_ends_lapses_at_the_bound_plus_the_allowance_w
     before, at_the_end, seen = asyncio.run(scenario())
 
     assert (before, at_the_end) == (False, True)
-    assert seen == [Resubscribed(), _YES, _NO, _AFTER_EVERYTHING]
+    assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
 
 
 @pytest.mark.parametrize(
@@ -404,7 +389,7 @@ def test_acknowledged_twice_with_one_stream_returns_empty_publishes_nothing_and_
 
     assert replayed == frozenset()
     assert (before, at_the_end) == (False, True)
-    assert seen == [Resubscribed(), _YES, _NO, _AFTER_EVERYTHING]
+    assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
 
 
 def test_a_lapse_whose_claim_was_never_finished_is_done_again_by_the_next_claim_without_a_second_no(
@@ -423,7 +408,7 @@ def test_a_lapse_whose_claim_was_never_finished_is_done_again_by_the_next_claim_
 
     first, second, seen = asyncio.run(scenario())
 
-    assert seen == [Resubscribed(), _YES, _NO, _AFTER_EVERYTHING]
+    assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
     assert first == LapseRun(
         turns=(ListeningTurn(_ALICE, STANDING_URI, listens=False),),
         failed_count=1,
@@ -479,7 +464,7 @@ def test_a_pod_that_claimed_a_stream_and_lost_its_connection_leaves_it_to_the_ne
     still_listed, listed_after, seen = asyncio.run(scenario())
 
     assert (still_listed, listed_after) == (True, False)
-    assert seen == [Resubscribed(), _YES, _NO, _AFTER_EVERYTHING]
+    assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
 
 
 def test_a_lost_reply_of_acknowledged_raises_yet_the_yes_arrives_and_the_stream_lapses(
@@ -498,7 +483,7 @@ def test_a_lost_reply_of_acknowledged_raises_yet_the_yes_arrives_and_the_stream_
     lapsed, seen = asyncio.run(scenario())
 
     assert lapsed
-    assert seen == [Resubscribed(), _YES, _NO, _AFTER_EVERYTHING]
+    assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
 
 
 def test_a_retry_that_replays_acknowledged_after_a_lost_reply_leaves_the_store_unchanged(
@@ -516,7 +501,7 @@ def test_a_retry_that_replays_acknowledged_after_a_lost_reply_leaves_the_store_u
 
     assert replayed == frozenset()
     assert at_the_end
-    assert seen == [Resubscribed(), _YES, _NO, _AFTER_EVERYTHING]
+    assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
 
 
 @pytest.mark.parametrize(
@@ -562,7 +547,7 @@ def test_a_new_stream_of_the_same_principal_and_uri_decides_whether_an_old_ones_
     listens, seen = asyncio.run(scenario())
 
     assert listens
-    assert seen == [Resubscribed(), *turns, _AFTER_EVERYTHING]
+    assert seen == [Resynced(), *turns, _AFTER_EVERYTHING]
 
 
 def test_a_principal_turns_to_no_for_a_uri_only_when_its_last_stream_of_it_lapsed(
@@ -583,7 +568,7 @@ def test_a_principal_turns_to_no_for_a_uri_only_when_its_last_stream_of_it_lapse
 
     assert second == frozenset({window})
     assert seen == [
-        Resubscribed(),
+        Resynced(),
         _YES,
         ListeningTurn(_ALICE, window, listens=True),
         ListeningTurn(_BOB, STANDING_URI, listens=True),
@@ -617,7 +602,7 @@ def test_a_lapsed_stream_leaves_no_key_and_no_member_whatever_its_principal_and_
     seen, written, left, listens, listeners = asyncio.run(scenario())
 
     assert seen == [
-        Resubscribed(),
+        Resynced(),
         ListeningTurn(principal, uri, listens=True),
         ListeningTurn(principal, uri, listens=False),
         _AFTER_EVERYTHING,
@@ -730,7 +715,7 @@ def test_acknowledged_and_ended_refuse_a_key_of_the_wrong_type_before_they_write
     before, after, seen = asyncio.run(scenario())
 
     assert after == before
-    assert seen == [Resubscribed(), _AFTER_EVERYTHING]
+    assert seen == [Resynced(), _AFTER_EVERYTHING]
 
 
 @pytest.mark.parametrize(
@@ -772,7 +757,7 @@ def test_a_lapse_that_cannot_read_the_record_writes_nothing_counts_the_failure_a
     (before, after), seen, claimed, run = asyncio.run(scenario())
 
     assert after == before
-    assert seen == [Resubscribed(), _YES, _BEFORE_THE_LAPSE, _AFTER_THE_LAPSE]
+    assert seen == [Resynced(), _YES, _BEFORE_THE_LAPSE, _AFTER_THE_LAPSE]
     assert claimed == [b"held"]
     assert run.turns == ()
     assert (run.stream_count, run.failed_count) == (0, 1)

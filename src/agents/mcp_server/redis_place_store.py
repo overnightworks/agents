@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Generator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Generator
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from datetime import timedelta
 from typing import Final, Literal, NoReturn, cast
 from uuid import uuid4
@@ -37,11 +37,11 @@ from tandem import (
     Liveness,
     Script,
     StoreError,
+    Wake,
     WakeChannel,
     checked_segment,
     wake_channel,
 )
-from tandem import Resubscribed as TandemResubscribed
 
 from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.place_store import (
@@ -53,7 +53,6 @@ from agents.mcp_server.place_store import (
     PlaceSignal,
     PlaceStoreError,
     ResourceChange,
-    Resubscribed,
     ToolsChange,
     failure_type,
 )
@@ -232,21 +231,18 @@ def _encoded(signal: PlaceSignal) -> str:
             return json.dumps(["v1", "tools", principal.iss, principal.sub, None, origin])
 
 
-def _decoded(address: str, traceparent: str | None) -> PlaceSignal | ListeningTurn | None:
-    """The signal or turn an address carries, in the sender's ``traceparent``, or ``None`` for a
-    payload no ``["v1", ...]`` address; a turn's origin is dropped."""
+def _decoded(address: str) -> PlaceSignal | ListeningTurn | None:
+    """The signal or turn an address carries, or ``None`` for a payload no ``["v1", ...]``
+    address; a turn's origin is dropped."""
     try:
         match _ADDRESS.validate_json(address, strict=True):
             case ("v1", "resource", iss, sub, uri, origin):
-                return ResourceChange(Principal(iss=iss, sub=sub), uri, origin, traceparent)
+                return ResourceChange(Principal(iss=iss, sub=sub), uri, origin)
             case ("v1", "tools", iss, sub, None, origin):
-                return ToolsChange(Principal(iss=iss, sub=sub), origin, traceparent)
+                return ToolsChange(Principal(iss=iss, sub=sub), origin)
             case ("v1", ("listening-yes" | "listening-no") as direction, iss, sub, uri, _):
                 return ListeningTurn(
-                    Principal(iss=iss, sub=sub),
-                    uri,
-                    listens=direction == "listening-yes",
-                    traceparent=traceparent,
+                    Principal(iss=iss, sub=sub), uri, listens=direction == "listening-yes"
                 )
     except ValidationError:
         return None
@@ -267,12 +263,18 @@ def _milliseconds(span: timedelta) -> int:
     return span // _MILLISECOND
 
 
+def _place_store_error(failure: StoreError) -> PlaceStoreError:
+    refusal = PlaceStoreError(str(failure))
+    refusal.__cause__ = failure
+    return refusal
+
+
 @contextmanager
 def _store_errors() -> Generator[None]:
     try:
         yield
     except StoreError as failure:
-        raise PlaceStoreError(str(failure)) from failure
+        raise _place_store_error(failure) from failure
 
 
 class RedisPlaceStore:
@@ -318,20 +320,39 @@ class RedisPlaceStore:
         with _store_errors():
             await self._channel.publish(_encoded(signal))
 
-    async def received(self) -> AsyncIterator[PlaceSignal | ListeningTurn | Resubscribed]:
-        with _store_errors():
-            async for event in self._channel.received():
-                if isinstance(event, TandemResubscribed):
-                    yield Resubscribed()
-                    continue
-                signal = _decoded(event.address, event.traceparent)
-                if signal is None:
-                    _LOG.info(
-                        "place_signal.refused",
-                        extra={"reason": "not_an_address", "character_count": len(event.address)},
+    @asynccontextmanager
+    async def following(
+        self,
+        *,
+        on_resync: Callable[[], None],
+        on_signal: Callable[[PlaceSignal | ListeningTurn], None],
+        on_failed: Callable[[Exception], None],
+        ready_within: timedelta,
+    ) -> AsyncGenerator[None]:
+        def on_wake(wake: Wake) -> None:
+            signal = _decoded(wake.address)
+            if signal is None:
+                _LOG.info(
+                    "place_signal.refused",
+                    extra={"reason": "not_an_address", "character_count": len(wake.address)},
+                )
+            else:
+                on_signal(signal)
+
+        def on_wake_failed(failure: Exception) -> None:
+            on_failed(_place_store_error(failure) if isinstance(failure, StoreError) else failure)
+
+        async with AsyncExitStack() as entered:
+            with _store_errors():
+                await entered.enter_async_context(
+                    self._channel.following(
+                        on_resync=on_resync,
+                        on_wake=on_wake,
+                        on_failed=on_wake_failed,
+                        ready_within=ready_within,
                     )
-                else:
-                    yield signal
+                )
+            yield
 
     async def acknowledged(
         self, stream: str, principal: Principal, uris: Collection[str], holds_for: timedelta

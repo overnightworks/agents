@@ -14,12 +14,10 @@ from http import HTTPStatus
 from typing import Any
 
 import pytest
-from logline import current_traceparent, unit_trace
-from logline.trace import current_trace_id
 
 from agents.mcp_server import McpPersonFront, ResourceChanges
 from agents.mcp_server.asgi import LOGGER_NAME
-from agents.mcp_server.place_store import ListeningTurn, PlaceStoreError, ResourceChange
+from agents.mcp_server.place_store import PlaceStoreError, ResourceChange
 from agents.member import STANDING_URI
 from agents.tools import Principal
 from tests.support import listen_support
@@ -51,13 +49,6 @@ _ACKNOWLEDGED = "notifications/subscriptions/acknowledged"
 _UPDATED = "notifications/resources/updated"
 _TOOLS_CHANGED = "notifications/tools/list_changed"
 _ANOTHER_POD = "another-pod"
-
-
-def failing_with(place_store: PlaceStoreFake, how: str) -> Callable[[], None]:
-    """The store's subscription raising, or ending, once what came before it was read."""
-    if how == "raises":
-        return lambda: place_store.fail(PlaceStoreError("the subscription was refused"))
-    return place_store.end
 
 
 def frames_of(connection: Any) -> list[tuple[str | None, str | None]]:
@@ -143,7 +134,7 @@ def test_a_signal_another_pod_published_reaches_the_streams_of_its_member_only(
 
     async def scenario() -> None:
         async with front.running(), open_stream(streams["alice"]), open_stream(streams["bob"]):
-            place_store.deliver(ResourceChange(alice, STANDING_URI, _ANOTHER_POD))
+            await place_store.publish(ResourceChange(alice, STANDING_URI, _ANOTHER_POD))
             await settled()
 
     served(scenario())
@@ -154,49 +145,14 @@ def test_a_signal_another_pod_published_reaches_the_streams_of_its_member_only(
     }
 
 
-@pytest.mark.parametrize(
-    "traceparent",
-    [
-        pytest.param(None, id="none"),
-        pytest.param("", id="empty"),
-        pytest.param("not-a-traceparent", id="malformed"),
-        pytest.param("00-" + "0" * 32 + "-00f067aa0ba902b7-01", id="all-zero trace id"),
-    ],
-)
-def test_a_turn_another_pod_published_without_a_usable_trace_is_handled_in_a_fresh_one(
-    place_store: PlaceStoreFake, alice: Principal, traceparent: str | None
-) -> None:
-    with unit_trace(None):
-        sender_trace = current_trace_id()
-        next_traceparent = current_traceparent()
-    heard_in: list[str | None] = []
-    changes = ResourceChanges(
-        place_store, listening_changed=lambda *_: heard_in.append(current_trace_id())
-    )
-
-    async def scenario() -> None:
-        async with changes.following():
-            place_store.deliver(
-                ListeningTurn(alice, STANDING_URI, listens=True, traceparent=traceparent)
-            )
-            place_store.deliver(
-                ListeningTurn(alice, STANDING_URI, listens=False, traceparent=next_traceparent)
-            )
-            await settled()
-
-    served(scenario())
-
-    [fresh, carried] = heard_in
-    assert fresh is not None
-    assert fresh != sender_trace
-    assert carried == sender_trace
-    assert current_trace_id() is None
+def an_unconfirmed_front(app: MemberApp) -> tuple[McpPersonFront, PlaceStoreFake]:
+    store = PlaceStoreFake(confirms_subscription=False)
+    changes = ResourceChanges(store)
+    return McpPersonFront([], resolve_person=resolve_member, resources=app, changes=changes), store
 
 
-def test_running_yields_only_once_the_first_subscription_is_confirmed(
-    front: McpPersonFront, place_store: PlaceStoreFake
-) -> None:
-    place_store.confirms_subscription = False
+def test_running_yields_only_once_the_first_subscription_is_confirmed(app: MemberApp) -> None:
+    front, place_store = an_unconfirmed_front(app)
 
     async def scenario() -> list[bool]:
         entered = asyncio.Event()
@@ -220,6 +176,21 @@ def test_running_yields_only_once_the_first_subscription_is_confirmed(
     assert served(scenario()) == [False, True]
 
 
+def test_running_raises_place_store_error_when_the_subscription_is_not_confirmed_in_ten_seconds(
+    app: MemberApp,
+) -> None:
+    front, _place_store = an_unconfirmed_front(app)
+
+    async def scenario() -> float:
+        started = asyncio.get_running_loop().time()
+        with pytest.raises(PlaceStoreError):
+            async with front.running():
+                pytest.fail("the front served without a confirmed subscription")
+        return asyncio.get_running_loop().time() - started
+
+    assert served(scenario()) == pytest.approx(10, abs=1)
+
+
 def test_listening_resynced_is_called_at_every_confirmed_subscription_the_first_included(
     place_store: PlaceStoreFake, app: MemberApp
 ) -> None:
@@ -238,21 +209,23 @@ def test_listening_resynced_is_called_at_every_confirmed_subscription_the_first_
     assert served(scenario()) == [1, 2]
 
 
-@pytest.mark.parametrize("how", ["raises", "ends"])
-def test_running_raises_place_store_error_when_the_subscription_fails_before_it_is_confirmed(
-    front: McpPersonFront, place_store: PlaceStoreFake, how: str
+def test_running_raises_place_store_error_when_the_subscription_is_refused_before_it_is_confirmed(
+    app: MemberApp,
 ) -> None:
-    place_store.confirms_subscription = False
-    failing_with(place_store, how)()
+    front, place_store = an_unconfirmed_front(app)
 
     async def scenario() -> None:
-        async with front.running():
-            pytest.fail("the front served without a confirmed subscription")
+        async def refuse() -> None:
+            await asyncio.sleep(1)
+            place_store.fail_subscriptions(PlaceStoreError("the subscription was refused"))
 
-    serving = scenario()
+        refusing = asyncio.create_task(refuse())
+        with pytest.raises(PlaceStoreError):
+            async with front.running():
+                pytest.fail("the front served without a confirmed subscription")
+        await refusing
 
-    with pytest.raises(PlaceStoreError):
-        served(serving)
+    served(scenario())
 
 
 def test_a_later_subscription_resyncs_each_stream_and_writes_one_renewed_line_each_time(
@@ -297,14 +270,12 @@ def test_a_later_subscription_resyncs_each_stream_and_writes_one_renewed_line_ea
     assert watching_the_standing.updated_uris == [STANDING_URI] * 2
 
 
-@pytest.mark.parametrize("how", ["raises", "ends"])
 def test_a_subscription_that_fails_later_ends_the_open_listens_and_answers_503_before_resolving(
     app: MemberApp,
     alice: Principal,
     place_store: PlaceStoreFake,
     changes: ResourceChanges,
     caplog: pytest.LogCaptureFixture,
-    how: str,
 ) -> None:
     caplog.set_level(logging.ERROR, logger=LOGGER_NAME)
     resolved: list[Principal] = []
@@ -319,7 +290,7 @@ def test_a_subscription_that_fails_later_ends_the_open_listens_and_answers_503_b
     async def scenario() -> list[int]:
         async with front.running(), open_stream(listening):
             resolved_before = len(resolved)
-            failing_with(place_store, how)()
+            place_store.fail_subscriptions(PlaceStoreError("the subscription was refused"))
             await settled()
             statuses = [
                 (await post(front, alice, rpc_body("tools/list")))[0]["status"] for _ in range(2)
@@ -343,7 +314,7 @@ def test_a_subscription_failing_for_good_writes_one_error_line_with_the_type_of_
 
     async def scenario() -> None:
         async with front.running():
-            place_store.fail(refusal)
+            place_store.fail_subscriptions(refusal)
             await settled()
 
     served(scenario())
@@ -371,7 +342,7 @@ def test_a_listen_that_passed_the_dead_check_before_the_subscription_failed_open
         async with front.running():
             serving = asyncio.create_task(connection.run())
             await settled()
-            place_store.fail(PlaceStoreError("the subscription was refused"))
+            place_store.fail_subscriptions(PlaceStoreError("the subscription was refused"))
             await settled()
             request_released.set()
             await serving

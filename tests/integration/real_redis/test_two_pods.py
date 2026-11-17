@@ -29,7 +29,7 @@ from tandem.keys import deadline_keys
 
 from agents.mcp_server import ResourceChanges
 from agents.mcp_server.listen import LAPSE_POLL_SECONDS
-from agents.mcp_server.place_store import LapseRun, ListeningTurn, ResourceChange, Resubscribed
+from agents.mcp_server.place_store import LapseRun, ListeningTurn, ResourceChange
 from agents.mcp_server.redis_place_store import CLAIM_FOR, RedisPlaceStore
 from agents.mcp_wire import MCP_ENDPOINT_PATH
 from agents.member import LISTEN_ALLOWANCE_SECONDS, LISTEN_BOUND_SECONDS, STANDING_URI
@@ -49,6 +49,7 @@ from tests.support.real_redis_pods import POD_A_USER, PREFIX, WAIT_SECONDS, Pod,
 from tests.support.redis_listen_support import (
     UNUSUAL_PRINCIPALS,
     UNUSUAL_URIS,
+    Resynced,
     delivered_up_to,
     eventually,
     namespace_of,
@@ -356,8 +357,8 @@ def test_a_claim_its_pod_cannot_finish_is_lapsed_by_another_pod_once_the_claim_r
     yes = ListeningTurn(WRITTEN_MEMBER, STANDING_URI, listens=True)
     no = ListeningTurn(WRITTEN_MEMBER, STANDING_URI, listens=False)
     assert listed_while_claimed == frozenset({WRITTEN_MEMBER})
-    assert before == [Resubscribed(), yes, _FIRST_BARRIER]
-    assert after == [Resubscribed(), yes, _FIRST_BARRIER, no, _SECOND_BARRIER]
+    assert before == [Resynced(), yes, _FIRST_BARRIER]
+    assert after == [Resynced(), yes, _FIRST_BARRIER, no, _SECOND_BARRIER]
     assert admin.keys("*") == []
 
 
@@ -380,7 +381,7 @@ def test_a_lapsed_stream_leaves_no_member_whatever_its_principal_and_uri_hold(
     seen, listens, listeners = asyncio.run(scenario())
 
     assert seen == [
-        Resubscribed(),
+        Resynced(),
         ListeningTurn(principal, uri, listens=True),
         ListeningTurn(principal, uri, listens=False),
         _FIRST_BARRIER,
@@ -434,7 +435,7 @@ def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_counts_the_
 
     assert after == before
     assert seen == [
-        Resubscribed(),
+        Resynced(),
         ListeningTurn(alice, STANDING_URI, listens=True),
         _FIRST_BARRIER,
         _SECOND_BARRIER,

@@ -218,7 +218,7 @@ def test_another_pod_calls_yes_on_its_signal_task_and_no_once_the_allowance_has_
     app: MemberApp,
     alice: Principal,
 ) -> None:
-    front_b, host_b = a_front(app, place_store.shared.pod())
+    front_b, host_b = a_front(app, place_store)
     connection = listen_connection(signalling_front, alice, [STANDING_URI])
 
     async def scenario() -> None:
@@ -400,7 +400,7 @@ def test_a_failing_acknowledgement_answers_the_fixed_text_and_calls_nothing_on_t
         (True, "signal"),
         (False, "signal"),
     ]
-    assert "ended" in place_store.shared.stream_calls
+    assert "ended" in place_store.stream_calls
     failed = log_lines.one("listen_acknowledgement.ended")
     assert (
         failed["outcome"],
@@ -488,7 +488,7 @@ def test_a_listen_whose_task_is_cancelled_still_ends_its_stream_in_the_store(
 
     served(scenario())
 
-    assert place_store.shared.stream_calls == ["acknowledged", "ended"]
+    assert place_store.stream_calls == ["acknowledged", "ended"]
 
 
 @pytest.mark.parametrize(
@@ -641,7 +641,7 @@ def test_two_pods_and_one_acknowledgement_write_one_opened_line_and_one_lapsed_l
     log_lines: LogLines,
 ) -> None:
     front_a, _host_a = a_front(app, place_store)
-    front_b, _host_b = a_front(app, place_store.shared.pod())
+    front_b, _host_b = a_front(app, place_store)
     connection = listen_connection(front_a, alice, [STANDING_URI])
 
     async def scenario() -> None:
@@ -667,7 +667,7 @@ def test_a_listen_cancelled_as_the_front_stops_has_its_end_recorded_before_runni
             task = asyncio.create_task(connection.run())
             await settled()
             task.cancel()
-        return place_store.shared.stream_calls
+        return place_store.stream_calls
 
     assert served(scenario()) == ["acknowledged", "ended"]
 
