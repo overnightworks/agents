@@ -16,20 +16,28 @@ from agents.mcp_server.person import (
     ResolvePerson,
 )
 from agents.mcp_server.place_store import (
+    LapseRun,
     LeaseRenewal,
     LeaseRoster,
     LeaseStanding,
+    ListeningTurn,
+    PlaceSignal,
     PlaceStore,
     PlaceStoreError,
+    ResourceChange,
+    Resubscribed,
+    ToolsChange,
 )
 from agents.mcp_server.resources import MemberResources
 from agents.mcp_server.routes import RouteProfileError, RouteTools, route_tools
 
 __all__ = [
     "Heard",
+    "LapseRun",
     "LeaseRenewal",
     "LeaseRoster",
     "LeaseStanding",
+    "ListeningTurn",
     "McpPersonFront",
     "MemberHearing",
     "MemberLeases",
@@ -38,14 +46,18 @@ __all__ = [
     "PersonRequest",
     "PersonTool",
     "PersonToolHandler",
+    "PlaceSignal",
     "PlaceStore",
     "PlaceStoreError",
     "ResolvePerson",
+    "ResourceChange",
     "ResourceChanges",
+    "Resubscribed",
     "RouteProfileError",
     "RouteTools",
     "Sense",
     "SpokenLine",
+    "ToolsChange",
     "Utterance",
     "route_tools",
 ]
