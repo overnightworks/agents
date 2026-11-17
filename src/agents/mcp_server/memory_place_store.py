@@ -88,10 +88,13 @@ class InMemoryPlaceStore:
             follower.inbox.put_nowait(_RESYNC)
         following = asyncio.create_task(self._follow(follower, ready, entered))
         try:
+            deadline = asyncio.timeout(ready_within.total_seconds())
             try:
-                async with asyncio.timeout(ready_within.total_seconds()):
+                async with deadline:
                     await ready
             except TimeoutError as unconfirmed:
+                if not deadline.expired():
+                    raise
                 raise PlaceStoreError(
                     f"the subscription was not confirmed within {ready_within}"
                 ) from unconfirmed

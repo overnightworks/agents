@@ -89,6 +89,22 @@ def test_entering_raises_place_store_error_once_ready_within_passes_without_a_co
     assert following.calls == []
 
 
+def test_a_signal_published_while_the_subscription_is_unconfirmed_is_never_handled() -> None:
+    store = InMemoryPlaceStore(confirms_subscription=False)
+    following = Following(store)
+
+    async def scenario() -> None:
+        publishing = asyncio.create_task(store.publish(ToolsChange(_ALICE, _ANOTHER_POD)))
+        with pytest.raises(PlaceStoreError):
+            async with following.open():
+                pytest.fail("entered without a confirmation")
+        await publishing
+
+    in_virtual_time(scenario())
+
+    assert following.calls == []
+
+
 @pytest.mark.parametrize("ready_within", [timedelta(0), timedelta(seconds=-1)])
 def test_entering_with_a_ready_within_that_is_not_positive_raises_value_error(
     ready_within: timedelta,
@@ -188,6 +204,20 @@ def test_a_handler_that_raises_before_the_entry_returns_is_raised_out_of_the_ent
         in_virtual_time(scenario())
 
     assert following.failures == []
+
+
+def test_a_timeout_error_from_a_handler_before_the_entry_is_raised_as_it_is() -> None:
+    following = Following(InMemoryPlaceStore())
+    following.raise_in_resync = TimeoutError("the host's resync timed out")
+
+    async def scenario() -> None:
+        async with following.open():
+            pytest.fail("entered although the first resync raised")
+
+    with pytest.raises(TimeoutError, match="the host's resync timed out") as raised:
+        in_virtual_time(scenario())
+
+    assert not isinstance(raised.value, PlaceStoreError)
 
 
 def test_a_subscription_that_fails_after_the_entry_calls_on_failed_once_with_the_failure() -> None:
