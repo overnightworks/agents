@@ -1,0 +1,29 @@
+[[code]]
+path = "src/agents/voice/loop.py"
+item = "#803"
+reason = "The voice loop; no app runs it yet: presentator#944, presentator#109 and hopin#630 move onto it."
+
+[[code]]
+path = "src/agents/voice/conversation.py"
+item = "#803"
+reason = "The loop's decision window; only the loop builds a Conversation."
+
+[[code]]
+path = "src/agents/voice/echo.py"
+item = "#803"
+reason = "The echo rule; only the loop calls it."
+
+[[code]]
+path = "src/agents/voice/wake.py"
+item = "#803"
+reason = "The standard wake rule a host passes to the loop."
+
+[[code]]
+path = "src/agents/mcp_server/leases.py"
+item = "#939"
+reason = "MemberLeases; hopin#828 F5 and skat#592 S6 build their lease supervision on it."
+
+[[code]]
+path = "src/agents/member.py"
+item = "overnightworks/skat#581"
+reason = "The set_turn_state tool and its records; Skat shows each agent's stated turn state."
