@@ -86,12 +86,11 @@ jobs:
         run: |
           previous_tag=$({ git tag --list 'v*'; echo "v${VERSION}"; } | sort -V -u \
             | awk -v me="v${VERSION}" '$0 == me { print previous; exit } { previous = $0 }')
-          previous_snapshot=-
-          if [ -n "$previous_tag" ] && git show "${previous_tag}:scripts/member-tool-wire.json" \
-            > "${RUNNER_TEMP}/previous-member-tool-wire.json" 2> /dev/null; then
-            previous_snapshot="${RUNNER_TEMP}/previous-member-tool-wire.json"
+          previous_snapshot=
+          if [ -n "$previous_tag" ]; then
+            previous_snapshot=$(git show "${previous_tag}:scripts/member-tool-wire.json" 2> /dev/null || true)
           fi
-          wire_line=$(python3 scripts/member_tool_wire_diff.py "$previous_snapshot" scripts/member-tool-wire.json)
+          wire_line=$(printf '%s' "$previous_snapshot" | python3 scripts/member_tool_wire_diff.py)
           {
             echo 'install<<INSTALL_LINES'
             echo '**Install.** Pin the git tag.'

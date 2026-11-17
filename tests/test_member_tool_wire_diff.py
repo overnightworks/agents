@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import runpy
 from pathlib import Path
@@ -18,10 +19,8 @@ BASE: Tools = {
 }
 
 
-def snapshot(directory: Path, name: str, tools: Tools) -> Path:
-    path = directory / name
-    path.write_text(json.dumps({"version": 1, "tools": tools}), encoding="utf-8")
-    return path
+def snapshot(tools: Tools) -> str:
+    return json.dumps({"version": 1, "tools": tools})
 
 
 @pytest.mark.parametrize(
@@ -51,29 +50,25 @@ def snapshot(directory: Path, name: str, tools: Tools) -> Path:
     ],
 )
 def test_the_line_names_the_tools_that_differ_from_the_previous_snapshot(
-    tmp_path: Path, current: Tools, line: str
+    current: Tools, line: str
 ) -> None:
-    previous = snapshot(tmp_path, "previous.json", BASE)
-
-    assert diff.note_line(previous, snapshot(tmp_path, "current.json", current)) == line
+    assert diff.note_line(snapshot(BASE), snapshot(current)) == line
 
 
-def test_without_a_previous_snapshot_the_wire_counts_as_changed(tmp_path: Path) -> None:
-    current = snapshot(tmp_path, "current.json", BASE)
-
-    assert diff.note_line(None, current) == (
+def test_without_a_previous_snapshot_the_wire_counts_as_changed() -> None:
+    assert diff.note_line(None, snapshot(BASE)) == (
         "**Member-tool wire:** changed (the previous release has no snapshot to compare)."
     )
 
 
 def test_run_as_a_script_it_prints_exactly_the_line(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    current = snapshot(tmp_path, "current.json", BASE)
-    monkeypatch.setattr("sys.argv", ["member_tool_wire_diff.py", "-", str(current)])
+    script = str(Path(diff.__file__).resolve())
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
 
     with pytest.raises(SystemExit) as raised:
-        runpy.run_path(str(Path(diff.__file__).resolve()), run_name="__main__")
+        runpy.run_path(script, run_name="__main__")
 
     assert raised.value.code == 0
     assert capsys.readouterr().out == (
