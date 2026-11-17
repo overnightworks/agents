@@ -1,8 +1,0 @@
-claim_id = "ed534a85e09643109c911f60bc80ab6f"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "c97839d985692f8de0c4b16c3da8621c7e500ee9"
-branch = "claude/issue-1009-place-store-on-following"
-scope = ["README.md", "docs/connector.md", "pyproject.toml", "quality/config.toml", "src/agents/mcp_server", "tests", "uv.lock"]
-opened_commit = "9c55881dc7516c4aefa3ff10791bc346228d02d7"
-whole_reason = "The PlaceStore port moves onto tandem 0.9 following and its in-memory implementation becomes public in one breaking release, with the logline cap that tandem 0.9.1 needs, so hosts move once."
