@@ -179,7 +179,7 @@ seat unmarked; that is the app's own failure, not this rule's.
 A **look** is how an agent appears at a place: a 3D figure or a picture a video service renders. In
 `agents`, "look" means only this.
 
-**CALLING-41.** An accept may carry `looks` (`agents.member`), the agent's looks, first choice
+**CALLING-41.** An accept may carry `looks` (`agents.member`), the agent's looks, at least one, first choice
 first: a figure look `{kind: "figure", url, sha256, gestures}` or a video look
 `{kind: "video", name}`, the name 1 to 64 ASCII letters of either case, digits, `.`, `_` or `-`. At
 most one look is a figure and no video name stands twice. The record checks only that form. The app
