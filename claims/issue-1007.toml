@@ -3,6 +3,6 @@ agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
 role = "builder"
 base = "6ac097a14afa301e8b2b555d9925164bd760f631"
 branch = "claude/issue-1007-docs-truth"
-scope = ["AGENTS.md", "README.md", "docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "pyproject.toml"]
+scope = ["AGENTS.md", "README.md", "docs/ARCHITECTURE.md", "docs/calling.md", "docs/connector.md", "docs/hearing.md", "pyproject.toml"]
 opened_commit = "95c050c5d84e33935c09c1286685d7b3193a2ff4"
 whole_reason = "One truth pass over the agent and human documents; each fix is a sentence."
