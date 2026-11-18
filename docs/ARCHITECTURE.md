@@ -134,8 +134,9 @@ section; tools and MCP handlers are ports. Nothing defaults; a malformed value f
 - *The person front trusts the host's gate.* It carries no credential check of its own and
   withholds any answer that carries the request's own bearer.
 - *A standing's parent place and a member's stated turn state grant nothing.* The place comes from
-  the inviter's page and at most makes an agent accept an unrelated place; the state is a closed
-  enum (`StopOutcome`) that affects only how the member is shown.
+  the inviter's page and at most makes an agent accept an unrelated place; the state is either a
+  closed outcome (`StopOutcome`) or a running turn (`thinking`), which is no outcome; both affect
+  only how the member is shown.
 
 **Proof strategy.** Behaviour is proven through real entry points: `GatewayBackend.run` against
 `FakeGateway`'s scripted transport, `load_agent` against files, and the person front as an ASGI app
