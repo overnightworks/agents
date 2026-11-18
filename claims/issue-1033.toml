@@ -1,8 +1,0 @@
-claim_id = "089ebe8eb7914d23941522666dd9e1e5"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "e9990ec0059a7972224c3b3e190aac9d15904ba8"
-branch = "claude/issue-1033-thinking-turn-state"
-scope = ["docs/ARCHITECTURE.md", "docs/calling.md", "docs/connector.md", "scripts/member-tool-wire.json", "src/agents/member.py", "tests/test_mcp_server_member_arguments.py", "tests/test_member.py"]
-opened_commit = "8ee26cda84aa1c5430c0bc6ff186ef1f1ad60127"
-whole_reason = "One field of one member record, with its rule lines, its docs and the generated wire snapshot."
