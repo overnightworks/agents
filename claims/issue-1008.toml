@@ -3,6 +3,6 @@ agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
 role = "builder"
 base = "9443ce39616619a141e46bf729f3f54548f2f877"
 branch = "claude/issue-1008-resource-wire-guard"
-scope = ["docs/connector.md", "scripts", "src/agents/member.py", "tests"]
+scope = ["AGENTS.md", "docs/connector.md", "scripts", "src/agents/mcp_server/resources.py", "src/agents/member.py", "tests"]
 opened_commit = "17f6cd9e5edb7460784f8adc98c52c01e0e25596"
 whole_reason = "The snapshot, its diff and the record list it reads are one capability."
