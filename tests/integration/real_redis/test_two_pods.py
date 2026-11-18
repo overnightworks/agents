@@ -336,13 +336,13 @@ def test_a_claim_its_pod_cannot_finish_is_lapsed_by_another_pod_once_the_claim_r
         async with subscribed(store_b) as events:
             await store_b.acknowledged("stream", WRITTEN_MEMBER, [STANDING_URI], _OPEN)
             await store_b.ended("stream", timedelta(0))
-            await store_a.lapse_due("a")
-            await store_b.lapse_due("b")
+            await store_a.lapse_due()
+            await store_b.lapse_due()
             listed_while_claimed = await store_b.listeners(STANDING_URI)
             before = await delivered_up_to(store_b, events, _FIRST_BARRIER)
 
             async def lapsed() -> bool:
-                await store_b.lapse_due("b")
+                await store_b.lapse_due()
                 return not await store_b.listeners(STANDING_URI)
 
             await eventually(lapsed, seconds=CLAIM_FOR.total_seconds() + _SECONDS_PAST_THE_CLAIM)
@@ -371,7 +371,7 @@ def test_a_lapsed_stream_leaves_no_member_whatever_its_principal_and_uri_hold(
         store = a_store(redis_url)
         async with subscribed(store) as events:
             await store.acknowledged("stream", principal, [uri], timedelta(0))
-            await store.lapse_due("pod")
+            await store.lapse_due()
             return (
                 await delivered_up_to(store, events, _FIRST_BARRIER),
                 await store.listens_to(principal, uri),
@@ -419,7 +419,7 @@ def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_counts_the_
             runs: list[LapseRun] = []
 
             async def claimed() -> bool:
-                runs.append(await store.lapse_due("pod"))
+                runs.append(await store.lapse_due())
                 return bool(
                     admin.zscore(deadline_keys(f"{PREFIX}-agents", "listen").claimed, "held")
                 )

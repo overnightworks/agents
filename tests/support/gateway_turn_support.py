@@ -181,7 +181,6 @@ def a_gateway_config(directory: Path) -> AgentConfig:
     key_file.write_text(f"{GATEWAY_KEY}\n")
     return AgentConfig.model_validate(
         {
-            "backend": "litellm",
             "api_group": API_GROUP,
             "gateway": {"origin": GATEWAY_ORIGIN, "key_file": str(key_file)},
         }
@@ -210,7 +209,7 @@ class Scenario:
         gateway = {"origin": origin, "key_file": str(key_file)}
         if ca_file is not None:
             gateway["ca_file"] = str(ca_file)
-        section = {"backend": "litellm", "gateway": gateway, "api_group": self.api_group}
+        section = {"gateway": gateway, "api_group": self.api_group}
         return AgentConfig.model_validate(section)
 
     def person(self, groups=None, *, iss=None, sub=None, role="user"):

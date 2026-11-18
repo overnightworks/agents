@@ -385,9 +385,9 @@ class RedisPlaceStore:
         texts = {member.split("\n")[1] for member in await self._members_of(f"{uri}\n", -1)}
         return frozenset(_principal_from(text) for text in texts)
 
-    async def lapse_due(self, claimer: str) -> LapseRun:
+    async def lapse_due(self) -> LapseRun:
         with _store_errors():
-            claims = await self._deadlines.claim_due(claimer=claimer, limit=_LAPSE_BATCH)
+            claims = await self._deadlines.claim_due(limit=_LAPSE_BATCH)
         turns: list[ListeningTurn] = []
         lapsed = failed = 0
         last_error_type: str | None = None
@@ -429,14 +429,12 @@ class RedisPlaceStore:
             settled=roster.settled,
         )
 
-    async def serve_lapses(
-        self, handle: Callable[[Principal, str], Awaitable[None]], *, claimer: str
-    ) -> NoReturn:
+    async def serve_lapses(self, handle: Callable[[Principal, str], Awaitable[None]]) -> NoReturn:
         async def hand_over(lapse: Lapse) -> None:
             await handle(_principal_from(lapse.holder), lapse.generation)
 
         with _store_errors():
-            await self._leases.serve_lapses(hand_over, claimer=claimer, every=_LEASE_SWEEP_EVERY)
+            await self._leases.serve_lapses(hand_over, every=_LEASE_SWEEP_EVERY)
 
     async def _lapsed_turns(self, stream: str) -> list[ListeningTurn]:
         reply = await self._lapse.run(

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Final, Self
 
@@ -16,12 +15,6 @@ _ORIGIN: Final = re.compile(
     r"(https?)://(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::(\d+))?", re.ASCII | re.IGNORECASE
 )
 _HOST_LABEL: Final = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
-
-
-class BackendKind(StrEnum):
-    """Which backend an app runs its agent turns through."""
-
-    LITELLM = "litellm"
 
 
 def _is_host(host: str) -> bool:
@@ -74,13 +67,12 @@ class ChatGateway(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    """What an app tells its backend: which backend, its gateway and its API group.
+    """What an app tells its backend: its gateway and its API group.
 
     Every field is a host fact, so none has a default and a malformed value fails loud.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    backend: BackendKind
     gateway: ChatGateway
     api_group: NonEmptyUnicodeText
