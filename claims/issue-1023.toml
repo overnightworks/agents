@@ -1,8 +1,0 @@
-claim_id = "f65b808aae1e4ddb966d1a1685aeb75e"
-agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
-role = "builder"
-base = "87461c359a355ef9162ff133230ca480c000d1b5"
-branch = "claude/issue-1023-tandem-0-12-bundle"
-scope = ["README.md", "docs/connector.md", "pyproject.toml", "src/agents/backend", "src/agents/config.py", "src/agents/mcp_server", "src/agents/tools.py", "tests", "uv.lock"]
-opened_commit = "2139311447ed5d070d0d29d2ab279877b43d2825"
-whole_reason = "One breaking release so hosts move once: the tandem 0.12 port change, the dropped backend setting and model list, and the dropped retry flag, with the logline cap."
