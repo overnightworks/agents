@@ -161,7 +161,7 @@ def test_the_turns_of_the_listen_record_reach_the_subscriptions_in_the_order_the
             await store.acknowledged("first", _ALICE, [STANDING_URI], _HOLDS)
             await store.acknowledged("second", _ALICE, [STANDING_URI], _HOLDS)
             await asyncio.sleep(_HOLDS.total_seconds())
-            await store.lapse_due("pod")
+            await store.lapse_due()
             await settled()
 
     in_virtual_time(scenario())
@@ -269,7 +269,7 @@ def test_a_stream_is_listened_to_until_it_ends_and_its_allowance_runs_out() -> N
         await store.ended("stream", timedelta(seconds=5))
         await store.ended("stream", _HOLDS)
         await asyncio.sleep(5)
-        run = await store.lapse_due("pod")
+        run = await store.lapse_due()
         answers += [run.stream_count, await store.listens_to(_ALICE, STANDING_URI)]
         return answers
 

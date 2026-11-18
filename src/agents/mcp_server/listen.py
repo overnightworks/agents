@@ -251,7 +251,7 @@ class ResourceChanges:
         step = StepTimer("listen_lapse.ended", _LOG)
         step.handled()
         try:
-            run = await self._store.lapse_due(self._origin)
+            run = await self._store.lapse_due()
         except Exception as failure:
             step.add(last_error_type=failure_type(failure))
             step.fail("store_failed")

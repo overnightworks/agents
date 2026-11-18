@@ -157,7 +157,6 @@ def test_a_round_that_streams_text_then_fails_leaves_the_text_shown_and_runs_not
         PROVIDER_ERROR,
         [],
     )
-    assert not stopped.after_side_effect
     assert transport.closed.is_set()
 
 
@@ -293,7 +292,6 @@ def test_a_call_of_a_round_that_is_not_complete_runs_no_handler(scenario, body):
     events, stopped = drive(scenario, Streamed((body,)), lookup)
 
     assert (events, lookup.seen) == ([], [])
-    assert not stopped.after_side_effect
     assert stopped.kind is TurnStopKind.FAILED
 
 

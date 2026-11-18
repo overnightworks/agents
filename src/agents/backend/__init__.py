@@ -63,14 +63,12 @@ class TurnStopped(Exception):
         code: RejectionCode | FailureCode,
         *,
         retry_after_s: int | None = None,
-        after_side_effect: bool = False,
         detail: str | None = None,
     ) -> None:
         super().__init__(f"{kind.value}: {code.value}")
         self.kind = kind
         self.code = code
         self.retry_after_s = retry_after_s
-        self.after_side_effect = after_side_effect
         self.detail = detail
 
     @property

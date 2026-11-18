@@ -13,10 +13,10 @@ HTTPS_GATEWAY = {
     "key_file": "/run/secrets/key",
     "ca_file": "/run/secrets/ca.pem",
 }
-SECTION = {"backend": "litellm", "gateway": GATEWAY, "api_group": "/apps/example"}
+SECTION = {"gateway": GATEWAY, "api_group": "/apps/example"}
 
 
-def test_the_litellm_backend_with_a_gateway_and_group_builds():
+def test_a_gateway_and_a_group_build():
     config = AgentConfig.model_validate(SECTION)
 
     assert config.gateway.origin == "http://gateway.test:4000"
@@ -33,9 +33,7 @@ def test_a_http_or_https_origin_builds(gateway):
 @pytest.mark.parametrize(
     "section",
     [
-        pytest.param({**SECTION, "backend": "service"}, id="service-backend"),
-        pytest.param({**SECTION, "backend": "x"}, id="unknown-backend"),
-        pytest.param({**SECTION, "backend": None}, id="null-backend"),
+        pytest.param({**SECTION, "backend": "litellm"}, id="backend-key"),
         pytest.param({**SECTION, "service_url": "http://agent.test"}, id="service-url"),
         pytest.param({**SECTION, "workload_scope": "agent"}, id="workload-scope"),
         pytest.param({**SECTION, "api_group": ""}, id="empty-api-group"),
@@ -46,7 +44,7 @@ def test_a_malformed_section_fails_loud(section):
         AgentConfig.model_validate(section)
 
 
-@pytest.mark.parametrize("missing", ["backend", "gateway", "api_group"])
+@pytest.mark.parametrize("missing", ["gateway", "api_group"])
 def test_a_missing_host_fact_fails_loud(missing):
     section = {name: value for name, value in SECTION.items() if name != missing}
 

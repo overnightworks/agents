@@ -74,11 +74,6 @@ def picture(content: bytes) -> Reply:
     return Reply(body=json.dumps({"data": [entry]}).encode())
 
 
-def model_list(*ids: str) -> Reply:
-    """A 200 model list that offers these ids."""
-    return Reply(body=json.dumps({"data": [{"id": model_id} for model_id in ids]}).encode())
-
-
 class FakeGateway(httpx2.AsyncBaseTransport):
     def __init__(self, *replies: Reply) -> None:
         if not replies:

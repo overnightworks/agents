@@ -58,11 +58,8 @@ _RECORD_DEFINITIONS: Final = "#/$defs/"
 
 
 class ToolEffect(StrEnum):
-    """Whether running a tool can change state outside the run.
-
-    The effect class decides ``TurnStopped.after_side_effect``: a turn that ended
-    after a side-effecting call started tells the app it may have written.
-    """
+    """Whether running a tool can change state outside the run, as the MCP person front hints it
+    to a client and checks it against the route's HTTP method."""
 
     READ_ONLY = "read_only"
     SIDE_EFFECTING = "side_effecting"
@@ -71,10 +68,9 @@ class ToolEffect(StrEnum):
 class ToolDeclaration(BaseModel):
     """One tool as a model sees it: its name, its purpose, its arguments.
 
-    ``effect`` is for the host, not the model: ``GatewayBackend`` reads it for
-    ``after_side_effect``, and the gateway projection picks its fields explicitly, so it never
-    reaches a prompt. It defaults to side-effecting because a tool nobody classified must be
-    assumed to change state.
+    ``effect`` is for the host, not the model: the gateway projection picks its fields explicitly,
+    so it never reaches a prompt. It defaults to side-effecting because a tool nobody classified
+    must be assumed to change state.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

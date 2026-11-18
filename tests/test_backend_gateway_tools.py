@@ -170,7 +170,6 @@ def test_a_round_that_is_not_whole_runs_nothing_and_shows_nothing(shop, bad_roun
     events, stopped, gateway = shop.run(bad_round, completion("never"))
 
     assert ending(stopped) == PROVIDER_ERROR
-    assert not stopped.after_side_effect
     assert (shop.seen, events, len(gateway.requests)) == ([], [], 1)
 
 
@@ -254,7 +253,6 @@ def test_an_unusable_outcome_of_a_side_effecting_handler_is_an_error_and_the_tur
     assert [type(event) for event in events] == [ToolCallEvent, ToolResultEvent]
     assert events[1].is_error
     assert ending(stopped) == BUSY
-    assert stopped.after_side_effect
 
 
 def test_a_raising_handler_is_a_failed_call_naming_its_class_only_and_the_model_gets_an_error(
@@ -342,29 +340,6 @@ def test_a_handler_that_fails_the_turn_is_a_failed_call_at_warning_and_ends_the_
     assert "credentials" not in log_lines.everything()
 
 
-@pytest.mark.parametrize(
-    ("effect", "handler_flag", "expected"),
-    [
-        (ToolEffect.SIDE_EFFECTING, False, True),
-        (ToolEffect.READ_ONLY, False, False),
-        (ToolEffect.READ_ONLY, True, True),
-    ],
-)
-def test_a_handler_that_stops_the_turn_leaves_after_side_effect_as_the_connector_promises(
-    shop, effect, handler_flag, expected
-):
-    async def refusing() -> ToolOutcome:
-        raise TurnStopped(
-            TurnStopKind.REFUSED, RejectionCode.FORBIDDEN, after_side_effect=handler_flag
-        )
-
-    shop.add_tool("lookup", effect=effect, answer=refusing)
-
-    _, stopped, _ = shop.run(tool_round(tool_call("c1", "lookup", {})), completion("never"))
-
-    assert stopped.after_side_effect is expected
-
-
 @pytest.mark.parametrize("image", [None, a_tool_image()], ids=["text", "image"])
 def test_a_returned_error_is_one_refused_line_with_the_name_and_id_never_arguments_or_content(
     shop, log_lines, image
@@ -417,10 +392,7 @@ def test_crossing_max_tool_calls_fails_with_limit_exceeded(shop, replies, calls_
     assert len(shop.seen) == calls_run
 
 
-@pytest.mark.parametrize("effect", list(ToolEffect))
-def test_a_deadline_during_a_handler_cancels_it_and_keeps_the_side_effect_state(
-    shop, effect, log_lines
-):
+def test_a_deadline_during_a_handler_cancels_it_and_ends_the_turn_at_the_limit(shop, log_lines):
     cancelled = []
 
     async def stuck() -> ToolOutcome:
@@ -432,14 +404,13 @@ def test_a_deadline_during_a_handler_cancels_it_and_keeps_the_side_effect_state(
             raise
         return ToolOutcome("never", is_error=False)
 
-    shop.add_tool("lookup", effect=effect, answer=stuck)
+    shop.add_tool("lookup", answer=stuck)
 
     events, stopped, gateway = shop.run(
         tool_round(tool_call("c1", "lookup", {})), completion("never")
     )
 
     assert ending(stopped) == LIMIT_EXCEEDED
-    assert stopped.after_side_effect is (effect is ToolEffect.SIDE_EFFECTING)
     assert cancelled == [True]
     assert [type(event) for event in events] == [ToolCallEvent]
     assert len(gateway.requests) == 1
@@ -458,7 +429,6 @@ def test_a_call_event_taken_past_the_deadline_starts_no_handler_and_leaves_no_re
     )
 
     assert ending(stopped) == LIMIT_EXCEEDED
-    assert not stopped.after_side_effect
     assert (shop.seen, [type(event) for event in events], len(gateway.requests)) == (
         [],
         [ToolCallEvent],
@@ -477,14 +447,13 @@ def test_a_deadline_that_passed_while_the_app_took_the_result_event_sends_no_nex
     )
 
     assert ending(stopped) == LIMIT_EXCEEDED
-    assert stopped.after_side_effect
     assert ([type(event) for event in events], len(gateway.requests)) == (
         [ToolCallEvent, ToolResultEvent],
         1,
     )
 
 
-def test_a_call_id_reused_in_a_later_round_refuses_that_round_and_keeps_the_side_effect_state(
+def test_a_call_id_reused_in_a_later_round_refuses_that_round_after_the_first_call_ran(
     shop,
 ):
     shop.add_tool("write", effect=ToolEffect.SIDE_EFFECTING)
@@ -496,38 +465,9 @@ def test_a_call_id_reused_in_a_later_round_refuses_that_round_and_keeps_the_side
     )
 
     assert ending(stopped) == PROVIDER_ERROR
-    assert stopped.after_side_effect
     assert len(shop.seen) == 1
     assert [type(event) for event in events] == [ToolCallEvent, ToolResultEvent]
     assert len(gateway.requests) == 2
-
-
-@pytest.mark.parametrize(
-    ("effect", "raises", "wrote"),
-    [
-        (ToolEffect.READ_ONLY, False, False),
-        (ToolEffect.SIDE_EFFECTING, False, True),
-        (ToolEffect.SIDE_EFFECTING, True, True),
-    ],
-    ids=["read-only", "side-effecting", "side-effecting-that-raised"],
-)
-def test_a_busy_gateway_at_round_two_reports_whether_a_call_may_have_written(
-    shop, effect, raises, wrote
-):
-    async def answer() -> ToolOutcome:
-        if raises:
-            raise RuntimeError("boom")
-        return ToolOutcome("noted", is_error=False)
-
-    shop.add_tool("lookup", effect=effect, answer=answer)
-
-    _, stopped, _ = shop.run(
-        tool_round(tool_call("c1", "lookup", {})), Reply(429, {"Retry-After": "7"})
-    )
-
-    assert ending(stopped) == BUSY
-    assert stopped.after_side_effect is wrote
-    assert stopped.retry_after_s == 7
 
 
 def test_cancelling_between_a_call_and_its_result_reaches_the_caller_unchanged(shop, log_lines):
@@ -566,7 +506,7 @@ def test_cancelling_between_a_call_and_its_result_reaches_the_caller_unchanged(s
 @pytest.mark.parametrize(
     ("extra_bytes", "reaches_the_model"), [(0, True), (1, False)], ids=["at-bound", "one-over"]
 )
-def test_a_tool_result_over_the_event_bound_is_replaced_and_the_side_effect_stands(
+def test_a_tool_result_over_the_event_bound_is_replaced_and_the_call_still_ran(
     shop, log_lines, extra_bytes, reaches_the_model
 ):
     async def big() -> ToolOutcome:
@@ -587,7 +527,6 @@ def test_a_tool_result_over_the_event_bound_is_replaced_and_the_side_effect_stan
     assert result.is_error is (not reaches_the_model)
     assert result.content in sent(gateway, 1)["messages"][-1]["content"]
     assert len(shop.seen) == 1
-    assert stopped.after_side_effect
 
 
 def test_repeated_large_results_stop_the_turn_before_a_request_over_the_bound(shop):
@@ -600,7 +539,6 @@ def test_repeated_large_results_stop_the_turn_before_a_request_over_the_bound(sh
     events, stopped, gateway = shop.run(*rounds, max_tool_calls=100)
 
     assert ending(stopped) == LIMIT_EXCEEDED
-    assert stopped.after_side_effect
     assert max(len(request.content) for request in gateway.requests) <= 4 * MAX_EVENT_BYTES
     assert len(gateway.requests) == len(shop.seen)
     assert len(events) == 2 * len(shop.seen)
@@ -681,7 +619,7 @@ def test_every_later_round_of_the_turn_resends_the_image(shop):
     ],
     ids=["text and image at the bound", "text and image one over", "an image alone at the bound"],
 )
-def test_an_image_result_over_the_event_bound_is_replaced_and_the_side_effect_stands(
+def test_an_image_result_over_the_event_bound_is_replaced_and_the_call_still_ran(
     shop, image_bytes, text_bytes, reaches_the_model
 ):
     image = a_tool_image(image_bytes)
@@ -700,7 +638,6 @@ def test_an_image_result_over_the_event_bound_is_replaced_and_the_side_effect_st
     assert result.is_error is (not reaches_the_model)
     assert isinstance(tool_message_of(gateway, 1)["content"], list) is reaches_the_model
     assert len(shop.seen) == 1
-    assert stopped.after_side_effect
 
 
 def test_two_full_size_images_and_a_third_stop_the_turn_before_a_request_over_the_bound(shop):

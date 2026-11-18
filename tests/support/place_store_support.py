@@ -115,12 +115,12 @@ class PlaceStoreFake(InMemoryPlaceStore):
             raise self.read_failure
         return await super().listeners(uri)
 
-    async def lapse_due(self, claimer: str) -> LapseRun:
+    async def lapse_due(self) -> LapseRun:
         if self.lapse_failure is not None:
             raise self.lapse_failure
         if self.lapse_item_failure is not None:
             return LapseRun(failed_count=1, last_error_type=self.lapse_item_failure)
-        return await super().lapse_due(claimer)
+        return await super().lapse_due()
 
 
 @dataclass
@@ -131,14 +131,14 @@ class LeaseRecordFake:
     is raised by the call that runs, at its next round. A ``handle`` that
     raises is recorded in ``handler_failures`` and its lapse stays due, as the store gives it again.
     ``failure`` makes ``renew``, ``state`` and ``live`` raise. ``serving`` is true while a call of
-    ``serve_lapses`` runs, and ``serve_calls`` holds the claimer of each.
+    ``serve_lapses`` runs, and ``serve_call_count`` counts them.
     """
 
     failure: PlaceStoreError | None = None
     serve_failures: list[Exception] = field(default_factory=list)
     fail_running: Exception | None = None
     handler_failures: list[Exception] = field(default_factory=list)
-    serve_calls: list[str] = field(default_factory=list)
+    serve_call_count: int = 0
     serving: bool = False
     _leases: dict[Principal, tuple[float, str]] = field(default_factory=dict)
     _lapses: list[tuple[Principal, str]] = field(default_factory=list)
@@ -173,10 +173,8 @@ class LeaseRecordFake:
             holders=frozenset(p for p, (due, _) in self._leases.items() if due > now), settled=True
         )
 
-    async def serve_lapses(
-        self, handle: Callable[[Principal, str], Awaitable[None]], *, claimer: str
-    ) -> NoReturn:
-        self.serve_calls.append(claimer)
+    async def serve_lapses(self, handle: Callable[[Principal, str], Awaitable[None]]) -> NoReturn:
+        self.serve_call_count += 1
         if self.serve_failures:
             raise self.serve_failures.pop(0)
         self.serving = True

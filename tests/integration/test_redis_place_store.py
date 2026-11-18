@@ -107,7 +107,7 @@ async def _published_in_a_trace(store: RedisPlaceStore, how: str, redis_clock: R
         case "a listen lapsed to no":
             await store.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            await store.lapse_due("pod-a")
+            await store.lapse_due()
 
 
 @pytest.mark.parametrize(
@@ -264,7 +264,7 @@ async def lapsed_at(
     """Whether the principal still listens ``seconds`` after the clock's start, once ``store`` ran
     its lapse."""
     clock.since_start(seconds)
-    await store.lapse_due("pod")
+    await store.lapse_due()
     return not await store.listens_to(listener, STANDING_URI)
 
 
@@ -313,7 +313,7 @@ def test_an_open_stream_that_never_ends_lapses_at_the_bound_plus_the_allowance_w
             await store_a.acknowledged("stream", _ALICE, [STANDING_URI], _OPEN)
             before = await lapsed_at(redis_clock, store_b, _ALICE, _OPEN.total_seconds() - 1)
             at_the_end = await lapsed_at(redis_clock, store_b, _ALICE, _OPEN.total_seconds())
-            await store_a.lapse_due("pod")
+            await store_a.lapse_due()
             return before, at_the_end, await delivered_up_to(store_b, events, _AFTER_EVERYTHING)
 
     before, at_the_end, seen = asyncio.run(scenario())
@@ -358,11 +358,11 @@ def test_ended_on_a_claimed_stream_leaves_the_claim_and_the_lapse_completes(
         )
         await store.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
         redis_clock.advance(_ALLOWANCE.total_seconds())
-        assert [due.key for due in await claims.claim_due(claimer="other", limit=1)] == ["stream"]
+        assert [due.key for due in await claims.claim_due(limit=1)] == ["stream"]
         await store.ended("stream", timedelta(0))
-        still_claimed = await claims.claim_due(claimer="other", limit=1)
+        still_claimed = await claims.claim_due(limit=1)
         redis_clock.advance(CLAIM_FOR.total_seconds())
-        await store.lapse_due("pod")
+        await store.lapse_due()
         return still_claimed, await store.listens_to(_ALICE, STANDING_URI)
 
     assert asyncio.run(scenario()) == ([], False)
@@ -401,9 +401,9 @@ def test_a_lapse_whose_claim_was_never_finished_is_done_again_by_the_next_claim_
         async with subscribed(store_b) as events:
             await store_b.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            first = await store_a.lapse_due("a")
+            first = await store_a.lapse_due()
             redis_clock.advance(CLAIM_FOR.total_seconds())
-            second = await store_b.lapse_due("b")
+            second = await store_b.lapse_due()
             return first, second, await delivered_up_to(store_b, events, _AFTER_EVERYTHING)
 
     first, second, seen = asyncio.run(scenario())
@@ -426,9 +426,9 @@ def test_a_lapse_returns_the_turns_it_published_and_the_count_of_the_streams_it_
         store = a_pod(server)
         await store.acknowledged("one", _ALICE, [STANDING_URI, first], _ALLOWANCE)
         await store.acknowledged("two", _ALICE, [STANDING_URI], _ALLOWANCE)
-        idle = await store.lapse_due("pod")
+        idle = await store.lapse_due()
         redis_clock.advance(_ALLOWANCE.total_seconds())
-        return idle, await store.lapse_due("pod")
+        return idle, await store.lapse_due()
 
     idle, lapsed = asyncio.run(scenario())
 
@@ -450,11 +450,11 @@ def test_a_pod_that_claimed_a_stream_and_lost_its_connection_leaves_it_to_the_ne
         async with subscribed(store_b) as events:
             await store_b.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            await store_a.lapse_due("a")
-            await store_b.lapse_due("b")
+            await store_a.lapse_due()
+            await store_b.lapse_due()
             still_listed = await store_b.listens_to(_ALICE, STANDING_URI)
             redis_clock.advance(CLAIM_FOR.total_seconds())
-            await store_b.lapse_due("b")
+            await store_b.lapse_due()
             return (
                 still_listed,
                 await store_b.listens_to(_ALICE, STANDING_URI),
@@ -530,14 +530,14 @@ def test_a_new_stream_of_the_same_principal_and_uri_decides_whether_an_old_ones_
             redis_clock.advance(_ALLOWANCE.total_seconds())
             if new_stream_comes == "before the claim":
                 await store_a.acknowledged("new", _ALICE, [STANDING_URI], _OPEN)
-                await store_b.lapse_due("b")
+                await store_b.lapse_due()
             elif new_stream_comes == "between the claim and the lapse":
-                await claims.claim_due(claimer="other", limit=1)
+                await claims.claim_due(limit=1)
                 await store_a.acknowledged("new", _ALICE, [STANDING_URI], _OPEN)
                 redis_clock.advance(CLAIM_FOR.total_seconds())
-                await store_b.lapse_due("b")
+                await store_b.lapse_due()
             else:
-                await store_b.lapse_due("b")
+                await store_b.lapse_due()
                 await store_a.acknowledged("new", _ALICE, [STANDING_URI], _OPEN)
             return (
                 await store_b.listens_to(_ALICE, STANDING_URI),
@@ -590,7 +590,7 @@ def test_a_lapsed_stream_leaves_no_key_and_no_member_whatever_its_principal_and_
             await store.acknowledged("stream", principal, [uri], _ALLOWANCE)
             written = sorted(key.decode() for key in await raw.keys("*"))
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            await store.lapse_due("pod")
+            await store.lapse_due()
             return (
                 await delivered_up_to(store, events, _AFTER_EVERYTHING),
                 written,
@@ -621,7 +621,7 @@ def test_a_lapsed_stream_leaves_no_key_and_no_member_whatever_its_principal_and_
         pytest.param(lambda store: store.ended("s", _ALLOWANCE), id="ended"),
         pytest.param(lambda store: store.listens_to(_ALICE, STANDING_URI), id="listens_to"),
         pytest.param(lambda store: store.listeners(STANDING_URI), id="listeners"),
-        pytest.param(lambda store: store.lapse_due("pod"), id="lapse_due"),
+        pytest.param(lambda store: store.lapse_due(), id="lapse_due"),
     ],
 )
 def test_a_failing_store_raises_place_store_error_from_every_call_of_the_record(
@@ -749,7 +749,7 @@ def test_a_lapse_that_cannot_read_the_record_writes_nothing_counts_the_failure_a
             await delivered_up_to(store, events, _BEFORE_THE_LAPSE)
             await damage(raw)
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            run = await store.lapse_due("pod")
+            run = await store.lapse_due()
             seen = await delivered_up_to(store, events, _AFTER_THE_LAPSE)
             claimed = await raw.zrange(key_names(raw)["claimed"], 0, -1)
             return around_scripts[-1], seen, claimed, run

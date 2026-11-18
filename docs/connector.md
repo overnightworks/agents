@@ -36,21 +36,21 @@ Proved by `tests/test_agent_file.py`: `test_request_carries_the_files_prompt_mod
 `tests/test_backend_port.py`: `test_a_turn_person_is_not_constructible_without_a_principal`.
 
 A turn ends short of its answer with one exception, `TurnStopped(kind, code, retry_after_s,
-after_side_effect, detail)`: `refused` carries a `RejectionCode`, `failed` a `FailureCode`. A cancel
-reaches the caller as `CancelledError`. `after_side_effect` is true once a side-effecting tool call
-started in the turn, whatever ended it, `refused: busy` included, so an app does not retry a turn
-that may have written. Proved by `tests/test_backend_gateway_tools.py`:
-`test_a_busy_gateway_at_round_two_reports_whether_a_call_may_have_written`.
+detail)`: `refused` carries a `RejectionCode`, `failed` a `FailureCode`. A cancel reaches the
+caller as `CancelledError`. The library never re-runs a turn: a re-run is a new turn that the app
+or the person starts, and what the stopped turn already yielded stays shown. A host that re-runs
+one by itself knows what its own tools did, and what it did from the events it was given, which
+the library cannot know.
 
 `TurnStopped.outcome` is what the stop means to a person, a `StopOutcome` derived from the code and
 never stored beside it:
 
-| Code | Outcome |
-| --- | --- |
-| `refused: not_enabled`, `refused: forbidden` | `not_enabled` |
-| `refused: busy` | `busy` |
-| `refused: budget_spent` | `budget_spent` |
-| every `failed` code | `unavailable` |
+| Code | Outcome | Whether a retry can help |
+| --- | --- | --- |
+| `refused: not_enabled`, `refused: forbidden` | `not_enabled` | no, until the person's access changes |
+| `refused: busy` | `busy` | yes, after `retry_after_s`, or after the app's own fallback when the gateway gave none |
+| `refused: budget_spent` | `budget_spent` | no, until the budget changes |
+| every `failed` code | `unavailable` | maybe, later: the library and the gateway retry nothing |
 
 `retry_after_s` comes only with `busy`, as the gateway gave it; the outcome never changes it. Proved
 by `tests/test_backend_port.py`: `test_every_stop_code_has_exactly_its_outcome`,
@@ -121,11 +121,11 @@ that ends with `TurnStopped` reports none, though its rounds were paid. Proved b
 `test_a_turn_that_stops_after_a_paid_round_yields_what_it_yields_without_usage`.
 
 The app's configuration embeds `agents.config.AgentConfig` as the `agent` section:
-`backend` (`litellm`, the one value), `gateway` and `api_group`, none with a default.
+`gateway` and `api_group`, none with a default; any other key, a `backend` one included, is refused.
 `ChatGateway` is `origin` (scheme, host and optional port; no path, query, fragment or
 userinfo), `key_file` and `ca_file`, both absolute paths. `ca_file` is required for HTTPS and
 forbidden for HTTP. A missing or malformed value fails loud. Proved by
-`tests/test_backend_config.py`: `test_a_missing_host_fact_fails_loud`,
+`tests/test_backend_config.py`: `test_a_missing_host_fact_fails_loud`, `test_a_malformed_section_fails_loud`,
 `test_a_malformed_origin_fails_loud`, `test_a_malformed_file_setting_fails_loud`.
 
 ### What every app does the same
@@ -184,7 +184,7 @@ body as the prompt.
 
 `agents.tools.ToolDeclaration` is the one declaration of a tool: name,
 description, arguments and a `ToolEffect`, `read_only` or `side_effecting`. The effect is for the
-host (`GatewayBackend` reads it for `after_side_effect`) and never reaches a prompt; it defaults
+host (the person front reads it for the MCP read-only hint) and never reaches a prompt; it defaults
 to side-effecting, because a tool nobody classified must be assumed to change state. Proved by
 `test_the_request_carries_only_model_messages_user_stream_options_and_tools_without_the_effect` in
 `tests/test_backend_gateway_tools.py`.
@@ -248,7 +248,7 @@ round and handler included; past it the turn `failed: limit_exceeded` and a runn
 cancelled. A stream that stalls ends at the deadline, and an app that pulls the next event after it
 gets `failed: limit_exceeded` with no further read. Proved by `tests/test_backend_gateway.py`:
 `test_a_transport_that_never_answers_ends_at_the_limit`; in `tests/test_backend_gateway_tools.py`,
-`test_a_deadline_during_a_handler_cancels_it_and_keeps_the_side_effect_state`; and in
+`test_a_deadline_during_a_handler_cancels_it_and_ends_the_turn_at_the_limit`; and in
 `tests/test_backend_gateway_stream.py`,
 `test_a_gateway_that_stalls_after_a_piece_ends_the_turn_at_the_deadline` and
 `test_an_app_that_pulls_after_the_deadline_gets_limit_exceeded_and_nothing_more_is_read`.
@@ -324,7 +324,7 @@ not a JSON object, an empty round or a call id used twice in the turn refuses th
 `max_tool_calls` ends `failed: limit_exceeded` the same way. Proved by
 `tests/test_backend_gateway_tools.py`: `test_a_round_that_is_not_whole_runs_nothing_and_shows_nothing`,
 `test_a_call_to_a_tool_the_agent_did_not_select_is_refused`,
-`test_a_call_id_reused_in_a_later_round_refuses_that_round_and_keeps_the_side_effect_state` and
+`test_a_call_id_reused_in_a_later_round_refuses_that_round_after_the_first_call_ran` and
 `test_crossing_max_tool_calls_fails_with_limit_exceeded`.
 
 With `one_call_per_reply` on, a reply that still carries several calls keeps all of them in its
@@ -334,11 +334,10 @@ the served call's result and in reply order; the host sees no event for it and i
 against `max_tool_calls`. The model decides again and the turn goes on. Proved by
 `tests/test_backend_gateway_one_call.py`.
 
-For each call, in order: `ToolCallEvent`; the side-effect state set from the declaration's
-`ToolEffect`, before the handler runs; `await handler(principal, arguments)`; `ToolResultEvent`.
+For each call, in order: `ToolCallEvent`; `await handler(principal, arguments)`; `ToolResultEvent`.
 Proved by `test_two_calls_in_one_round_run_in_order_each_between_its_events`. A call, or the next
 request, that the deadline has already passed when its turn comes is not started:
-`failed: limit_exceeded`, with the side-effect state unchanged by it
+`failed: limit_exceeded`
 (`test_a_call_event_taken_past_the_deadline_starts_no_handler_and_leaves_no_record`,
 `test_a_deadline_that_passed_while_the_app_took_the_result_event_sends_no_next_request`).
 
@@ -348,9 +347,7 @@ content, and the turn goes on (`test_an_error_outcome_reaches_the_model_and_the_
 that raises is a host defect: the client tells the model the call failed and writes its class name
 only (`test_a_raising_handler_is_a_failed_call_naming_its_class_only_and_the_model_gets_an_error`).
 The one exception is `TurnStopped`: it ends the turn unchanged, with no result event and no
-further round, and `after_side_effect` is true once a side-effecting call started or the handler
-set it (`test_a_handler_that_refuses_the_turn_ends_it_with_that_exception_and_no_further_round`,
-`test_a_handler_that_stops_the_turn_leaves_after_side_effect_as_the_connector_promises`). Task
+further round (`test_a_handler_that_refuses_the_turn_ends_it_with_that_exception_and_no_further_round`). Task
 cancellation reaches the caller unchanged and no later round runs
 (`test_cancelling_between_a_call_and_its_result_reaches_the_caller_unchanged`). Per started call
 one `tool_call.ended` line is written, as the section "The log" below says. A call
@@ -374,15 +371,15 @@ names: a tool returns only what that may see.
 
 | Bound | Value | Over it |
 | --- | --- | --- |
-| One tool result, its text's UTF-8 bytes and its image's bytes together | `MAX_EVENT_BYTES` | the model gets a fixed `is_error` sentence instead of the content and the image; the side effect stands; the turn continues |
+| One tool result, its text's UTF-8 bytes and its image's bytes together | `MAX_EVENT_BYTES` | the model gets a fixed `is_error` sentence instead of the content and the image; the call stays run; the turn continues |
 | One request of a turn, serialised, images as base64 | 4 × `MAX_EVENT_BYTES` | no request is sent; `failed: limit_exceeded` |
 | One line, one event's data | 6 × `MAX_EVENT_BYTES` + 64 KiB | `failed: provider_error` |
 | One round's text | `MAX_EVENT_BYTES`, judged per piece | `failed: provider_error`; the crossing piece is not shown |
 | One assembled round | the request bound | `failed: provider_error`; no handler runs |
 
-Proved by `test_a_tool_result_over_the_event_bound_is_replaced_and_the_side_effect_stands`,
+Proved by `test_a_tool_result_over_the_event_bound_is_replaced_and_the_call_still_ran`,
 `test_repeated_large_results_stop_the_turn_before_a_request_over_the_bound`,
-`test_an_image_result_over_the_event_bound_is_replaced_and_the_side_effect_stands`,
+`test_an_image_result_over_the_event_bound_is_replaced_and_the_call_still_ran`,
 `test_two_full_size_images_and_a_third_stop_the_turn_before_a_request_over_the_bound`,
 `test_a_line_that_never_ends_is_cut_at_the_bound_as_provider_error` and
 `test_a_round_past_the_request_bound_runs_no_handler`; the crossing piece by
@@ -421,46 +418,20 @@ refusal is a 400 and so reads as `provider_unavailable`; an app shows that it di
 picture. Closing the stream cancels the HTTP call, and the vendor may still bill it. Which sizes
 exist is the gateway's: the client checks the size's shape only.
 
-### The model list
-
-`await list_gateway_models(config.gateway, *, transport=None)` (in
-`agents.backend.gateway`) answers a `GatewayModels` for an admin page, which has no
-turn. It sends a bare `GET <origin>/v1/models` with a text turn's client rules, on a client of its
-own that it closes, and `Authorization: Bearer <key>` alone. The key file is read per call.
-The whole call has one deadline of 10 seconds and a reply body bound of `MAX_EVENT_BYTES`.
-Proved by
-`tests/test_backend_gateway_models.py`: `test_the_request_is_a_bare_get_with_the_key_and_nothing_else`,
-`test_the_key_is_read_again_for_each_call` and `test_a_body_at_its_bound_passes`.
-
-`GatewayModels.text` and `.image` hold the `data[].id` names of each kind in the gateway's
-order; an id that is no `text/…` or `image/…` model name is not offered and is no error.
-`for_agent(agent)` answers the names of that `AgentDefinition`'s kind, the ones its
-`request(messages, model=…)` accepts. Proved by `test_the_list_splits_text_and_image_names_in_the_gateways_order`,
-`test_an_id_of_another_kind_is_not_offered_and_is_no_error` and
-`test_for_agent_answers_the_names_of_that_agents_kind`.
-
-Every failure raises the one `ModelListUnavailable`, whose `detail` (`key_unusable`,
-`gateway_refused`, `gateway_failed`, `connection_failed`, `malformed_reply` or `timed_out`) is a
-closed label; neither the key nor any text of the reply is in it, and the key is in neither the
-exception's cause nor its traceback's frames. Proved by
-`test_every_failure_raises_the_one_exception_without_the_key` and
-`test_the_raising_frame_and_its_callers_hold_no_key_in_a_local`.
-
 An app sets an agent's model with `agent.request(messages, model=name)`; without `model` the
 file's model runs. A name of the wrong kind raises `ValueError` before any request
 (`test_request_refuses_an_override_of_the_wrong_kind` in `tests/test_agent_file.py`). The
 gateway may later withdraw a name an app stored: that turn ends `failed: provider_unavailable`
 and the client does not fall back to the file's model.
 
-Every request to the gateway (completions, pictures, the model list) carries the host's
+Every request to the gateway (completions, pictures) carries the host's
 `traceparent` from `logline.outgoing_headers()`, and none outside a trace
 (`test_a_request_inside_a_trace_carries_the_traces_id`,
 `test_a_request_outside_a_trace_carries_no_traceparent`). The client sets no level on the `httpx2`
 or `httpcore2` logger: `logline.configure` caps both at WARNING, so a host without it gets the
 httpx2 INFO line with the gateway URL and httpcore's DEBUG response headers under its own root
 level. The key stays out of the log even under DEBUG, because `httpcore2` prints a request by its
-method only (`test_debug_logging_writes_the_key_into_no_record`,
-`test_a_list_call_writes_the_key_into_no_record_under_debug`).
+method only (`test_debug_logging_writes_the_key_into_no_record`).
 
 ### The log
 
@@ -493,7 +464,7 @@ WARNING, with `reason` (`no_status`, `incomplete`, `too_large`, `status`, `not_t
 when the app sent one. The inner route request carries the outer trace id under a new span id.
 
 Each request to the gateway writes one line when it ends: `model_request.ended` per round of a
-turn, `picture_request.ended` and `model_list_request.ended`. A line carries `duration_ms`,
+turn and `picture_request.ended`. A line carries `duration_ms`,
 `outcome` and the response's `status` once one came; a round's line also carries `first_output_ms`
 at its first text piece and `input_tokens`, `output_tokens`, `cached_input_tokens` and
 `cache_write_tokens` when the gateway sent a usage. The `reason` is the stop's detail, or its code
@@ -507,10 +478,9 @@ when it has none; a failed line is a WARNING, because the turn reports the stop 
 | 422 with the `budget_exceeded` error type | `refused`, `budget_spent`, INFO |
 | another 4xx | `failed`, `gateway_refused`, with the `status` |
 | 5xx, or an error event in a 200 stream | `failed`, `gateway_failed` |
-| a reply that is no round, list or picture | `failed`, `malformed_reply` |
+| a reply that is no round or picture | `failed`, `malformed_reply` |
 | a connection refused or lost | `failed`, `connection_failed`, with no `status` unless one came before |
 | the turn's deadline | `failed`, `limit_exceeded` |
-| the model list's deadline | `failed`, `timed_out` |
 | the host's close | `cancelled` |
 
 The place store and the listen record write one `<noun>.ended` line per call of the
@@ -841,7 +811,7 @@ name, the one segment (`[a-z0-9][a-z0-9-]*`) your app gives its own tandem. agen
 it stores, tandem's channel included, under `<prefix>-agents`, so its keys and wakes never meet your
 app's; it refuses a prefix ending in `-agents`. A member's lease keeps its keys beside the listen
 record's, `<prefix>-agents:tandem:v1:epoch` and `<prefix>-agents:tandem:v1:l:member:*`, on tandem's
-leases of family `member`; the `redis` extra names tandem by range (0.9, tag v0.9.1) and the host pins that tag itself, as it
+leases of family `member`; the `redis` extra names tandem by range (0.12, tag v0.12.0) and the host pins that tag itself, as it
 pins logline, because uv resolves one version.
 The client carries a `Retry` and sets
 `socket_timeout` and `socket_connect_timeout`: without the timeouts a publish to a silent Redis
@@ -849,9 +819,8 @@ waits for ever, and without the `Retry` the first re-read after a Redis restart 
 stale pooled connection (tandem's README names both duties). The client is built without
 `decode_responses=True`: on a decoding client redis-py drops the connection on a payload that is no
 UTF-8, so each one costs a resync (an open gap on overnightworks/tandem#2). The first `changed` or
-`tools_changed` after a Redis restart may raise `PlaceStoreError`, because tandem never resends a
-`PUBLISH` and a stale pooled connection fails it; the host expects that and relies on the listen's
-read within `LISTEN_BOUND_SECONDS`.
+`tools_changed` after a Redis restart may raise `PlaceStoreError` once the `Retry` gives up; the
+host expects that and relies on the listen's read within `LISTEN_BOUND_SECONDS`.
 
 **The trace across a wake.** Every wake carries its sender's trace: `publish` sends the caller's
 current trace and the Lua scripts of the listen record send `logline.current_traceparent()`.
@@ -879,9 +848,11 @@ time in arrival order, and a subscription that cannot recover afterwards calls `
 and leaves the context entered. At every
 later confirmation each open stream receives every URI it honored, and the tool list if it
 honored that, and the front writes `place_subscription.renewed`, because a change sent while the
-subscription was down is lost. When a publish fails, `changed` raises `PlaceStoreError` (a host never imports tandem or
-redis to catch it) and retries nothing: delivery is uncertain, and a member sees the change by its
-next listen's read within `LISTEN_BOUND_SECONDS`. A payload on agents' channel that is no address
+subscription was down is lost. A publish is one send under the host's Redis client's `Retry`, so a change may arrive twice; each
+handler carries a state (an address to re-read, never content), and a second arrival costs one
+more read of it. When a publish fails, `changed` raises `PlaceStoreError` (a host never imports
+tandem or redis to catch it) once the client's `Retry` gives up: delivery is uncertain, and a
+member sees the change by its next listen's read within `LISTEN_BOUND_SECONDS`. A payload on agents' channel that is no address
 writes `place_signal.refused` with its length and is skipped. If the subscription fails for good
 after startup, the front writes `place_subscription.failed`, ends its open listens and answers
 every request with 503 until the pod restarts.

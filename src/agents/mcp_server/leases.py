@@ -13,7 +13,6 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Final
-from uuid import uuid4
 
 from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.place_store import (
@@ -49,7 +48,6 @@ class MemberLeases:
     ) -> None:
         self._store = store
         self._lease_ended = lease_ended
-        self._claimer = uuid4().hex
         self._failed_run_count = 0
 
     async def renew(self, principal: Principal) -> LeaseRenewal:
@@ -107,7 +105,7 @@ class MemberLeases:
                 else None
             )
             try:
-                await self._store.serve_lapses(self._lapsed, claimer=self._claimer)
+                await self._store.serve_lapses(self._lapsed)
             except Exception as failure:
                 if not self._failed_run_count:
                     self._log_failure(failure)

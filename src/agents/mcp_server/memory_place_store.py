@@ -135,8 +135,7 @@ class InMemoryPlaceStore:
     async def listeners(self, uri: str) -> frozenset[Principal]:  # NOSONAR(S7503)
         return self._listeners(uri)
 
-    async def lapse_due(self, claimer: str) -> LapseRun:  # NOSONAR(S7503)
-        del claimer
+    async def lapse_due(self) -> LapseRun:  # NOSONAR(S7503)
         now = asyncio.get_running_loop().time()
         due = [name for name, record in self._streams.items() if record.due <= now]
         turns: list[ListeningTurn] = []
