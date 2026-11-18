@@ -3,6 +3,6 @@ agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
 role = "builder"
 base = "6ac097a14afa301e8b2b555d9925164bd760f631"
 branch = "claude/issue-1018-quality-v0-22"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "quality"]
+scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", ".github/workflows/release.yml", "AGENTS.md", "quality"]
 opened_commit = "69c59728a8644a79624519686992c2e9db60c049"
 whole_reason = "the gate pin move and the findings its new rules report, including baseline entries under quality/"
