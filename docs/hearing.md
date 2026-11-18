@@ -297,6 +297,5 @@ no picture. The app owns the rest: its seeing tool, the capture and what it capt
 pictures, the mark at each picture and how long it holds a picture. The library keeps a picture only
 in the turn that reads it and writes it to no log record. Proved by
 `test_a_seeing_switch_is_its_own_and_lets_no_member_hear`,
-`test_nobody_is_seen_before_a_seeing_allow_and_again_after_an_end_and_a_rejoin`,
-`test_an_end_ends_seeing_as_it_ends_hearing` and
-`test_each_call_logs_its_name_id_and_error_flag_never_arguments_or_content`.
+`test_nobody_is_seen_before_a_seeing_allow_and_again_after_an_end_and_a_rejoin` and
+`test_an_end_ends_seeing_as_it_ends_hearing`.

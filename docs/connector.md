@@ -855,10 +855,7 @@ read within `LISTEN_BOUND_SECONDS`.
 current trace and the Lua scripts of the listen record send `logline.current_traceparent()`.
 tandem's `WakeChannel.following` runs each handler inside the trace of the wake's sender, so a
 `listening_changed` of a host runs in the trace of the listen request that turned the answer on
-another pod, and the signals and turns the port hands over carry no trace of their own. Pods on
-tandem 0.8.0 or later and pods on an earlier tandem share no wake channel and never hear each
-other, so a host moves across that line, or rolls back over it, with all its pods together,
-because a rolling update loses wakes until the last old pod is gone. Proved
+another pod, and the signals and turns the port hands over carry no trace of their own. Proved
 by `test_a_wake_is_handled_in_the_trace_of_the_pod_that_sent_it` and, on two pods,
 `test_a_listen_on_one_pod_reaches_the_host_of_the_other_in_the_trace_of_its_request`.
 
