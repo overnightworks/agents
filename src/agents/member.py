@@ -17,7 +17,7 @@ import json
 from collections.abc import Mapping
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Annotated, Final, Self
+from typing import Annotated, Final, Self, get_args
 from urllib.parse import quote, unquote
 
 from pydantic import (
@@ -85,6 +85,7 @@ __all__ = [
     "Look",
     "LookName",
     "Looks",
+    "MemberResourceRecord",
     "MemberStanding",
     "OptionalTraceparent",
     "ParentPlace",
@@ -695,13 +696,13 @@ class PlaceView(StrictModel):
     traceparent: OptionalTraceparent
 
 
-MEMBER_RESOURCE_RECORDS: Final[tuple[type[StrictModel], ...]] = (
-    MemberStanding,
-    PlaceWindow,
-    PlaceView,
+type MemberResourceRecord = MemberStanding | PlaceWindow | PlaceView
+"""The records a member resource carries as JSON, the ones ``MemberResources.read`` returns."""
+
+MEMBER_RESOURCE_RECORDS: Final[tuple[type[StrictModel], ...]] = get_args(
+    MemberResourceRecord.__value__
 )
-"""The records a member resource carries as JSON, the ones ``MemberResources.read`` returns; a
-record they nest travels inside their schema."""
+"""Each of ``MemberResourceRecord``; a record they nest travels inside their schema."""
 
 
 def place_view_uri(place: PlaceRef) -> str:
