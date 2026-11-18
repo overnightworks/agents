@@ -19,8 +19,11 @@ BASE: Tools = {
 }
 
 
-def snapshot(tools: Tools) -> str:
-    return json.dumps({"version": 1, "tools": tools})
+def snapshot(tools: Tools, resources: dict[str, object] | None = None) -> str:
+    document: dict[str, object] = {"version": 1, "tools": tools}
+    if resources is not None:
+        document["resources"] = resources
+    return json.dumps(document)
 
 
 @pytest.mark.parametrize(
@@ -53,6 +56,55 @@ def test_the_line_names_the_tools_that_differ_from_the_previous_snapshot(
     current: Tools, line: str
 ) -> None:
     assert diff.note_line(snapshot(BASE), snapshot(current)) == line
+
+
+RECORDS: dict[str, object] = {
+    "Alpha": {"properties": {"one": {}}},
+    "Beta": {"properties": {"two": {}}},
+}
+
+
+@pytest.mark.parametrize(
+    ("current", "line"),
+    [
+        (RECORDS, "**Member-tool wire:** unchanged."),
+        (
+            {**RECORDS, "Alpha": {"properties": {"one": {}, "extra": {}}}},
+            "**Member-tool wire:** changed: resources: Alpha.",
+        ),
+        (
+            {**RECORDS, "Alpha": {"properties": {"other": {}}}},
+            "**Member-tool wire:** changed: resources: Alpha.",
+        ),
+        (
+            {**RECORDS, "Gamma": {"properties": {}}},
+            "**Member-tool wire:** changed: resources: Gamma.",
+        ),
+        (
+            {"Alpha": RECORDS["Alpha"]},
+            "**Member-tool wire:** changed: resources: Beta.",
+        ),
+    ],
+)
+def test_the_line_names_the_resource_records_that_differ(
+    current: dict[str, object], line: str
+) -> None:
+    assert diff.note_line(snapshot(BASE, RECORDS), snapshot(BASE, current)) == line
+
+
+def test_the_line_names_tools_and_resource_records_together() -> None:
+    current = {**RECORDS, "Alpha": {"properties": {}}}
+    changed_tools = {**BASE, "speak": {"arguments": {}, "results": []}}
+
+    assert diff.note_line(snapshot(BASE, RECORDS), snapshot(changed_tools, current)) == (
+        "**Member-tool wire:** changed: speak; resources: Alpha."
+    )
+
+
+def test_a_previous_snapshot_without_resources_sees_every_record_as_added() -> None:
+    assert diff.note_line(snapshot(BASE), snapshot(BASE, RECORDS)) == (
+        "**Member-tool wire:** changed: resources: Alpha, Beta."
+    )
 
 
 def test_without_a_previous_snapshot_the_wire_counts_as_changed() -> None:

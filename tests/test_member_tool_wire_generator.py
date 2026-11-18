@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import get_args, get_type_hints
 
 import scripts.generate_member_tool_wire as generator
-from agents.member import MEMBER_TOOL_ARGUMENTS, MEMBER_TOOL_RESULTS
+from agents.mcp_server.resources import MemberResources
+from agents.member import MEMBER_RESOURCE_RECORDS, MEMBER_TOOL_ARGUMENTS, MEMBER_TOOL_RESULTS
 
 
 def test_the_committed_snapshot_is_what_the_code_renders() -> None:
@@ -37,3 +39,15 @@ def test_main_writes_the_snapshot_under_the_root(tmp_path: Path) -> None:
 
     assert generator.main(root=root) == 0
     assert (root / generator.WIRE_PATH).read_text(encoding="utf-8") == generator.render()
+
+
+def test_the_snapshot_holds_the_schema_of_each_resource_record_by_name() -> None:
+    resources = json.loads(generator.render())["resources"]
+
+    assert resources.keys() == {record.__name__ for record in MEMBER_RESOURCE_RECORDS}
+
+
+def test_the_snapshot_covers_every_record_the_resource_port_can_return() -> None:
+    alias, _none = get_args(get_type_hints(MemberResources.read)["return"])
+
+    assert set(MEMBER_RESOURCE_RECORDS) == set(get_args(alias.__value__))

@@ -18,12 +18,11 @@ from agents.backend.fake_gateway import (
     FakeGateway,
     Reply,
     completion,
-    model_list,
     picture,
     tool_call,
     tool_round,
 )
-from agents.backend.gateway import GatewayBackend, ModelListUnavailable, list_gateway_models
+from agents.backend.gateway import GatewayBackend
 from tests.support import gateway_turn_support
 from tests.support.gateway_turn_support import (
     FailingTransport,
@@ -46,7 +45,6 @@ log_lines = log_lines
 
 MODEL_REQUEST = "model_request.ended"
 PICTURE_REQUEST = "picture_request.ended"
-MODEL_LIST_REQUEST = "model_list_request.ended"
 
 
 def _send_completion(scenario: Scenario, transport: httpx2.AsyncBaseTransport) -> None:
@@ -59,14 +57,6 @@ def _send_picture(scenario: Scenario, transport: httpx2.AsyncBaseTransport) -> N
     backend = GatewayBackend(scenario.config(), transport=transport)
     with asyncio.Runner(loop_factory=VirtualTimeLoop) as runner:
         runner.run(_turn(backend, a_picture_request(), scenario.person()[0]))
-
-
-def _send_model_list(scenario: Scenario, transport: httpx2.AsyncBaseTransport) -> None:
-    with (
-        suppress(ModelListUnavailable),
-        asyncio.Runner(loop_factory=VirtualTimeLoop) as runner,
-    ):
-        runner.run(list_gateway_models(scenario.config().gateway, transport=transport))
 
 
 type Send = Callable[[Scenario, httpx2.AsyncBaseTransport], None]
@@ -86,11 +76,8 @@ class Request:
 REQUESTS = [
     Request(_send_completion, MODEL_REQUEST, completion("hi"), "limit_exceeded", 31),
     Request(_send_picture, PICTURE_REQUEST, picture(b"PNG"), "limit_exceeded", 31),
-    Request(_send_model_list, MODEL_LIST_REQUEST, model_list("text/a"), "timed_out", 11),
 ]
-EVERY_REQUEST = pytest.mark.parametrize(
-    "request_kind", REQUESTS, ids=["completions", "pictures", "models"]
-)
+EVERY_REQUEST = pytest.mark.parametrize("request_kind", REQUESTS, ids=["completions", "pictures"])
 
 BUDGET_BODY = json.dumps({"error": {"type": "budget_exceeded", "code": "422"}}).encode()
 OTHER_422_BODY = json.dumps({"error": {"type": "invalid_request_error", "code": "422"}}).encode()

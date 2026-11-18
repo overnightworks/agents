@@ -1,8 +1,8 @@
 """The gateway as a backend: one streamed completion per round of a turn, or one picture.
 
-A turn runs under one deadline. An app can also list the models the gateway offers.
+A turn runs under one deadline.
 
-The app's key never leaves this module: it is read per turn or per list, sent as the bearer
+The app's key never leaves this module: it is read per turn, sent as the bearer
 and written to no exception or log record.
 """
 
@@ -25,9 +25,9 @@ from typing import Final
 
 import httpx2
 from logline import StepTimer, outgoing_headers
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import JsonValue, TypeAdapter
 
-from agents.agent_file import AgentDefinition, TurnRequest
+from agents.agent_file import TurnRequest
 from agents.backend import (
     MAX_RETRY_AFTER_S,
     AgentBackend,
@@ -59,20 +59,16 @@ from agents.tools import (
     HandTool,
     JsonObject,
     ToolDeclaration,
-    ToolEffect,
 )
 from agents.turn import (
     MAX_EVENT_BYTES,
     MAX_RUN_FILES_BYTES,
     FailureCode,
-    GatewayModelName,
-    ModelKind,
     RejectionCode,
     RunFile,
     TurnUsage,
     base64_length,
     loaded_json,
-    model_kind_of,
     person_fingerprint,
 )
 from agents.turn_events import (
@@ -85,12 +81,9 @@ from agents.turn_events import (
 _LOGGER: Final = logging.getLogger(__name__)
 _COMPLETIONS_PATH: Final = "/v1/chat/completions"
 _PICTURES_PATH: Final = "/v1/images/generations"
-_MODELS_PATH: Final = "/v1/models"
 _MODEL_REQUEST_EVENT: Final = "model_request.ended"
 _PICTURE_REQUEST_EVENT: Final = "picture_request.ended"
-_MODEL_LIST_REQUEST_EVENT: Final = "model_list_request.ended"
 _BUDGET_EXCEEDED: Final = "budget_exceeded"
-_MODEL_LIST_DEADLINE_SECONDS: Final = 10
 _TRAILING_READ_SECONDS: Final = 1
 _TRAILING_READ_BYTES: Final = 65536
 _PICTURE_FILE_NAME: Final = "picture"
@@ -106,19 +99,17 @@ _UNREADABLE_REPLY: Final = (
     RecursionError,
 )
 _ARGUMENTS: Final = TypeAdapter(JsonObject)
-_MODEL_NAME: Final = TypeAdapter(GatewayModelName)
 _NOT_RUN_CONTENT: Final = "not run: one call per reply"
 
 
 class GatewayDetail(StrEnum):
-    """Why a request stopped: the reason of its line, and public on a model list's exception."""
+    """Why a request stopped: the reason of its line."""
 
     KEY_UNUSABLE = "key_unusable"
     GATEWAY_REFUSED = "gateway_refused"
     GATEWAY_FAILED = "gateway_failed"
     CONNECTION_FAILED = "connection_failed"
     MALFORMED_REPLY = "malformed_reply"
-    TIMED_OUT = "timed_out"
 
 
 class GatewayBackend(AgentBackend):
@@ -200,39 +191,34 @@ class GatewayBackend(AgentBackend):
             yield await self._picture(request, request.picture_size, person, deadline)
             return
         progress = _Progress(request.max_tool_calls or 0)
-        try:
-            key = await _before(deadline, self._authorise(person))
-            offered = frozenset(tools)
-            messages = opening_messages(request)
-            user = person_fingerprint(person.principal)
-            usages: list[TurnUsage | None] = []
-            while True:
+        key = await _before(deadline, self._authorise(person))
+        offered = frozenset(tools)
+        messages = opening_messages(request)
+        user = person_fingerprint(person.principal)
+        usages: list[TurnUsage | None] = []
+        while True:
+            _refuse_after(deadline)
+            body = bounded(request_body(request, messages, user), _limit_exceeded)
+            opened = partial(self._post, _COMPLETIONS_PATH, body, key)
+            async with contextlib.aclosing(_streamed_round(opened, offered, deadline)) as parts:
+                while isinstance(part := await anext(parts), str):
+                    yield AssistantTextEvent(text=part)
+                reply = part
+            usages.append(reply.usage)
+            if reply.message is None:
+                yield FinalEvent(text=reply.text, usage=_summed(usages))
+                return
+            served = reply.calls[:1] if request.one_call_per_reply else reply.calls
+            progress.admit(reply.calls, served)
+            messages.append(reply.message)
+            for call in served:
+                yield ToolCallEvent(tool_use_id=call.id, name=call.name, input=call.arguments)
                 _refuse_after(deadline)
-                body = bounded(request_body(request, messages, user), _limit_exceeded)
-                opened = partial(self._post, _COMPLETIONS_PATH, body, key)
-                async with contextlib.aclosing(_streamed_round(opened, offered, deadline)) as parts:
-                    while isinstance(part := await anext(parts), str):
-                        yield AssistantTextEvent(text=part)
-                    reply = part
-                usages.append(reply.usage)
-                if reply.message is None:
-                    yield FinalEvent(text=reply.text, usage=_summed(usages))
-                    return
-                served = reply.calls[:1] if request.one_call_per_reply else reply.calls
-                progress.admit(reply.calls, served)
-                messages.append(reply.message)
-                for call in served:
-                    yield ToolCallEvent(tool_use_id=call.id, name=call.name, input=call.arguments)
-                    _refuse_after(deadline)
-                    progress.wrote |= tools[call.name].effect is ToolEffect.SIDE_EFFECTING
-                    handler = self._tools[call.name].handler
-                    result = await _before(deadline, serve(handler, person, call))
-                    messages.append(result_message(result))
-                    yield result
-                messages += [result_message(_not_run(call)) for call in reply.calls[len(served) :]]
-        except TurnStopped as stopped:
-            stopped.after_side_effect = stopped.after_side_effect or progress.wrote
-            raise
+                handler = self._tools[call.name].handler
+                result = await _before(deadline, serve(handler, person, call))
+                messages.append(result_message(result))
+                yield result
+            messages += [result_message(_not_run(call)) for call in reply.calls[len(served) :]]
 
     def _declared_tools(self, request: TurnRequest) -> dict[str, ToolDeclaration]:
         tools = {declaration.name: declaration for declaration in request.tools}
@@ -271,82 +257,26 @@ class GatewayBackend(AgentBackend):
             raise RuntimeError("the gateway backend is closed")
         if self._pooled is None:
             self._pooled = _client(self._config.gateway, self._transport)
-        return _opened(self._pooled, "POST", path, key, step, content=body)
-
-
-@dataclass(frozen=True)
-class GatewayModels:
-    """The model names the gateway offers, by kind; a name of no known kind is not offered."""
-
-    text: tuple[str, ...]
-    image: tuple[str, ...]
-
-    def for_agent(self, agent: AgentDefinition) -> tuple[str, ...]:
-        """The names this agent's ``request(..., model=...)`` accepts."""
-        return self.image if agent.model_kind is ModelKind.IMAGE else self.text
-
-
-class ModelListUnavailable(Exception):
-    """The one way a model list fails; ``detail`` is a closed label, never text from the wire."""
-
-    def __init__(self, detail: GatewayDetail) -> None:
-        super().__init__(f"the gateway's model list is unavailable: {detail.value}")
-        self.detail = detail
-
-
-async def list_gateway_models(
-    gateway: ChatGateway, *, transport: httpx2.AsyncBaseTransport | None = None
-) -> GatewayModels:
-    """A bare ``GET /v1/models`` with the app's key, under a fixed deadline."""
-    try:
-        return await _get_models(gateway, transport)
-    except TurnStopped as stopped:
-        # A 429 and a spent budget carry no detail; for a list each refuses like any other 4xx.
-        detail = GatewayDetail(stopped.detail or GatewayDetail.GATEWAY_REFUSED)
-    # Raised outside the handlers, so no underlying exception stays in __context__, and in a
-    # frame that never held the key, so its traceback shows none.
-    raise ModelListUnavailable(detail)
-
-
-async def _get_models(
-    gateway: ChatGateway, transport: httpx2.AsyncBaseTransport | None
-) -> GatewayModels:
-    key = _read_key(gateway.key_file)
-    async with (
-        _request_line(_MODEL_LIST_REQUEST_EVENT) as step,
-        _client(gateway, transport) as client,
-    ):
-        try:
-            async with (
-                asyncio.timeout(_MODEL_LIST_DEADLINE_SECONDS),
-                _opened(client, "GET", _MODELS_PATH, key, step) as response,
-            ):
-                return await _models_of(response)
-        except TimeoutError:
-            raise _unavailable(GatewayDetail.TIMED_OUT) from None
+        return _opened(self._pooled, path, key, step, content=body)
 
 
 @contextlib.asynccontextmanager
 async def _opened(
-    client: httpx2.AsyncClient,
-    method: str,
-    path: str,
-    key: str,
-    step: StepTimer,
-    *,
-    content: str | None = None,
+    client: httpx2.AsyncClient, path: str, key: str, step: StepTimer, *, content: str
 ) -> AsyncGenerator[httpx2.Response, None]:
     """The gateway's 200 response, open while it is read; a connection lost meanwhile is raised.
 
     The request carries the host's ``traceparent`` inside a trace and none outside one, and the
     response's status goes on the request's line.
     """
-    headers = {"Authorization": f"Bearer {key}", **outgoing_headers()}
-    if content is not None:
-        headers["Content-Type"] = "application/json"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        **outgoing_headers(),
+    }
     try:
         # ssl.SSLError is an OSError.
-        async with client.stream(method, path, content=content, headers=headers) as response:
+        async with client.stream("POST", path, content=content, headers=headers) as response:
             step.add(status=response.status_code)
             await _raise_unless_ok(response)
             yield response
@@ -390,11 +320,10 @@ class _Round:
 
 @dataclass
 class _Progress:
-    """What a turn has done so far, for the bounds on it and for ``after_side_effect``."""
+    """What a turn has done so far, for the bounds on it."""
 
     max_tool_calls: int
     calls: int = 0
-    wrote: bool = False
     call_ids: set[str] = field(default_factory=set[str])
 
     def admit(self, calls: tuple[RequestedCall, ...], served: tuple[RequestedCall, ...]) -> None:
@@ -464,7 +393,6 @@ def _plain(stopped: TurnStopped) -> TurnStopped:
         stopped.kind,
         stopped.code,
         retry_after_s=stopped.retry_after_s,
-        after_side_effect=stopped.after_side_effect,
         detail=stopped.detail,
     )
 
@@ -632,35 +560,6 @@ def _judged(streamed: StreamedRound, offered: frozenset[str]) -> _Round:
     except _UNREADABLE_REPLY:
         pass
     raise _malformed_reply()
-
-
-async def _models_of(response: httpx2.Response) -> GatewayModels:
-    """The ``data`` ids that are gateway model names, by kind; any other id is not offered."""
-    body = await _read_body(response, MAX_EVENT_BYTES)
-    try:
-        document = loaded_json(body)
-        entries = document["data"] if isinstance(document, dict) else None
-        if not isinstance(entries, list):
-            raise _malformed_reply()
-        members = [entry["id"] if isinstance(entry, dict) else None for entry in entries]
-    except _UNREADABLE_REPLY:
-        raise _malformed_reply() from None
-    ids = [member for member in members if isinstance(member, str)]
-    if len(ids) != len(members):
-        raise _malformed_reply()
-    names = [model_id for model_id in ids if _is_model_name(model_id)]
-    return GatewayModels(
-        text=tuple(name for name in names if model_kind_of(name) is ModelKind.TEXT),
-        image=tuple(name for name in names if model_kind_of(name) is ModelKind.IMAGE),
-    )
-
-
-def _is_model_name(text: str) -> bool:
-    try:
-        _MODEL_NAME.validate_python(text, strict=True)
-    except ValidationError:
-        return False
-    return True
 
 
 async def _picture_of(response: httpx2.Response) -> RunFile:

@@ -159,7 +159,7 @@ class ListenRecord(Protocol):
         """The principals with a recorded stream that honored the URI."""
         ...
 
-    async def lapse_due(self, claimer: str) -> LapseRun:
+    async def lapse_due(self) -> LapseRun:
         """Lapses every stream whose deadline passed that nobody else lapses now; a principal's
         last stream of a URI turns it to no, publishes a ``ListeningTurn`` and is one of the
         run's ``turns``, which this call's pod alone returns. A stream that fails to lapse is
@@ -214,9 +214,7 @@ class LeaseRecord(Protocol):
         """Every principal whose lease runs, from one snapshot."""
         ...
 
-    async def serve_lapses(
-        self, handle: Callable[[Principal, str], Awaitable[None]], *, claimer: str
-    ) -> NoReturn:
+    async def serve_lapses(self, handle: Callable[[Principal, str], Awaitable[None]]) -> NoReturn:
         """Hands every lapsed lease to ``handle`` with the principal and the lapsed generation, on
         one live pod, at least once, until cancelled.
 

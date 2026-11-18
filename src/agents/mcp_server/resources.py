@@ -19,9 +19,7 @@ from mcp_types import (
 from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_wire import JSON_MEDIA_TYPE
 from agents.member import (
-    MemberStanding,
-    PlaceView,
-    PlaceWindow,
+    MemberResourceRecord,
     place_ref_from_view_uri,
     place_window_uri,
 )
@@ -43,9 +41,7 @@ class MemberResources(Protocol):
         """Every URI this principal may read now."""
         ...
 
-    async def read(
-        self, principal: Principal, uri: str
-    ) -> MemberStanding | PlaceWindow | PlaceView | None:
+    async def read(self, principal: Principal, uri: str) -> MemberResourceRecord | None:
         """The app's current truth for this URI, or ``None`` when it is not this principal's."""
         ...
 

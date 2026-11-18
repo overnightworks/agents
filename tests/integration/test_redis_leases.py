@@ -60,7 +60,7 @@ async def serving(
         if len(handled) <= refusals:
             raise RuntimeError("the host failed")
 
-    task = asyncio.create_task(pod.serve_lapses(handle, claimer="pod"))
+    task = asyncio.create_task(pod.serve_lapses(handle))
     try:
         yield handled
     finally:

@@ -129,7 +129,7 @@ def test_a_lease_ended_that_raises_reaches_the_store_and_is_not_swallowed(
 
     assert record.handler_failures
     assert all(failure is lapses.raises for failure in record.handler_failures)
-    assert len(record.serve_calls) == 1
+    assert record.serve_call_count == 1
 
 
 def test_a_lapse_service_that_fails_writes_one_warning_by_type_and_serves_again_after_the_pause(
@@ -142,13 +142,13 @@ def test_a_lapse_service_that_fails_writes_one_warning_by_type_and_serves_again_
     async def scenario() -> tuple[int, bool]:
         async with leases.running():
             await asyncio.sleep(0)
-            before = len(record.serve_calls)
+            before = record.serve_call_count
             await asyncio.sleep(LAPSE_RESTART_SECONDS + 1)
             return before, record.serving
 
     before, serving = in_virtual_time(scenario())
 
-    assert (before, len(record.serve_calls), serving) == (1, 2, True)
+    assert (before, record.serve_call_count, serving) == (1, 2, True)
     failed = log_lines.one("lease_lapse_service.failed")
     assert (failed["level"], failed["error_type"]) == ("warning", "PermissionError")
     assert "exception" not in failed

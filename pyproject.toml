@@ -1,6 +1,6 @@
 [project]
 name = "overnightworks-agents"
-version = "0.57.0"
+version = "0.59.0"
 description = "Light client for apps that run agents: the agent file, the tool contract, the gateway backend, the MCP person front, members of a place and the voice loop"
 authors = [{ name = "Flex0r (Felix Hummert)", email = "felix.hummert@gmail.com" }]
 license = { text = "MIT" }
@@ -14,19 +14,19 @@ dependencies = [
 [project.optional-dependencies]
 backend = [
     "httpx2>=2.12,<3",
-    "overnightworks-logline>=0.4,<0.8",
+    "overnightworks-logline>=0.4,<2",
 ]
 mcp-server = [
     "anyio>=4.12,<5",
     "mcp>=2.3,<3",
-    "overnightworks-logline>=0.4,<0.8",
+    "overnightworks-logline>=0.4,<2",
 ]
 redis = [
     "overnightworks-agents[mcp-server]",
-    "overnightworks-tandem>=0.9.1,<0.10",
+    "overnightworks-tandem>=0.12.1,<0.13",
 ]
 voice = [
-    "overnightworks-logline>=0.4,<0.8",
+    "overnightworks-logline>=0.4,<2",
     "syntok>=1.4.4,<2",
 ]
 dev = [
@@ -50,8 +50,8 @@ Repository = "https://github.com/overnightworks/agents"
 dev = ["overnightworks-logline", "overnightworks-tandem"]
 
 [tool.uv.sources]
-overnightworks-logline = { git = "https://github.com/overnightworks/logline", tag = "v0.7.0", group = "dev" }
-overnightworks-tandem = { git = "https://github.com/overnightworks/tandem", tag = "v0.9.1", group = "dev" }
+overnightworks-logline = { git = "https://github.com/overnightworks/logline", tag = "v1.0.0", group = "dev" }
+overnightworks-tandem = { git = "https://github.com/overnightworks/tandem", tag = "v0.12.1", group = "dev" }
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
