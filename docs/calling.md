@@ -156,7 +156,7 @@ statement carries `thinking` or `stopped`, never both:
   nothing. Once a full pass of standing, accepts and windows goes through again, it states at each
   held seat what its last turn end there in this run called for: that turn's outcome if it
   stopped, none if it answered or there was none.
-- It states no cancelled turn, and no other failure of its own calls. A cancelled turn is no turn
+- It states no cancelled turn (apart from ending its thinking, CALLING-48), and no other failure of its own calls. A cancelled turn is no turn
   end: the last turn end at that seat stays the one before it.
 - An app that does not serve the tool answers an unknown tool. A refused or failed statement is
   logged, and the runner goes on.
