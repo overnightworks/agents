@@ -179,15 +179,15 @@ seat unmarked; that is the app's own failure, not this rule's.
 A **look** is how an agent appears at a place: a 3D figure or a picture a video service renders. In
 `agents`, "look" means only this.
 
-**CALLING-41.** An accept may carry `looks` (`agents.member`), the agent's looks, at least one, first choice
-first: a figure look `{kind: "figure", url, sha256, gestures}` or a video look
-`{kind: "video", name}`, the name 1 to 64 ASCII letters of either case, digits, `.`, `_` or `-`. At
-most one look is a figure and no video name stands twice. The record checks only that form. The app
-decides which look it can show and shows the first it can, so a look it cannot show (a kind it does
-not draw, a name its video service does not offer, a look that fails to start) is skipped for the
-next; with none it can show, it shows no look of the accept's and still accepts. The old `figure`
-of an accept stays beside `looks`: an accept with `figure` and no `looks` has the one figure look,
-and an accept with both is read by its `looks` alone.
+**CALLING-41.** An accept may carry `looks` (`agents.member`), the agent's looks, at least one,
+first choice first: a figure look `{kind: "figure", url, sha256, gestures}` or a video look `{kind:
+"video", name}`, the name 1 to 64 ASCII letters of either case, digits, `.`, `_` or `-`. At most one
+look is a figure and no video name stands twice. The record checks only that form. The app decides
+which look it can show and shows the first it can, so a look it cannot show (a kind it does not
+draw, a name its video service does not offer, a look that fails to start) is skipped for the next;
+with none it can show, it shows no look of the accept's and still accepts. The old `figure` of an
+accept stays beside `looks`: an accept with `figure` and no `looks` has the one figure look, and an
+accept with both is read by its `looks` alone.
 
 **CALLING-37.** An agent makes a gesture with `gesture(place, gesture)` (`agents.member`):
 

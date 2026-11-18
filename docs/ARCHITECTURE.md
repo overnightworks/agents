@@ -40,7 +40,9 @@ flowchart TB
     mcp --> tools
     mcp --> turn
     mcp --> member
-    mcp -.->|"only with the redis extra"| place_store
+    app -.->|"only with the redis extra"| place_store
+    place_store -->|"implements the PlaceStore port"| mcp
+    place_store --> member
     place_store --> redis
     voice --> agent_file
     voice --> backend
@@ -65,8 +67,9 @@ flowchart TB
 - The **`mcp-server` extra** adds `anyio` and the official MCP SDK for `agents.mcp_server`, a thin
   ASGI shell before the SDK that serves an app's tools to one signed-in person's agent on MCP
   revision 2026-07-28, with the `MemberResources` port through which a member reads an app's truth
-  and `MemberHearing`, the in-memory record of who hears whom ([hearing.md](hearing.md)); `mcp_wire`
-  holds what the SDK does not own (the strict JSON reader, the bearer-reflection check).
+  and `MemberHearing`, the in-memory record of who hears whom ([hearing.md](hearing.md)); the
+  `PlaceStore` port has `InMemoryPlaceStore` for a host's tests and `RedisPlaceStore` for pods;
+  `mcp_wire` holds what the SDK does not own (the strict JSON reader, the bearer-reflection check).
 - The **`redis` extra** adds `overnightworks-tandem`, which brings `redis`, for
   `agents.mcp_server.redis_place_store`, the only module that imports tandem; no agents module
   imports `redis`. The place store is what the pods of one app share, through the `PlaceStore`
