@@ -50,7 +50,7 @@ never stored beside it:
 | `refused: not_enabled`, `refused: forbidden` | `not_enabled` | no, until the person's access changes |
 | `refused: busy` | `busy` | yes, after `retry_after_s`, or after the app's own fallback when the gateway gave none |
 | `refused: budget_spent` | `budget_spent` | no, until the budget changes |
-| every `failed` code | `unavailable` | maybe, later: the library and the gateway retry nothing |
+| every `failed` code | `unavailable` | maybe, later, by the person |
 
 `retry_after_s` comes only with `busy`, as the gateway gave it; the outcome never changes it. Proved
 by `tests/test_backend_port.py`: `test_every_stop_code_has_exactly_its_outcome`,
