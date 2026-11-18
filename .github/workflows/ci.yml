@@ -28,7 +28,7 @@ jobs:
 
       - name: Host vocabulary stays out of the tree
         env:
-          HOST_VOCABULARY: 'co-?writer|cowriter|song|lyric|cover[ _-]?image|album|musician|judge([^a-z]|$)|\b(bpm|key_scale|audio_duration|tempo|set_tempo|verse|chorus|rhyme|vers)\b'
+          HOST_VOCABULARY: 'co-?writer|cowriter|song|lyric|cover[ _-]?image|album|musician|judge([^a-z]|$)|\b(hopin|skat|personas|presentator|gitmirror|songmaker|hal|webauth)\b|\b(bpm|key_scale|audio_duration|tempo|set_tempo|verse|chorus|rhyme|vers)\b'
         run: |
           hits=$(git grep -n -i -E "$HOST_VOCABULARY" -- src tests docs) || [ $? -eq 1 ]
           if [ -n "$hits" ]; then
@@ -58,6 +58,9 @@ jobs:
         run: |
           uv run --locked --no-sync python scripts/generate_member_tool_wire.py
           git diff --exit-code -- scripts/member-tool-wire.json
+
+      - name: Every forbidden import names a real package
+        run: uv run --locked --no-sync python scripts/check_forbidden_imports_exist.py
 
       - name: Ruff
         run: uv run --locked --no-sync ruff check src tests scripts

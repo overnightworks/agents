@@ -778,7 +778,7 @@ text. Success is a result without `is_error` whose content no record pins. A ref
 app that does not serve the tool answers an unknown tool, and the runner logs it and goes on. The
 rules for the runner and the app are CALLING-33 to CALLING-36 in [calling.md](calling.md). The
 outcome is the coarse word a person sees; the fine code behind it is in the `turn_ended ... code=`
-log line of the personas runner, where the operator finds it. Proved by `tests/test_member.py`.
+log line of the host's runner, where the operator finds it. Proved by `tests/test_member.py`.
 
 **A malformed member-tool call.** The person front checks a call of a member tool against the tool's
 arguments record before the handler runs, by the tool's name: `MEMBER_TOOL_ARGUMENTS` of `agents.member`
