@@ -1,3 +1,4 @@
+# ruff: noqa: T201 - the command line's one output owner; it prints each forbidden package nothing provides
 """Fails when `.importlinter` forbids a package that nothing provides.
 
 A forbidden import of a misspelled or renamed package never fires, so the contract guards nothing.
@@ -72,7 +73,7 @@ def main(*, root: Path) -> int:
         forbidden_packages((root / CONTRACTS_PATH).read_text(encoding="utf-8")), provided
     )
     for name in sorted(missing):
-        print(f"{CONTRACTS_PATH} forbids {name}, which no distribution provides", file=sys.stderr)  # noqa: T201
+        print(f"{CONTRACTS_PATH} forbids {name}, which no distribution provides", file=sys.stderr)
     return 1 if missing else 0
 
 
