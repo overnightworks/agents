@@ -450,12 +450,20 @@ class ContinueSpeakingRefused(StrictModel):
 
 class SetTurnStateArguments(StrictModel):
     """The arguments of ``set_turn_state``: the place and why the member's turns there stop; an
-    absent ``stopped`` states that they answer. The value is a closed outcome, never free text."""
+    absent ``stopped`` states that they answer. The value is a closed outcome, never free text.
+    ``thinking`` states instead that a turn is running there; it does not fit with ``stopped``."""
 
     place: PlaceRef
     stopped: Annotated[StopOutcome, Field(strict=False)] | None = Field(
         default=None, exclude_if=_is_none
     )
+    thinking: bool = Field(default=False, exclude_if=_is_false)
+
+    @model_validator(mode="after")
+    def _a_running_turn_has_no_stop(self) -> Self:
+        if self.thinking and self.stopped is not None:
+            raise ValueError("a running turn has no stop outcome")
+        return self
 
 
 class SetTurnStateRefusal(StrEnum):

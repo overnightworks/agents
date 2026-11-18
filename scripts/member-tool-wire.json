@@ -863,7 +863,7 @@
     "set_turn_state": {
       "arguments": {
         "additionalProperties": false,
-        "description": "The arguments of ``set_turn_state``: the place and why the member's turns there stop; an\nabsent ``stopped`` states that they answer. The value is a closed outcome, never free text.",
+        "description": "The arguments of ``set_turn_state``: the place and why the member's turns there stop; an\nabsent ``stopped`` states that they answer. The value is a closed outcome, never free text.\n``thinking`` states instead that a turn is running there; it does not fit with ``stopped``.",
         "properties": {
           "place": {
             "additionalProperties": false,
@@ -901,6 +901,10 @@
               }
             ],
             "default": null
+          },
+          "thinking": {
+            "default": false,
+            "type": "boolean"
           }
         },
         "required": [
