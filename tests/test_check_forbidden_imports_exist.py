@@ -45,7 +45,7 @@ def test_a_package_kept_out_of_the_tree_needs_no_distribution() -> None:
 
 @pytest.mark.parametrize(("forbidden", "exit_code"), [("alpha", 0), ("typo", 1)])
 def test_run_as_a_script_it_exits_nonzero_only_for_an_unprovided_name(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forbidden: str, exit_code: int
+    tmp_path: Path, forbidden: str, exit_code: int
 ) -> None:
     (tmp_path / ".importlinter").write_text(
         f"[importlinter:contract:c]\ntype = forbidden\nforbidden_modules =\n    {forbidden}\n",
