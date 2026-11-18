@@ -1,4 +1,404 @@
 {
+  "resources": {
+    "MemberStanding": {
+      "$defs": {
+        "Invitation": {
+          "additionalProperties": false,
+          "description": "An open invitation; ``epoch`` is the place's removal epoch, so an accept after a removal\nis refused by the app.",
+          "properties": {
+            "epoch": {
+              "minimum": 0,
+              "title": "Epoch",
+              "type": "integer"
+            },
+            "expires_at": {
+              "format": "date-time",
+              "title": "Expires At",
+              "type": "string"
+            },
+            "id": {
+              "minLength": 1,
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "epoch",
+            "expires_at"
+          ],
+          "title": "Invitation",
+          "type": "object"
+        },
+        "ParentPlace": {
+          "additionalProperties": false,
+          "description": "The place a standing's place lies inside: ``app`` is the parent app's MCP resource URL and\n``place`` the place there. A runner compares both with a place it holds, ``app`` as a parsed\nURL, so equal addresses in another spelling match; the record grants nothing.",
+          "properties": {
+            "app": {
+              "format": "uri",
+              "minLength": 1,
+              "title": "App",
+              "type": "string"
+            },
+            "place": {
+              "$ref": "#/$defs/PlaceRef"
+            }
+          },
+          "required": [
+            "app",
+            "place"
+          ],
+          "title": "ParentPlace",
+          "type": "object"
+        },
+        "PlaceRef": {
+          "additionalProperties": false,
+          "description": "A place the member is in, opaque to everyone but the app: its kind and its id.",
+          "properties": {
+            "id": {
+              "minLength": 1,
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "minLength": 1,
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "title": "PlaceRef",
+          "type": "object"
+        },
+        "Standing": {
+          "additionalProperties": false,
+          "description": "One place, the member's state there and, exactly when invited, the invitation.",
+          "properties": {
+            "invitation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Invitation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "parent": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ParentPlace"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "place": {
+              "$ref": "#/$defs/PlaceRef"
+            },
+            "serves_view": {
+              "default": false,
+              "title": "Serves View",
+              "type": "boolean"
+            },
+            "state": {
+              "$ref": "#/$defs/StandingState"
+            }
+          },
+          "required": [
+            "place",
+            "state"
+          ],
+          "title": "Standing",
+          "type": "object"
+        },
+        "StandingState": {
+          "enum": [
+            "invited",
+            "active",
+            "paused"
+          ],
+          "title": "StandingState",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Every place the member is in at the moment it was read; a place left is absent.",
+      "properties": {
+        "standings": {
+          "items": {
+            "$ref": "#/$defs/Standing"
+          },
+          "title": "Standings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "standings"
+      ],
+      "title": "MemberStanding",
+      "type": "object"
+    },
+    "PlaceView": {
+      "$defs": {
+        "JsonValue": {}
+      },
+      "additionalProperties": false,
+      "description": "The state of one place for the member, as the app serves it.\n\n``state`` is the app's document, carried untouched and never read here. ``revision`` changes\nwhenever the place moves on for this member, that is whenever what the member may do or must\nact on changes; parts of ``state`` that say only who is present may change without it.\n``awaits_you`` says the place waits for this member to act; the app decides it from the state\nat that revision, so one revision has one ``awaits_you``. ``traceparent`` is the trace the\nrevision moved in, which a runner continues in the turn it wakes.",
+      "properties": {
+        "awaits_you": {
+          "title": "Awaits You",
+          "type": "boolean"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "state": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "State",
+          "type": "object"
+        },
+        "traceparent": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Traceparent"
+        }
+      },
+      "required": [
+        "revision",
+        "awaits_you",
+        "state"
+      ],
+      "title": "PlaceView",
+      "type": "object"
+    },
+    "PlaceWindow": {
+      "$defs": {
+        "Interrupted": {
+          "additionalProperties": false,
+          "description": "The member is held: a person talked over it, and nothing of the member plays until its\ndecision. ``id`` is the app's, never repeats within the window's ``generation`` and stays\nfixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.\nThe hold ends at one of them, or at the member's or the place's end.",
+          "properties": {
+            "id": {
+              "minLength": 1,
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "title": "Interrupted",
+          "type": "object"
+        },
+        "PartialSpeech": {
+          "additionalProperties": false,
+          "description": "What one person has said so far in an utterance that is not finished; provisional, never a\nline. ``text`` is empty while the person has started and said no words yet.",
+          "properties": {
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "text"
+          ],
+          "title": "PartialSpeech",
+          "type": "object"
+        },
+        "PlaceEntry": {
+          "additionalProperties": false,
+          "description": "One line of a place; ``kind`` is the app's own text, ``own`` marks the member's line and\n``spoken`` a line said aloud and heard, one finished utterance, rather than written. A line\nenters once its sentence has ended and is never changed; ``cut`` marks a spoken sentence cut\nbefore its end, whose ``text`` is the part heard up to the cut, or the whole sentence when the\napp cannot tell how far it played. ``act`` marks a written line that says what someone did\nrather than what someone said: it is told and never calls the member to act. ``traceparent``\nis the trace the line entered in, which a runner continues in the turn the line wakes.",
+          "properties": {
+            "act": {
+              "default": false,
+              "title": "Act",
+              "type": "boolean"
+            },
+            "cut": {
+              "default": false,
+              "title": "Cut",
+              "type": "boolean"
+            },
+            "kind": {
+              "minLength": 1,
+              "title": "Kind",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "own": {
+              "title": "Own",
+              "type": "boolean"
+            },
+            "seq": {
+              "minimum": 1,
+              "title": "Seq",
+              "type": "integer"
+            },
+            "spoken": {
+              "default": false,
+              "title": "Spoken",
+              "type": "boolean"
+            },
+            "text": {
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            },
+            "traceparent": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Traceparent"
+            }
+          },
+          "required": [
+            "seq",
+            "kind",
+            "name",
+            "text",
+            "own"
+          ],
+          "title": "PlaceEntry",
+          "type": "object"
+        },
+        "TalkedOver": {
+          "additionalProperties": false,
+          "description": "People talk over the member. ``id`` is the app's, never repeats within the window's\n``generation`` and stays fixed from the record's appearance to its removal, so a runner takes\none decision per ``id``; a second person who starts speaking adds a ``PartialSpeech`` under\nthe same ``id``. ``playing`` says some sentence of the member plays at the place now. ``speech``\nlists the people in the order they started speaking.",
+          "properties": {
+            "id": {
+              "minLength": 1,
+              "title": "Id",
+              "type": "string"
+            },
+            "playing": {
+              "title": "Playing",
+              "type": "boolean"
+            },
+            "speech": {
+              "items": {
+                "$ref": "#/$defs/PartialSpeech"
+              },
+              "minItems": 1,
+              "title": "Speech",
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "playing",
+            "speech"
+          ],
+          "title": "TalkedOver",
+          "type": "object"
+        },
+        "VoiceState": {
+          "description": "Whether the member's voice at the place has failed for that member there: ``available``\nwhile the app's voice works, ``unavailable`` while it has failed, so a ``speak`` would not be\nvoiced for that reason. A social reason or a limit of the app never changes it.",
+          "enum": [
+            "available",
+            "unavailable"
+          ],
+          "title": "VoiceState",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "The lines of one place from ``starts_at`` on, in ascending ``seq``; ``seq`` may skip.\n\n``generation`` names the run of ``seq`` numbers the window belongs to. An empty window is\nvalid, and its ``starts_at`` is the ``seq`` the next line will get. ``talked_over`` is set\nonly while people talk over the member; a person's partial and finished line are never both\nin one read. ``interrupted`` is set exactly while the member is held, and leaves in the same\nchange that ends the hold; a new ``generation`` carries none. ``voice_state`` states a failure\nof the member's voice at the place, for that member there; absent, the app states nothing.",
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/PlaceEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "generation": {
+          "minLength": 1,
+          "title": "Generation",
+          "type": "string"
+        },
+        "interrupted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Interrupted"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "starts_at": {
+          "minimum": 1,
+          "title": "Starts At",
+          "type": "integer"
+        },
+        "talked_over": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TalkedOver"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "voice_state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VoiceState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "generation",
+        "starts_at",
+        "entries"
+      ],
+      "title": "PlaceWindow",
+      "type": "object"
+    }
+  },
   "tools": {
     "accept_invitation": {
       "arguments": {

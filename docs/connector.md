@@ -68,10 +68,12 @@ differ, and the release refuses a wheel whose member differs from the committed 
 
 `scripts/member-tool-wire.json` is the member-tool wire a person front declares: for each tool of
 `MEMBER_TOOL_ARGUMENTS`, the schema of its arguments and of each answer record in
-`MEMBER_TOOL_RESULTS`, refusals included. `scripts/generate_member_tool_wire.py` writes it and CI
+`MEMBER_TOOL_RESULTS`, refusals included, and under `resources` the schema of each record a member
+resource carries, listed in `MEMBER_RESOURCE_RECORDS`. `scripts/generate_member_tool_wire.py` writes it and CI
 fails when it and the code differ. Every release note ends with a `**Member-tool wire:**` line
 that says `unchanged` or `changed` with the names of the tools whose arguments or results differ
-from the previous release's snapshot (`scripts/member_tool_wire_diff.py`), so a runner that serves
+and, after `resources:`, of the resource records whose schema differs (an added field counts, as an
+older strict reader rejects it), from the previous release's snapshot (`scripts/member_tool_wire_diff.py`), so a runner that serves
 an app reads it there.
 
 `AssistantTextEvent` is a piece of the assistant's text, yielded as the gateway streams it, before

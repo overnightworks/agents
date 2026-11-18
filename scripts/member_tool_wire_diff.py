@@ -1,9 +1,10 @@
 # ruff: noqa: T201 - the command line's one output owner; it prints the note line
-"""Prints the release-note line that says whether the member-tool wire changed.
+"""Prints the release-note line that says whether the member wire changed.
 
 Compares the snapshot beside this script (``member-tool-wire.json``) with the previous release's,
 read from standard input (empty when there is none); a tool counts as changed when it was added,
-removed, or its arguments or results differ.
+removed, or its arguments or results differ, and a resource record when it was added, removed or
+its schema differs, so an added field counts. A snapshot without resources holds none.
 """
 
 from __future__ import annotations
@@ -17,21 +18,29 @@ LABEL: Final = "**Member-tool wire:**"
 CURRENT_SNAPSHOT: Final = Path(__file__).resolve().parent / "member-tool-wire.json"
 
 
-def _tools(snapshot: str) -> dict[str, object]:
+def _section(snapshot: str, key: str) -> dict[str, object]:
     document = cast("dict[str, dict[str, object]]", json.loads(snapshot))
-    return document["tools"]
+    return document.get(key, {})
+
+
+def _changed(previous: str, current: str, key: str) -> list[str]:
+    before, after = _section(previous, key), _section(current, key)
+    return sorted(
+        name for name in before.keys() | after.keys() if before.get(name) != after.get(name)
+    )
 
 
 def note_line(previous: str | None, current: str) -> str:
     if previous is None:
         return f"{LABEL} changed (the previous release has no snapshot to compare)."
-    before, after = _tools(previous), _tools(current)
-    changed = sorted(
-        name for name in before.keys() | after.keys() if before.get(name) != after.get(name)
-    )
-    if not changed:
+    tools = _changed(previous, current, "tools")
+    resources = _changed(previous, current, "resources")
+    if not tools and not resources:
         return f"{LABEL} unchanged."
-    return f"{LABEL} changed: {', '.join(changed)}."
+    parts = [", ".join(tools)] if tools else []
+    if resources:
+        parts.append(f"resources: {', '.join(resources)}")
+    return f"{LABEL} changed: {'; '.join(parts)}."
 
 
 def main(previous: str) -> int:
