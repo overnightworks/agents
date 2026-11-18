@@ -3,6 +3,6 @@ agent = "Claude 8c019cee-9584-42fa-b51f-ac7e69a5bdf2"
 role = "builder"
 base = "6a604162da7a990c753d5eb2c306ddfca7d54c46"
 branch = "claude/issue-1006-guards-real-names"
-scope = [".github/workflows/ci.yml", ".importlinter", "scripts", "tests"]
+scope = [".github/workflows/ci.yml", ".importlinter", "docs/connector.md", "quality/config.toml", "scripts", "tests"]
 opened_commit = "72fd02c59ef6c4c1d7f8495563d71fde438deba6"
 whole_reason = "One guard pass: the import contracts, the vocabulary step and the check that keeps them real."
