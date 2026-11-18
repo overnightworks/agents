@@ -17,6 +17,7 @@ from agents.member import (
     SET_TURN_STATE_TOOL,
     SPEAK_TOOL,
     STOP_SPEAKING_TOOL,
+    StopOutcome,
 )
 from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_person_support import Person, call_tool
@@ -203,6 +204,18 @@ def test_the_tool_error_names_paths_and_error_types_and_never_an_input_value(
 
     (block,) = result.content
     assert (result.is_error, block.text) == (True, _REFUSED + failing)
+    assert person.calls == []
+
+
+def test_the_tool_error_names_thinking_when_a_running_turn_comes_with_a_stop_outcome(
+    front: McpPersonFront, person: Person
+) -> None:
+    wire = turn_state_wire(thinking=True, stopped=next(iter(StopOutcome)).value)
+
+    result = asyncio.run(call_tool(front, SET_TURN_STATE_TOOL, wire))
+
+    (block,) = result.content
+    assert (result.is_error, block.text) == (True, _REFUSED + "thinking (value_error)")
     assert person.calls == []
 
 
