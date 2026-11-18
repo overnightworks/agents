@@ -20,7 +20,7 @@ CURRENT_SNAPSHOT: Final = Path(__file__).resolve().parent / "member-tool-wire.js
 
 def _section(snapshot: str, key: str) -> dict[str, object]:
     document = cast("dict[str, dict[str, object]]", json.loads(snapshot))
-    return document.get(key, {})
+    return document[key] if key != "resources" else document.get(key, {})
 
 
 def _changed(previous: str, current: str, key: str) -> list[str]:
