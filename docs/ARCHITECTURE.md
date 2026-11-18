@@ -114,17 +114,15 @@ for the bearer and caps the call, because the SDK's write to a client has no tim
 
 ## Deployment
 
-Every block runs inside the host app's process: the agent files are read from the app's own disk,
-the key from a file its configuration names, and the person front is mounted in the host's ASGI
-application, which the signed-in person's agent reaches only through the host. The LiteLLM gateway
-is the one outside service of a turn, reached over HTTP with the app's key; an app that runs more
-than one pod adds Redis for the place store.
+Every block runs inside the host app's process: agent files and the key file come from the app's
+own disk, and the person front is mounted in the host's ASGI application, the only way the
+signed-in person's agent reaches it. The LiteLLM gateway is the one outside service of a turn,
+reached over HTTP with the app's key; an app with more than one pod adds Redis for the place store.
 
 ## Crosscutting concepts
 
-**Host facts come from the host.** The client reaches back into no host: the gateway origin and
-key file arrive in the app's `agent` configuration section, the tools as `HandTool`s and the MCP
-handlers. No path invents a default for a host fact, and a malformed value fails loud.
+**Host facts come from the host.** The gateway origin and key file are read from the app's `agent`
+section; tools and MCP handlers are ports. Nothing defaults; a malformed value fails loud.
 
 **Trust.**
 
@@ -137,15 +135,14 @@ handlers. No path invents a default for a host fact, and a malformed value fails
   withholds any answer that carries the request's own bearer.
 - *A standing's parent place and a member's stated turn state grant nothing.* The place comes from
   the inviter's page and at most makes an agent accept an unrelated place; the state is a closed
-  enum (`StopOutcome`) that affects only how the member is shown. Neither yields data or a right.
+  enum (`StopOutcome`) that affects only how the member is shown.
 
-**Proof strategy.** Behaviour is proven through the real entry points: `GatewayBackend.run`
-against `FakeGateway`'s scripted transport, `load_agent` against files, and the person front as an
-ASGI app driven with the SDK's own `Client`. Pure rules are called directly, and the suite needs no
-live provider. Two processes of a minimal host on one real Redis prove the wake, the listen record
-and a member's lease across pods (`scripts/run_redis_tests.sh`). CI measures line coverage of the
-default suite, which skips that layer, and `quality / verdict` holds the import contracts and the
-size and clone ratchets.
+**Proof strategy.** Behaviour is proven through real entry points: `GatewayBackend.run` against
+`FakeGateway`'s scripted transport, `load_agent` against files, and the person front as an ASGI app
+driven with the SDK's `Client`. Pure rules are called directly; the suite needs no live provider.
+Two processes of a minimal host on real Redis prove the wake, listen record and member lease across
+pods (`scripts/run_redis_tests.sh`). CI measures line coverage of the default suite, which skips
+that layer, and `quality / verdict` holds the import contracts and size and clone ratchets.
 
 ## Constraints and reasons
 
@@ -179,8 +176,8 @@ size and clone ratchets.
 - The speech service owning the voice loop, a voice service between agent and app, a provider's
   realtime session behind the loop's ports, or a speech adapter in the library: each adds a hop, a
   second rights check or an agent that knows nothing of the app's. Reopens if the speech service
-  gains a model, several apps need one loop across their places, a realtime session can run the
-  app's agent, or every app writes the same adapter.
+  gains a model, several apps need one loop, a realtime session can run the app's agent, or every
+  app writes the same adapter.
 - Speaking as a tool the model calls: a tool runs only after its round is judged whole, so speech
   could not start early. The `speak` tool stays for the loop and is never offered to the model.
   Reopens if a tool call can run while its round is still written.
