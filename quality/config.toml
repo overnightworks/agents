@@ -16,6 +16,17 @@ path = "tests/test_generator_scripts.py"
 rule = "test-layout"
 reason = "one parametrized test runs both generator scripts in scripts/, which no module of src/agents owns"
 
+[[layout.allow]]
+path = "tests/test_check_forbidden_imports_exist.py"
+rule = "test-layout"
+reason = "it tests the guard script in scripts/, which no module of src/agents owns"
+
+[[gate.loosened]]
+what = 'import contract "agents imports no speech library" changes forbidden_modules'
+item = "overnightworks/agents#1006"
+date = 2026-11-18
+reason = "the forbidden module is renamed to the speech client's real import package, so the contract guards a package that exists"
+
 [[gate.loosened]]
 what = 'import contract "agent_runtime_client imports no speech library" removed'
 item = "overnightworks/agents#837"
