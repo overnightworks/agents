@@ -28,6 +28,8 @@ from pydantic import (
     StrictBool,
     StringConstraints,
     ValidationError,
+    ValidationInfo,
+    field_validator,
     model_validator,
 )
 
@@ -450,12 +452,22 @@ class ContinueSpeakingRefused(StrictModel):
 
 class SetTurnStateArguments(StrictModel):
     """The arguments of ``set_turn_state``: the place and why the member's turns there stop; an
-    absent ``stopped`` states that they answer. The value is a closed outcome, never free text."""
+    absent ``stopped`` states that they answer. The value is a closed outcome, never free text.
+    ``thinking`` states instead that a turn is running there; it does not fit with ``stopped``."""
 
     place: PlaceRef
     stopped: Annotated[StopOutcome, Field(strict=False)] | None = Field(
         default=None, exclude_if=_is_none
     )
+    thinking: bool = Field(default=False, exclude_if=_is_false)
+
+    @field_validator("thinking")
+    @classmethod
+    def _a_running_turn_has_no_stop(cls, thinking: bool, info: ValidationInfo) -> bool:
+        """Checked here so a refusal names ``thinking``; a model-level error has no path."""
+        if thinking and info.data.get("stopped") is not None:
+            raise ValueError("a running turn has no stop outcome")
+        return thinking
 
 
 class SetTurnStateRefusal(StrEnum):

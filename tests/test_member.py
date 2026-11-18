@@ -653,6 +653,29 @@ def test_turn_state_arguments_without_an_outcome_state_that_turns_answer() -> No
     assert json.loads(arguments.model_dump_json()) == wire
 
 
+def test_turn_state_arguments_with_thinking_state_that_a_turn_is_running() -> None:
+    wire = turn_state_wire(thinking=True)
+
+    arguments = SetTurnStateArguments.model_validate_json(json.dumps(wire))
+
+    assert arguments.thinking is True
+    assert json.loads(arguments.model_dump_json()) == wire
+
+
+def test_turn_state_arguments_without_thinking_leave_the_key_out_of_the_dump() -> None:
+    arguments = SetTurnStateArguments.model_validate_json(json.dumps(turn_state_wire()))
+
+    assert arguments.thinking is False
+    assert "thinking" not in json.loads(arguments.model_dump_json())
+
+
+def test_turn_state_arguments_with_thinking_and_an_outcome_are_refused() -> None:
+    wire_text = json.dumps(turn_state_wire(thinking=True, stopped=next(iter(StopOutcome)).value))
+
+    with pytest.raises(ValidationError):
+        SetTurnStateArguments.model_validate_json(wire_text)
+
+
 @pytest.mark.parametrize("outcome", list(StopOutcome), ids=lambda outcome: outcome.value)
 def test_turn_state_arguments_carry_each_stop_outcome_unchanged(outcome: StopOutcome) -> None:
     wire = turn_state_wire(stopped=outcome.value)

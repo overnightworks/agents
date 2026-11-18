@@ -602,7 +602,7 @@ of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, traceparent)`, `LEA
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
 `LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, looks, figure, voices)` for the tool
 `ACCEPT_INVITATION_TOOL`, `DeclineInvitationArguments(place, invitation, epoch, reason)` for
-`DECLINE_INVITATION_TOOL`, `SetTurnStateArguments(place, stopped)` for `SET_TURN_STATE_TOOL`,
+`DECLINE_INVITATION_TOOL`, `SetTurnStateArguments(place, stopped, thinking)` for `SET_TURN_STATE_TOOL`,
 `GestureArguments(place, gesture)` for `GESTURE_TOOL` with its answer `Relayed` and its refusal
 `GestureRefused`, `gesture_tool()` (the finished declaration an app offers while the shown look plays gestures, whose
 schema's enum is figure's gestures), `SpeakArguments(place, text, language, style, mood, interrupted)`,
@@ -741,15 +741,17 @@ is at its limit, the second that the place is full. An app that does not serve t
 unknown tool, and the runner lets the invitation run out ([calling.md](calling.md), CALLING-8); the
 app's part is CALLING-29 to CALLING-31. Proved by `tests/test_member.py`.
 
-`set_turn_state` takes `SetTurnStateArguments(place, stopped)`: the place, and `stopped`, a
+`set_turn_state` takes `SetTurnStateArguments(place, stopped, thinking)`: the place, and `stopped`, a
 `StopOutcome` of `agents.turn` that says why the member's turns there stop; an absent or null
 `stopped` states that they answer, and a dump leaves it out. The value is a closed enum, never free
-text. Success is a result without `is_error` whose content no record pins. A refusal is an
-`is_error` result whose content is `SetTurnStateRefused(refused)` as JSON with the one
-`SetTurnStateRefusal` code `not_held` (the caller holds no seat, active or paused, at the place). An
-app that does not serve the tool answers an unknown tool, and the runner logs it and goes on. The
-rules for the runner and the app are CALLING-33 to CALLING-36 in [calling.md](calling.md). The
-outcome is the coarse word a person sees; the fine code behind it is in the `turn_ended ... code=`
+text. `thinking` is a bool, false when absent and left out of a dump when false: true states that
+a turn is running at the seat, and the record refuses it together with `stopped`. Success is a
+result without `is_error` whose content no record pins. A refusal is an `is_error` result whose
+content is `SetTurnStateRefused(refused)` as JSON with the one `SetTurnStateRefusal` code `not_held`
+(the caller holds no seat, active or paused, at the place). An app that does not serve the tool
+answers an unknown tool, and the runner logs it and goes on. The rules for the runner and the app
+are CALLING-33 to CALLING-36, CALLING-48 and CALLING-49 in [calling.md](calling.md). The outcome is
+the coarse word a person sees; the fine code behind it is in the `turn_ended ... code=`
 log line of the host's runner, where the operator finds it. Proved by `tests/test_member.py`.
 
 **A malformed member-tool call.** The person front checks a call of a member tool against the tool's

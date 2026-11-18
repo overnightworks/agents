@@ -133,14 +133,18 @@ place lies inside another app's page. No app fetches an agent into another app's
 
 ## The turn state
 
-**CALLING-33.** A runner states, for each seat it holds, whether its turns there answer, with
-`set_turn_state(place, stopped)` (`agents.member`):
+**CALLING-33.** A runner states, for each seat it holds, whether its turns there answer, and
+whether a turn is running, with `set_turn_state(place, stopped, thinking)` (`agents.member`); a
+statement carries `thinking` or `stopped`, never both:
 
+- When a turn starts at a place, it states `thinking` there (CALLING-48).
 - After each turn end at a place, it states none if the turn answered, else the turn's
   `StopOutcome` from `outcome_of_stop`. It may leave out a statement that repeats the last one the
-  app accepted at that seat in this run. A new seat at the same place starts with nothing stated,
+  app accepted at that seat in this run; a `thinking` statement is never that last one, so a turn
+  end always follows it with a statement. A new seat at the same place starts with nothing stated,
   for the runner and the app alike. Statements at one seat are made in order, and a seat whose
-  turn is running is left to that turn's end.
+  turn is running is left to that turn's end, apart from the `thinking` statement that turn began
+  with.
 - A runner that has stated nothing at a seat since it started states after its first turn end
   there. So a restarted runner states none after its first answered turn at each seat. A value
   stated before the restart stays until the runner's first statement at that seat, or until the
@@ -152,8 +156,9 @@ place lies inside another app's page. No app fetches an agent into another app's
   nothing. Once a full pass of standing, accepts and windows goes through again, it states at each
   held seat what its last turn end there in this run called for: that turn's outcome if it
   stopped, none if it answered or there was none.
-- It states no cancelled turn, and no other failure of its own calls. A cancelled turn is no turn
-  end: the last turn end at that seat stays the one before it.
+- It states no cancelled turn (apart from ending its thinking, CALLING-48), and no other failure
+  of its own calls. A cancelled turn is no turn end: the last turn end at that seat stays the one
+  before it.
 - An app that does not serve the tool answers an unknown tool. A refused or failed statement is
   logged, and the runner goes on.
 
@@ -173,6 +178,19 @@ ends, and keeps no other state about it.
 offer (CALLING-1, "The lease" in [connector.md](connector.md#the-standard-path)). An app infers no
 failure from silence or from timers. An app that admits a member's calls but fails them keeps the
 seat unmarked; that is the app's own failure, not this rule's.
+
+**CALLING-48.** `thinking` states that the member's model is working on a turn at the seat. A
+runner states it when a turn starts there; the turn's end statement (CALLING-33) ends it. A turn
+that is cancelled ends it too: the runner states what the last turn end at that seat called for in
+this run, none if there was none. A runner that dies before it ends the thinking leaves it to the
+app's cap (CALLING-49).
+
+**CALLING-49.** The app keeps `thinking` as the seat's stated value (CALLING-34), so the next
+statement at that seat replaces it. It shows the thinking from the statement until the member's next
+speak or gesture at that place, its next `set_turn_state` at that seat, or a cap the app chooses,
+which keeps a runner that died from leaving the member thinking for ever. `thinking` is no outcome:
+the mark and word of CALLING-35 show none for it, and the app shows it as its own working state. The
+app never infers it from heard lines or from timers.
 
 ## The look
 
