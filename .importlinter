@@ -17,6 +17,12 @@ type = forbidden
 source_modules =
     agents
 forbidden_modules =
+    gitmirror
+    hal
+    hopin
+    personas
+    presentator
+    skat
     songmaker_cli
     webauth
 
@@ -190,7 +196,7 @@ type = forbidden
 source_modules =
     agents
 forbidden_modules =
-    speech_runtime_client
+    speech_client
 
 # The voice loop runs on the AgentBackend port alone, so it stays off the wire and runs its own
 # tasks with the standard library's asyncio.TaskGroup.
