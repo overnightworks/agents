@@ -308,7 +308,7 @@ def test_a_tools_change_around_the_acknowledgement_arrives_after_it(
     assert [frame.get("method") for frame in connection.frames] == [_ACKNOWLEDGED, _TOOLS_CHANGED]
 
 
-def test_repeated_tools_changes_are_written_once_beside_resource_changes_in_arrival_order(
+def test_a_pending_tools_notice_is_written_once_before_a_pulse_pending_from_an_earlier_change(
     front: McpPersonFront, alice: Principal, changes: ResourceChanges
 ) -> None:
     connection = listen_connection(
@@ -317,9 +317,32 @@ def test_repeated_tools_changes_are_written_once_beside_resource_changes_in_arri
 
     async def scenario() -> None:
         async with front.running(), open_stream(connection):
-            await changes.tools_changed(alice)
             await changes.changed(alice, STANDING_URI)
             await changes.tools_changed(alice)
+            await changes.tools_changed(alice)
+            await settled()
+            connection.release()
+            await settled()
+
+    served(scenario())
+
+    assert [frame.get("method") for frame in connection.frames] == [
+        _ACKNOWLEDGED,
+        _TOOLS_CHANGED,
+        "notifications/resources/updated",
+    ]
+
+
+def test_a_resync_writes_the_tools_notice_before_the_honored_uris(
+    front: McpPersonFront, alice: Principal, place_store: PlaceStoreFake
+) -> None:
+    connection = listen_connection(
+        front, alice, [STANDING_URI], flags={"toolsListChanged": True}, stall_at=1
+    )
+
+    async def scenario() -> None:
+        async with front.running(), open_stream(connection):
+            place_store.resubscribe()
             await settled()
             connection.release()
             await settled()
