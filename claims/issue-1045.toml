@@ -1,0 +1,7 @@
+claim_id = "7750ccfc5238433a847c8093a996a84f"
+agent = "Claude c93c1b43-7fba-402c-ae2b-fc2d93888dcd"
+role = "builder"
+base = "0abd7c65305242c9304a0a994bed4899d23fb3d0"
+branch = "claude/issue-1045-a-queued-speak-is-answered-when-the-memb"
+scope = ["docs/connector.md", "docs/hearing.md"]
+opened_commit = "32985b8c6071e0131df732f01ee60a48ce59bf3a"
