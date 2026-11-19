@@ -3,5 +3,5 @@ agent = "Claude c93c1b43-7fba-402c-ae2b-fc2d93888dcd"
 role = "builder"
 base = "76a5237c860daf0aa93fe1aef07ccc4957136dbc"
 branch = "claude/issue-1039-agents-admits-tandem-0-13"
-scope = ["pyproject.toml", "uv.lock"]
+scope = ["README.md", "pyproject.toml", "uv.lock"]
 opened_commit = "9b458e807b8b49167fdbeb5cb699f32cc9e9a53b"
