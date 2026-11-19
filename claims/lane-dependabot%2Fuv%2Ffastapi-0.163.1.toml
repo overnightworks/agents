@@ -1,0 +1,7 @@
+claim_id = "41220e28e5404525b0569feba7ad0b8e"
+agent = "Claude c93c1b43-7fba-402c-ae2b-fc2d93888dcd"
+role = "builder"
+base = "3efab10dcac67f1cd88d16c9d2a701e368922d90"
+branch = "dependabot/uv/fastapi-0.163.1"
+scope = ["uv.lock"]
+opened_commit = "73c22f8e2278a3a4cbfb51026e7ba3cb5296aab6"
