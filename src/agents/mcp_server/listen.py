@@ -208,6 +208,10 @@ class ResourceChanges:
         its end before it starts the ``changed`` of the same change. Not ordered: publishes that
         are not run one after another, a resource pulse already taken for writing when the notice
         arrives, and a notice lost to a ``PlaceStoreError``.
+
+        A stream sends its resource pulses by first arrival, a repeated URI keeping its first place.
+        A runner that keeps its list lists tools again when a notice arrives during a turn and after
+        a call answers ``the tool is not offered now``.
         """
         async with store_step("place_publish.ended", _LOG, signal_kind="tools"):
             await self._store.publish(ToolsChange(recipient, self._origin))
