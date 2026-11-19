@@ -813,7 +813,7 @@ name, the one segment (`[a-z0-9][a-z0-9-]*`) your app gives its own tandem. agen
 it stores, tandem's channel included, under `<prefix>-agents`, so its keys and wakes never meet your
 app's; it refuses a prefix ending in `-agents`. A member's lease keeps its keys beside the listen
 record's, `<prefix>-agents:tandem:v1:epoch` and `<prefix>-agents:tandem:v1:l:member:*`, on tandem's
-leases of family `member`; the `redis` extra names tandem by range (0.12, tag v0.12.0) and the host pins that tag itself, as it
+leases of family `member`; the `redis` extra names tandem by range only (the README's extras section owns it) and the host pins the tag itself, as it
 pins logline, because uv resolves one version.
 The client carries a `Retry` and sets
 `socket_timeout` and `socket_connect_timeout`: without the timeouts a publish to a silent Redis
