@@ -5,8 +5,9 @@ afterwards, so a lost, repeated or late one leaves no stale state. An app calls
 ``ResourceChanges.changed`` or ``tools_changed`` only after the change is visible to a read. Both
 publish an address through the place store; every pod, the publishing one included, delivers it
 from its subscription to its open streams. Every open stream keeps its own pending pulses,
-coalesced and in arrival order, which is why several streams of one principal each receive a change
-and no overflow policy exists.
+coalesced: a pending tools notice goes ahead of the resource pulses, which go out in arrival
+order. That is why several streams of one principal each receive a change and no overflow policy
+exists.
 
 The SDK's ``ListenHandler`` checks no principal, so this module owns the handler. It registers
 its stream first, so a change while the acknowledgement is being built is kept, and it checks
@@ -110,13 +111,15 @@ class _ListenStream:
         return self._ended
 
     async def next(self) -> _Pulse | None:
-        """The oldest pending pulse, or ``None`` once the stream was ended."""
+        """The pending tools notice, which goes ahead of every resource pulse and goes ahead again
+        when it arrives again, else the oldest pending pulse; ``None`` once the stream was ended."""
         while not self._pulses and not self._ended:
             await self._arrived.wait()
             self._arrived = anyio.Event()
         if self._ended:
             return None
-        pulse = next(iter(self._pulses))
+        notice = ToolsListChanged()
+        pulse = notice if notice in self._pulses else next(iter(self._pulses))
         del self._pulses[pulse]
         return pulse
 
@@ -198,6 +201,13 @@ class ResourceChanges:
 
         Runs on the front's event loop or through ``anyio.from_thread.run``, and only after the new
         offer is visible to ``offered_tools``.
+
+        A publish that starts after another one's await has returned reaches the recipient's
+        streams on every pod after it. A stream writes its pending tools notice ahead of its
+        pending resource pulses, so a host whose change moves a member's offer awaits this call to
+        its end before it starts the ``changed`` of the same change. Not ordered: publishes that
+        are not run one after another, a resource pulse already taken for writing when the notice
+        arrives, and a notice lost to a ``PlaceStoreError``.
         """
         async with store_step("place_publish.ended", _LOG, signal_kind="tools"):
             await self._store.publish(ToolsChange(recipient, self._origin))

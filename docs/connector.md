@@ -960,10 +960,20 @@ awaits `changes.tools_changed(recipient)`, after the new offer is visible to the
 same terms as `changed`. Every open stream of that principal that honored `toolsListChanged` then
 receives one `notifications/tools/list_changed`, repeated changes before the notice is handed to
 the stream arriving once; a change after that handoff may send one more notice, which a runner
-answers by listing again. A front with `offered_tools` honors `toolsListChanged` when asked, and no
-front honors `promptsListChanged` or `resourcesListChanged`. A runner that relies on the notice lists tools
-only after such a stream's acknowledgement, as it reads resources, so a change between streams is
-never lost; a runner that lists at every turn start needs no notice. The offer is not a right: the
+answers by listing again. A stream writes its pending tools notice ahead of its pending resource
+pulses, also one pending from an earlier change, after a resync and when it arrives again; the
+resource pulses go out by first arrival, a repeated URI staying at its first place. A publish that
+starts after another one's await has returned reaches the recipient's streams on every pod after
+it, so a host whose change moves a member's offer awaits `tools_changed` to its end before it
+starts the `changed` of the same change. Not ordered: publishes that are not run one after another
+(two pods, two tasks at once), a resource pulse already taken for writing when the notice arrives,
+and a notice lost to a `PlaceStoreError`. A runner that keeps its list therefore lists again when
+a notice arrives during a turn and after a call answers `the tool is not offered now`; a stale
+list costs one refused call and never an act outside the offer. A front with `offered_tools`
+honors `toolsListChanged` when asked, and no front honors `promptsListChanged` or
+`resourcesListChanged`. A runner that relies on the notice lists tools only after
+such a stream's acknowledgement, as it reads resources, so a change between streams is never
+lost; a runner that lists at every turn start needs no notice. The offer is not a right: the
 marks and the host's gate stay the boundary, and a route refuses an act its moment does not
 allow. A stream that honored only `toolsListChanged` counts for no URI in `listens_to`. Proved by
 `tests/test_mcp_server_offered_tools.py`.
