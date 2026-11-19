@@ -1049,7 +1049,8 @@ line. The end of a spoken sentence reaches the member as its own line in the win
 either. A refusal is an `is_error` result whose content is `SpeakRefused(refused)` as JSON, such as
 `{"refused": "too_long"}`, with one `SpeakRefusal` code:
 
-- `not_active`: the member left, was removed or is paused;
+- `not_active`: the member left, was removed or is paused; a queued `speak` that an end or a pause
+  drops answers it too ([HEARING-15](hearing.md));
 - `too_long`: the sentence is longer than the app speaks at once;
 - `unavailable`: the app neither voices nor writes the sentence now: a social reason, a limit of
   its own, or a failed voice at a place without a chat;
@@ -1115,8 +1116,8 @@ Three tools decide, each naming the id:
 
 A person who is already speaking does not hold the member again after a continue or a `speak` with
 the id; a person who starts afresh does, with a new `id`. A voice failure does not end the hold. A
-new generation, the member's end and the place's end end it, and the new window carries no
-`interrupted` ([HEARING-30](hearing.md)).
+new generation, the member's end, the place's end and the member's pause end it, and the new window
+carries no `interrupted` ([HEARING-30](hearing.md), [HEARING-9](hearing.md)).
 
 A runner needs no gate for sending the id: it sends only an id it read from a window's
 `interrupted`, which only an app with the hold writes.
@@ -1149,8 +1150,9 @@ Proved by `tests/test_member.py` (among them
   ([HEARING-30](hearing.md)).
 - It plays one member's sentences in order, each behind that member's previous sentence, and
   answers each at its turn with `Spoken` when it starts to play or `Written`.
-- It bounds a sentence's length, refuses with these codes, and drops the queued sentences of a
-  removed or paused member at once.
+- It bounds a sentence's length, refuses with these codes, and drops what a member has not yet said
+  when an end or a pause takes it, answering each unanswered `speak` `not_active`
+  ([HEARING-15](hearing.md)).
 - It bounds its window as it does without speech.
 - Its own privacy section states what it sends and its legal basis.
 
