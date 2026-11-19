@@ -1,7 +1,0 @@
-claim_id = "5579ccb5626f4b68b0a872efc73eb520"
-agent = "Claude c93c1b43-7fba-402c-ae2b-fc2d93888dcd"
-role = "builder"
-base = "8b78bc5e0776e4e762c1fa09d383ddd8ca3931e1"
-branch = "claude/issue-1042-the-tools-notice-reaches-a-stream-before"
-scope = ["docs/connector.md", "src/agents/mcp_server/listen.py", "tests/test_mcp_server_offered_tools.py"]
-opened_commit = "2c0462bf38550134be1f9c5c52318509124778ba"
