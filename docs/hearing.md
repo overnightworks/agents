@@ -89,7 +89,11 @@ that place's end; a default recorded at a join is not replayed after a leave.
 
 **HEARING-9 (A).** Pausing an agent does not end its hearing; an app that wants it to records
 that with `allow`. A speaker's parked seat is not an end: the app ends that speaker's sound
-session and keeps the record, and reports `speaker_ended` when the speaker leaves.
+session and keeps the record, and reports `speaker_ended` when the speaker leaves. A pause is named
+beside an end, never called one: it cuts the playing sentence as an end does (HEARING-16), drops
+the queue and the held rest (HEARING-15) and ends the hold, so `interrupted` leaves the window
+(HEARING-30); a `talked_over` record that stands keeps following HEARING-21, as it does while the
+member is silent.
 
 **HEARING-10 (L).** `allows` and `sensing` answer from the same entries as `heard`, so the app's
 gate and its ear mark agree with what is delivered: `sensing` names every member switched on, one
@@ -128,7 +132,10 @@ sentence starts to play, with no length, or `Written` when it enters as a writte
 The end of a voiced sentence reaches the member as its own line (HEARING-16), never as a length.
 An argument refusal (`too_long`, `language_unavailable`, `style_unavailable`), a standing
 refusal (`not_active`) and the refusals of the hold (`held`, `not_interrupted`; HEARING-30) answer
-at once. `stopped` answers when the stop, or a `speak` naming the hold, drops the sentence. The other
+at once. `stopped` answers when the stop, or a `speak` naming the hold, drops the sentence. When
+the member leaves or is removed, when its lease or the place ends, or when the member is paused,
+the app drops what the member has not yet said at once, and every `speak` not yet answered, a held
+sentence that never started included, answers `not_active`: no `speak` waits past it. The other
 `unavailable` refusals, a social reason or a limit of the app, answer when the app knows, at the
 latest at the sentence's turn; a failed voice at a place without a chat answers `unavailable` at
 the sentence's turn, where `Written` would otherwise have answered. The shape of the answers is
@@ -138,12 +145,12 @@ proved by `test_a_speak_answer_reads_back_from_its_json_as_the_marker_alone`,
 
 **HEARING-16 (A).** An agent's sentence enters the windows at the place once it has been said, as a
 person's line does (HEARING-6): when it ends, as a spoken line in every window at the place, `own`
-in the member's own. A sentence cut before its end, by a stop, by the member's end at the place or
+in the member's own. A sentence cut before its end, by a stop, by the member's end at the place, by its pause or
 by a voice failure after it started to play, enters with `cut` and only the text heard up to the
 cut, or the whole sentence while the app cannot tell how far it played; never a guess from the time
 it played. A line is never changed once appended. Every sentence answered `Spoken` yields exactly
 one own line in the speaker's window, whole or `cut`, also after a voice failure that follows the
-start; a sentence dropped by a stop or by a `speak` naming the hold answers `stopped` and yields none. A sentence that never started,
+start; a sentence dropped by a stop or by a `speak` naming the hold answers `stopped` and yields none. A sentence dropped by an end or a pause answers `not_active`. A sentence that never started,
 refused or dropped from the queue, enters no window, a held sentence dropped before it started
 included, and no person's line is ever cut.
 
@@ -211,14 +218,14 @@ queue behind it wait) or Silent (nothing plays and nothing waits).
   window gains `interrupted: Interrupted(id)` and `playing` turns false in one change. The `id` is
   the app's and never repeats within the window's `generation`.
 - `interrupted` stands exactly while the member is Held. It leaves the window in the same change
-  that ends the hold: a `continue_speaking`, a `stop_speaking`, a `speak` with the hold's id, or
-  the member's or the place's end. A new generation carries none. Nothing leaves Held by itself,
+  that ends the hold: a `continue_speaking`, a `stop_speaking`, a `speak` with the hold's id, the
+  member's or the place's end, or the member's pause (HEARING-9). A new generation carries none. Nothing leaves Held by itself,
   and no timer runs.
 - Without the agent's decision, nothing it held or sends is said: a `speak` without the id is
   refused `held` at once. A `speak` refused for any reason (its own arguments, `not_active`) leaves
   the hold and its rest as they were.
-- The held rest is dropped for good only at a stop, at a `speak` with the id, or at the member's,
-  the place's or the generation's end. A held sentence that had started enters as the member's own
+- The held rest is dropped for good only at a stop, at a `speak` with the id, at the member's pause
+  (HEARING-9), or at the member's, the place's or the generation's end. A held sentence that had started enters as the member's own
   spoken line, with `cut` and the part heard; one that had not started enters no window.
 - A voice failure while held does not end the hold: a held sentence that had started enters `cut`,
   one that had not enters no window, and the hold and `interrupted` stay over the queue.
