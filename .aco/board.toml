@@ -1,1 +1,2 @@
 lane_shared = ["quality/baseline.toml"]
+dependency_paths = ["pyproject.toml", "uv.lock", ".github/workflows/"]
