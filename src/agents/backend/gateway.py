@@ -276,7 +276,7 @@ async def _opened(
 
     The request carries the host's ``traceparent`` inside a trace and none outside one, and the
     response's status goes on the request's line, and so does ``connect_ms`` when the request
-    opened a new connection.
+    opened a new connection, whether or not a response came.
     """
     headers = {
         "Authorization": f"Bearer {key}",
@@ -293,13 +293,14 @@ async def _opened(
             headers=headers,
             extensions={"trace": connecting.note},
         ) as response:
-            if (connect_ms := connecting.milliseconds()) is not None:
-                step.add(connect_ms=connect_ms)
             step.add(status=response.status_code)
             await _raise_unless_ok(response)
             yield response
     except httpx2.HTTPError, httpx2.InvalidURL, OSError:
         raise _unavailable(GatewayDetail.CONNECTION_FAILED) from None
+    finally:
+        if (connect_ms := connecting.milliseconds()) is not None:
+            step.add(connect_ms=connect_ms)
 
 
 class _ConnectTimes:

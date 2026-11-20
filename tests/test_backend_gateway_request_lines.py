@@ -310,6 +310,26 @@ def test_a_connect_that_fails_writes_no_connect_time(scenario, log_lines, reques
 
 
 @EVERY_REQUEST
+def test_a_connection_that_opens_and_is_dropped_before_a_response_still_writes_its_connect_time(
+    scenario, log_lines, request_kind
+):
+    async def drive():
+        async def drop(_reader, writer):
+            writer.close()
+
+        server = await asyncio.start_server(drop, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        async with server:
+            await _send_twice(scenario, request_kind, origin=f"http://127.0.0.1:{port}")
+
+    asyncio.run(drive())
+
+    first = log_lines.of(request_kind.event)[0]
+    assert (first["outcome"], first["reason"]) == ("failed", "connection_failed")
+    assert first["connect_ms"] >= 0
+
+
+@EVERY_REQUEST
 def test_a_line_carries_the_id_of_the_trace_it_is_written_in(scenario, log_lines, request_kind):
     with unit_trace(None):
         trace_id = current_trace_id()
