@@ -20,6 +20,7 @@ from collections.abc import (
     AsyncIterator,
     Awaitable,
     Callable,
+    Coroutine,
     Iterable,
     Mapping,
 )
@@ -318,9 +319,11 @@ class _ConnectTimes:
     def __init__(self) -> None:
         self._at: dict[str, float] = {}
 
-    async def note(self, event: str, info: Mapping[str, object]) -> None:
+    def note(self, event: str, info: Mapping[str, object]) -> Coroutine[None, None, None]:
+        # The library awaits the callback and rejects anything but a coroutine.
         del info
         self._at.setdefault(event, time.perf_counter())
+        return asyncio.sleep(0)
 
     def milliseconds(self) -> float | None:
         """The connect, or its TLS handshake, in milliseconds; none when it did not complete."""
