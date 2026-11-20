@@ -283,6 +283,21 @@ async def _send_twice(
             await _turn(backend, make_request(), scenario.person()[0])
 
 
+async def _send_twice_to_a_dropping_server(
+    scenario: Scenario, request_kind: Request, *, scheme: str
+) -> None:
+    async def drop(_reader, writer):
+        writer.close()
+
+    server = await asyncio.start_server(drop, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    ca_file = self_signed_authority(scenario.directory, "served")[0] if scheme == "https" else None
+    async with server:
+        await _send_twice(
+            scenario, request_kind, origin=f"{scheme}://127.0.0.1:{port}", ca_file=ca_file
+        )
+
+
 @EVERY_REQUEST
 def test_only_the_request_that_opened_a_connection_says_how_long_that_took(
     scenario, log_lines, request_kind
@@ -317,16 +332,7 @@ def test_a_connect_that_fails_writes_no_connect_time(scenario, log_lines, reques
 def test_a_connection_that_opens_and_is_dropped_before_a_response_still_writes_its_connect_time(
     scenario, log_lines, request_kind
 ):
-    async def drive():
-        async def drop(_reader, writer):
-            writer.close()
-
-        server = await asyncio.start_server(drop, "127.0.0.1", 0)
-        port = server.sockets[0].getsockname()[1]
-        async with server:
-            await _send_twice(scenario, request_kind, origin=f"http://127.0.0.1:{port}")
-
-    asyncio.run(drive())
+    asyncio.run(_send_twice_to_a_dropping_server(scenario, request_kind, scheme="http"))
 
     first = log_lines.of(request_kind.event)[0]
     assert (first["outcome"], first["reason"]) == ("failed", "connection_failed")
@@ -335,21 +341,7 @@ def test_a_connection_that_opens_and_is_dropped_before_a_response_still_writes_i
 
 @EVERY_REQUEST
 def test_a_tls_handshake_that_fails_writes_no_connect_time(scenario, log_lines, request_kind):
-    async def drive():
-        async def drop(_reader, writer):
-            writer.close()
-
-        server = await asyncio.start_server(drop, "127.0.0.1", 0)
-        port = server.sockets[0].getsockname()[1]
-        async with server:
-            await _send_twice(
-                scenario,
-                request_kind,
-                origin=f"https://127.0.0.1:{port}",
-                ca_file=self_signed_authority(scenario.directory, "served")[0],
-            )
-
-    asyncio.run(drive())
+    asyncio.run(_send_twice_to_a_dropping_server(scenario, request_kind, scheme="https"))
 
     for line in log_lines.of(request_kind.event):
         assert (line["outcome"], line["reason"]) == ("failed", "connection_failed")
