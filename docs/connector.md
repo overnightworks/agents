@@ -600,7 +600,7 @@ the tool and the exception's class
 `agents.member` owns what an app and an agent say to each other about a member:
 `PlaceRef`, `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
 `STANDING_URI`, `member://standing`, answers with), `PlaceWindow(generation, starts_at, entries, talked_over, interrupted, voice_state)`
-of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, traceparent)`, `LEASE_SECONDS` (120),
+of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, continues, traceparent)`, `LEASE_SECONDS` (120),
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
 `LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, looks, figure, voices)` for the tool
 `ACCEPT_INVITATION_TOOL`, `DeclineInvitationArguments(place, invitation, epoch, reason)` for
@@ -618,11 +618,15 @@ written. `cut` is true only on a spoken line whose sentence was cut before its e
 is not cut dumps without the key. `act` is true only on a written line that says what someone did
 rather than what someone said, and a line that is no act dumps without the key; a spoken line is
 refused with `act`, so a cut line is too. A runner that predates the field refuses a window
-carrying `act`, as it refuses a standing carrying `parent`. An act line is told and never calls the
-member to act. At a place with a view, `awaits_you` calls the member to act. Whether a line that is
-no act wakes the member stays the runner's wake rule. A window's `seq` ascends strictly and may
-skip; a non-empty window starts at its first `seq`; an empty window is valid and its `starts_at`
-is the `seq` the next line gets. A place's window is the resource `place_window_uri(place)`,
+carrying `act`, as it refuses a standing carrying `parent`. `continues` is true only on a spoken
+line whose speaker's next sentence at the place already waits to play as the line enters, and a line
+that does not continue dumps without the key; a written line is refused with `continues`, and so is
+a cut line. A runner that predates the field refuses a window carrying it, as with `act`, so a
+runner takes the release before its app sets the mark; the library decides nothing on it. An act
+line is told and never calls the member to act. At a place with a view, `awaits_you` calls the
+member to act. Whether a line that is no act wakes the member stays the runner's wake rule. A
+window's `seq` ascends strictly and may skip; a non-empty window starts at its first `seq`; an
+empty window is valid and its `starts_at` is the `seq` the next line gets. A place's window is the resource `place_window_uri(place)`,
 `member://standing/places/{kind}/{id}` with each segment percent-encoded, so `/` in an opaque
 `kind` or `id` stays inside its segment;
 `place_ref_from_window_uri(uri)` returns the `PlaceRef` for that canonical spelling only and

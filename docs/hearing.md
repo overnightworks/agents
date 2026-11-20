@@ -152,7 +152,11 @@ it played. A line is never changed once appended. Every sentence answered `Spoke
 one own line in the speaker's window, whole or `cut`, also after a voice failure that follows the
 start; a sentence dropped by a stop or by a `speak` naming the hold answers `stopped` and yields none. A sentence dropped by an end or a pause answers `not_active`. A sentence that never started,
 refused or dropped from the queue, enters no window, a held sentence dropped before it started
-included, and no person's line is ever cut.
+included, and no person's line is ever cut. The app marks an agent's spoken line `continues` when the
+same speaker's next sentence at the place already waits to play as the line enters, and copies a
+fact it holds rather than deciding anything; it never marks a person's line or a cut line, and a
+sentence still being rendered leaves the line unmarked, the safe direction. The library decides
+nothing on the mark: whether a marked line wakes the member stays the runner's wake rule.
 
 **HEARING-17 (A).** The app's server keeps the queue of an agent's sentences, the written ones
 included. The library orders no sentences.

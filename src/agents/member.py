@@ -615,7 +615,9 @@ class PlaceEntry(StrictModel):
     enters once its sentence has ended and is never changed; ``cut`` marks a spoken sentence cut
     before its end, whose ``text`` is the part heard up to the cut, or the whole sentence when the
     app cannot tell how far it played. ``act`` marks a written line that says what someone did
-    rather than what someone said: it is told and never calls the member to act. ``traceparent``
+    rather than what someone said: it is told and never calls the member to act. ``continues``
+    marks a spoken line whose speaker's next sentence at the place already waits to play as the
+    line enters; the app copies that fact and decides nothing on it. ``traceparent``
     is the trace the line entered in, which a runner continues in the turn the line wakes."""
 
     seq: int = Field(ge=1)
@@ -626,6 +628,7 @@ class PlaceEntry(StrictModel):
     spoken: bool = False
     cut: bool = Field(default=False, exclude_if=_is_false)
     act: bool = Field(default=False, exclude_if=_is_false)
+    continues: bool = Field(default=False, exclude_if=_is_false)
     traceparent: OptionalTraceparent
 
     @model_validator(mode="after")
@@ -638,6 +641,18 @@ class PlaceEntry(StrictModel):
     def _a_spoken_line_is_no_act(self) -> Self:
         if self.act and self.spoken:
             raise ValueError("a spoken line is no act")
+        return self
+
+    @model_validator(mode="after")
+    def _only_a_spoken_line_continues(self) -> Self:
+        if self.continues and not self.spoken:
+            raise ValueError("only a spoken line continues")
+        return self
+
+    @model_validator(mode="after")
+    def _a_cut_line_does_not_continue(self) -> Self:
+        if self.continues and self.cut:
+            raise ValueError("a cut line does not continue")
         return self
 
 

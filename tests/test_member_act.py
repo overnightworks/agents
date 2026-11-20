@@ -7,8 +7,8 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from agents.member import PlaceEntry, PlaceWindow
-from tests.support.voice_lines import a_line
+from agents.member import PlaceEntry
+from tests.support.voice_lines import a_line, read_back_over_the_wire
 
 
 def an_act() -> PlaceEntry:
@@ -16,12 +16,7 @@ def an_act() -> PlaceEntry:
 
 
 def test_an_act_line_survives_the_wire_with_its_marker() -> None:
-    window = PlaceWindow(generation="g1", starts_at=1, entries=(an_act(),))
-
-    read = PlaceWindow.model_validate_json(window.model_dump_json())
-
-    assert read == window
-    assert read.entries[0].act is True
+    assert read_back_over_the_wire(an_act()).act is True
 
 
 @pytest.mark.parametrize("spoken", [False, True])
