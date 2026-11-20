@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from agents.member import PlaceEntry
+from agents.member import PlaceEntry, PlaceWindow
 
 
 def a_line(
@@ -67,3 +67,11 @@ STREAMED_ANSWERS = [
 def random_pieces(text: str, chooser: random.Random) -> list[str]:
     cuts = sorted(chooser.sample(range(1, len(text)), chooser.randint(1, len(text) // 3)))
     return [text[start:end] for start, end in zip([0, *cuts], [*cuts, len(text)], strict=True)]
+
+
+def read_back_over_the_wire(entry: PlaceEntry) -> PlaceEntry:
+    """The entry as a runner reads it from a window the app dumped; fails if the window changed."""
+    window = PlaceWindow(generation="g1", starts_at=1, entries=(entry,))
+    read = PlaceWindow.model_validate_json(window.model_dump_json())
+    assert read == window
+    return read.entries[0]
