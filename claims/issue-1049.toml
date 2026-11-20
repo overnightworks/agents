@@ -1,0 +1,8 @@
+claim_id = "2d3efe46b57b4a4f93f9a122f4fe8c12"
+agent = "Claude c93c1b43-7fba-402c-ae2b-fc2d93888dcd"
+role = "builder"
+base = "cd8aeb57d989663fdf38735d82bf72c09a6d1ba7"
+branch = "claude/issue-1049-a-request-line-says-how-long-a-new-gatew"
+scope = ["docs/connector.md", "src/agents/backend/gateway.py", "tests/test_backend_gateway_pooling.py", "tests/test_backend_gateway_request_lines.py"]
+opened_commit = "a1b79f85541957a25041ccdc1979f15187b1af10"
+whole_reason = "One field through one function with its document sentence and the two test modules that own request lines and connection reuse."
