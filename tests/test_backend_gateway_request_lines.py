@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable
 from contextlib import aclosing, suppress
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx2
 import pytest
@@ -35,6 +36,7 @@ from tests.support.gateway_turn_support import (
     a_picture_request,
     a_request,
     an_event_stream,
+    self_signed_authority,
 )
 from tests.support.keep_alive_gateway import serving_keep_alive
 from tests.support.log_lines import LogLine, LogLines, log_lines
@@ -272,9 +274,11 @@ def test_a_deadline_reached_while_the_app_holds_a_piece_is_a_limit_exceeded_line
     assert (line["outcome"], line["reason"]) == ("failed", "limit_exceeded")
 
 
-async def _send_twice(scenario: Scenario, request_kind: Request, *, origin: str) -> None:
+async def _send_twice(
+    scenario: Scenario, request_kind: Request, *, origin: str, ca_file: Path | None = None
+) -> None:
     make_request = a_request if request_kind.event == MODEL_REQUEST else a_picture_request
-    async with GatewayBackend(scenario.config(origin=origin)) as backend:
+    async with GatewayBackend(scenario.config(origin=origin, ca_file=ca_file)) as backend:
         for _ in range(2):
             await _turn(backend, make_request(), scenario.person()[0])
 
@@ -327,6 +331,29 @@ def test_a_connection_that_opens_and_is_dropped_before_a_response_still_writes_i
     first = log_lines.of(request_kind.event)[0]
     assert (first["outcome"], first["reason"]) == ("failed", "connection_failed")
     assert first["connect_ms"] >= 0
+
+
+@EVERY_REQUEST
+def test_a_tls_handshake_that_fails_writes_no_connect_time(scenario, log_lines, request_kind):
+    async def drive():
+        async def drop(_reader, writer):
+            writer.close()
+
+        server = await asyncio.start_server(drop, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        async with server:
+            await _send_twice(
+                scenario,
+                request_kind,
+                origin=f"https://127.0.0.1:{port}",
+                ca_file=self_signed_authority(scenario.directory, "served")[0],
+            )
+
+    asyncio.run(drive())
+
+    for line in log_lines.of(request_kind.event):
+        assert (line["outcome"], line["reason"]) == ("failed", "connection_failed")
+        assert "connect_ms" not in line
 
 
 @EVERY_REQUEST

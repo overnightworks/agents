@@ -312,6 +312,7 @@ class _ConnectTimes:
 
     _STARTED: Final = "connection.connect_tcp.started"
     _TCP_DONE: Final = "connection.connect_tcp.complete"
+    _TLS_STARTED: Final = "connection.start_tls.started"
     _TLS_DONE: Final = "connection.start_tls.complete"
 
     def __init__(self) -> None:
@@ -322,9 +323,12 @@ class _ConnectTimes:
         self._at.setdefault(event, time.perf_counter())
 
     def milliseconds(self) -> float | None:
-        """The connect, or its TLS handshake, in milliseconds; none when no connection opened."""
+        """The connect, or its TLS handshake, in milliseconds; none when it did not complete."""
         started = self._at.get(self._STARTED)
-        done = self._at.get(self._TLS_DONE, self._at.get(self._TCP_DONE))
+        if self._TLS_STARTED in self._at:
+            done = self._at.get(self._TLS_DONE)
+        else:
+            done = self._at.get(self._TCP_DONE)
         if started is None or done is None:
             return None
         return round((done - started) * 1000, 3)
