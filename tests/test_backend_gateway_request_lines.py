@@ -36,6 +36,7 @@ from tests.support.gateway_turn_support import (
     a_request,
     an_event_stream,
 )
+from tests.support.keep_alive_gateway import serving_keep_alive
 from tests.support.log_lines import LogLine, LogLines, log_lines
 from tests.support.virtual_time import VirtualTimeLoop
 
@@ -269,6 +270,43 @@ def test_a_deadline_reached_while_the_app_holds_a_piece_is_a_limit_exceeded_line
 
     line = log_lines.one(MODEL_REQUEST)
     assert (line["outcome"], line["reason"]) == ("failed", "limit_exceeded")
+
+
+async def _send_twice(scenario: Scenario, request_kind: Request, *, origin: str) -> None:
+    make_request = a_request if request_kind.event == MODEL_REQUEST else a_picture_request
+    async with GatewayBackend(scenario.config(origin=origin)) as backend:
+        for _ in range(2):
+            await _turn(backend, make_request(), scenario.person()[0])
+
+
+@EVERY_REQUEST
+def test_only_the_request_that_opened_a_connection_says_how_long_that_took(
+    scenario, log_lines, request_kind
+):
+    async def drive():
+        async with serving_keep_alive() as gateway:
+            await _send_twice(scenario, request_kind, origin=gateway.origin)
+
+    asyncio.run(drive())
+
+    first, reused = log_lines.of(request_kind.event)
+    assert isinstance(first["connect_ms"], int | float)
+    assert first["connect_ms"] >= 0
+    assert "connect_ms" not in reused
+
+
+@EVERY_REQUEST
+def test_a_connect_that_fails_writes_no_connect_time(scenario, log_lines, request_kind):
+    async def drive():
+        async with serving_keep_alive() as gateway:
+            origin = gateway.origin
+        await _send_twice(scenario, request_kind, origin=origin)
+
+    asyncio.run(drive())
+
+    for line in log_lines.of(request_kind.event):
+        assert (line["outcome"], line["reason"]) == ("failed", "connection_failed")
+        assert "connect_ms" not in line
 
 
 @EVERY_REQUEST

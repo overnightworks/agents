@@ -14,7 +14,15 @@ import http.cookiejar
 import logging
 import re
 import ssl
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Iterable
+import time
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Iterable,
+    Mapping,
+)
 from dataclasses import dataclass, field
 from enum import StrEnum
 from functools import partial
@@ -267,21 +275,58 @@ async def _opened(
     """The gateway's 200 response, open while it is read; a connection lost meanwhile is raised.
 
     The request carries the host's ``traceparent`` inside a trace and none outside one, and the
-    response's status goes on the request's line.
+    response's status goes on the request's line, and so does ``connect_ms`` when the request
+    opened a new connection.
     """
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
         **outgoing_headers(),
     }
+    connecting = _ConnectTimes()
     try:
         # ssl.SSLError is an OSError.
-        async with client.stream("POST", path, content=content, headers=headers) as response:
+        async with client.stream(
+            "POST",
+            path,
+            content=content,
+            headers=headers,
+            extensions={"trace": connecting.note},
+        ) as response:
+            if (connect_ms := connecting.milliseconds()) is not None:
+                step.add(connect_ms=connect_ms)
             step.add(status=response.status_code)
             await _raise_unless_ok(response)
             yield response
     except httpx2.HTTPError, httpx2.InvalidURL, OSError:
         raise _unavailable(GatewayDetail.CONNECTION_FAILED) from None
+
+
+class _ConnectTimes:
+    """When a request's new connection started to connect and finished, by the library's events.
+
+    The library fires these events only for a connection without a stream. The event's ``info``
+    carries the request with the bearer header, so it is never read.
+    """
+
+    _STARTED: Final = "connection.connect_tcp.started"
+    _TCP_DONE: Final = "connection.connect_tcp.complete"
+    _TLS_DONE: Final = "connection.start_tls.complete"
+
+    def __init__(self) -> None:
+        self._at: dict[str, float] = {}
+
+    async def note(self, event: str, info: Mapping[str, object]) -> None:
+        del info
+        self._at.setdefault(event, time.perf_counter())
+
+    def milliseconds(self) -> float | None:
+        """The connect, or its TLS handshake, in milliseconds; none when no connection opened."""
+        started = self._at.get(self._STARTED)
+        done = self._at.get(self._TLS_DONE, self._at.get(self._TCP_DONE))
+        if started is None or done is None:
+            return None
+        return round((done - started) * 1000, 3)
 
 
 def _client(
