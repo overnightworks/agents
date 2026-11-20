@@ -1,0 +1,8 @@
+claim_id = "2984d683eea94f74b2ccf86613d057f2"
+agent = "Claude 73e9ae46-448d-4d75-805a-0e3a38db6e95"
+role = "builder"
+base = "2b6084e3c427079fd46bc18fd1f178b678ed4950"
+branch = "claude/issue-1038-place-entry-continues"
+scope = ["docs/connector.md", "docs/hearing.md", "scripts/member-tool-wire.json", "src/agents/member.py", "tests/test_member_continues.py"]
+opened_commit = "65503a8914688726832b7d4626e41f9381e22b84"
+whole_reason = "One optional field on PlaceEntry with its refusals, its two documents and the regenerated wire it changes."
