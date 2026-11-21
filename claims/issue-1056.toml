@@ -1,0 +1,8 @@
+claim_id = "ea17bc131a39406da0f06cf774c73bf8"
+agent = "Claude 3759dda9-2bf6-41bc-a6f7-642352e1bbcb"
+role = "builder"
+base = "245a4d8f70f76a9c149a343280dd4cb3605be9fe"
+branch = "claude/issue-1056-the-voice-loop-holds-a-talked-over-agent"
+scope = ["docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "src/agents/voice/__init__.py", "src/agents/voice/conversation.py", "src/agents/voice/loop.py", "src/agents/voice/reply.py", "src/agents/voice/talk_over.py", "tests/support/voice_lines.py", "tests/support/voice_support.py", "tests/test_voice_hold.py", "tests/test_voice_loop.py", "tests/test_voice_reply.py"]
+opened_commit = "4edf70f34afe7c68760fc0c0d93afb134c726f50"
+whole_reason = "The hold, its one decision and its endings share one state in the loop, and a hold released without its endings would silence the agent at every interjection."
