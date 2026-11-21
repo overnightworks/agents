@@ -1559,14 +1559,16 @@ with `TurnStopped`, or closed after a refused sound. The next `Woke` comes after
 a hold decision and gets no end of its own. `EchoDropped` is hearing's, not a decision's, and may
 come before or after it. When the loop itself ends (hearing ends, an error, the app's cancel), no
 `DecisionEnded` is reported; the app frees what it holds when `run_voice_loop` returns, raises or
-is cancelled. Proved by `tests/test_voice_loop.py`:
+is cancelled. Proved by `tests/test_voice_decision_end.py`:
 `test_a_decision_reports_its_end_once_its_last_sentence_has_played`,
 `test_a_silent_unreadable_or_failed_decision_reports_its_end_once`,
 `test_a_refused_sound_reports_the_end_after_the_turn_was_closed`,
-`test_a_decision_reports_its_end_only_after_its_tools_have_run` and
-`test_a_decision_the_loops_own_end_cuts_reports_no_end`, and by `tests/test_voice_hold.py`:
+`test_a_decision_reports_its_end_only_after_its_tools_have_run`,
 `test_an_answer_with_a_hold_reports_two_woke_and_one_end_after_its_ending_has_played` and
-`test_a_stopping_or_dropping_hold_reports_the_end_after_the_paused_sentence_was_stopped`.
+`test_a_stopping_or_dropping_hold_reports_the_end_after_the_paused_sentence_was_stopped`. The loop's
+own end reports no `DecisionEnded`, proved by `test_a_voice_that_raises_another_error_closes_the_turn_and_raises_it`
+in `tests/test_voice_loop.py` and by `test_when_hearing_ends_while_held_the_loop_stops_the_paused_sound_and_returns`
+in `tests/test_voice_hold.py`.
 
 **The reply** is read per round, and a tool call ends a round. Leading whitespace is skipped. A
 round that opens with `[` is held until `]` closes it within 16 characters; the word between,
