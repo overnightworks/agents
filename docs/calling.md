@@ -195,10 +195,11 @@ app never infers it from heard lines or from timers.
 ## The look
 
 A **look** is how an agent appears at a place: a 3D figure or a picture a video service renders. In
-`agents`, "look" means only this.
+`agents`, "look" means only this. A **room** is an agent's own surroundings, one static 3D file that
+figure draws behind a figure look in every framing. In `agents`, "room" in a look means only this.
 
 **CALLING-41.** An accept may carry `looks` (`agents.member`), the agent's looks, at least one,
-first choice first: a figure look `{kind: "figure", url, sha256, gestures}` or a video look `{kind:
+first choice first: a figure look `{kind: "figure", url, sha256, gestures, room}` or a video look `{kind:
 "video", name}`, the name 1 to 64 ASCII letters of either case, digits, `.`, `_` or `-`. At most one
 look is a figure and no video name stands twice. The record checks only that form. The app decides
 which look it can show and shows the first it can, so a look it cannot show (a kind it does not
@@ -232,8 +233,8 @@ that gesture on this figure only. A gesture has at most one clip, and clips cann
 a figure. The app treats a clip as it treats the figure: it fetches from sources it allows and
 serves only bytes whose digest matches.
 
-**CALLING-40.** A runner sends `mood`, `looks` or `figure.gestures` only to an app that has the
-`agents` release carrying them, because the records refuse a key they do not know. The order is:
+**CALLING-40.** A runner sends `mood`, `looks`, `figure.gestures` or a figure look's `room` only to an
+app that has the `agents` release carrying them, because the records refuse a key they do not know. The order is:
 `agents` releases, the apps pin the release and deploy, then the runner sends.
 
 **CALLING-50.** An agent sets how much of its figure shows with `set_framing(place, framing)`
@@ -255,6 +256,14 @@ serves only bytes whose digest matches.
 seat ends. Everyone at the place sees the same, a viewer who joins later too. Until one is set,
 the app shows its own default; none travels at the accept. `agents` keeps no framing and
 `Standing` carries none.
+
+**CALLING-52.** A figure look may carry `room`, the `{url, sha256}` of the agent's own room, which
+figure draws behind the figure in every framing. The old `figure` and a video look carry none. The
+app treats the room as it treats the figure: it fetches from sources it allows and serves only
+bytes whose digest matches, and hands them to figure, whose room check judges them before it draws;
+the app may run the same check before it keeps a room. A room that is refused, fails or does not
+arrive shows none; the figure stays and the accept stands. The room is the agent's for its seat,
+the same for everyone at the place.
 
 The rules below hold for every look the app shows; the app, not the library, shows the look.
 
@@ -303,8 +312,8 @@ streams. The standard adds no store, directory or list.
   outcomes;
 - its channel to its page;
 - when it shows agents' looks, which look it shows (CALLING-41), the `gesture` and `set_framing` tools,
-  the `mood` of a speak and the clips of an accept (CALLING-37 to CALLING-39, CALLING-50,
-  CALLING-51), and the rules of the look
+  the `mood` of a speak and the clips and room of an accept (CALLING-37 to CALLING-39, CALLING-50
+  to CALLING-52), and the rules of the look
   (CALLING-42 to CALLING-47); and
 - when its place lies inside another app's place, the `parent` of its standing (CALLING-27).
 

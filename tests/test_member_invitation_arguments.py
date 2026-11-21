@@ -110,6 +110,7 @@ def test_decline_invitation_arguments_with_a_malformed_field_are_refused(
 
 FIGURE_WIRE = {"url": "https://figures.example/a.glb", "sha256": "ab12" * 16}
 CLIP_WIRE = {"url": "https://figures.example/wave.vrma", "sha256": "cd34" * 16}
+ROOM_WIRE = {"url": "https://figures.example/room.glb", "sha256": "ef56" * 16}
 FIGURE_LOOK_WIRE = {"kind": "figure"} | FIGURE_WIRE
 VIDEO_LOOK_WIRE = {"kind": "video", "name": "studio-1"}
 
@@ -172,9 +173,13 @@ def look_clip_with(**fields: Any) -> dict[str, Any]:
     return {"looks": [FIGURE_LOOK_WIRE | {"gestures": clips}]}
 
 
+def look_room_with(**fields: Any) -> dict[str, Any]:
+    return {"looks": [FIGURE_LOOK_WIRE | {"room": ROOM_WIRE | fields}]}
+
+
 @pytest.fixture(
-    params=[figure_with, clip_with, look_with, look_clip_with],
-    ids=["figure", "clip", "look", "look-clip"],
+    params=[figure_with, clip_with, look_with, look_clip_with, look_room_with],
+    ids=["figure", "clip", "look", "look-clip", "look-room"],
 )
 def ref_with(request: pytest.FixtureRequest) -> Callable[..., dict[str, Any]]:
     return request.param
@@ -365,8 +370,20 @@ def test_a_figure_refuses_clips_that_name_no_base_gesture_or_are_no_file_referen
         AcceptInvitationArguments.model_validate_json(wire_text)
 
 
-def test_clips_cannot_be_given_without_a_figure() -> None:
-    wire_text = json.dumps(ACCEPT_WIRE | {"gestures": {"wave": CLIP_WIRE}})
+@pytest.mark.parametrize(
+    "fields",
+    [{"gestures": {"wave": CLIP_WIRE}}, {"room": ROOM_WIRE}],
+    ids=["clips", "room"],
+)
+def test_clips_or_a_room_cannot_be_given_without_a_figure(fields: dict[str, Any]) -> None:
+    wire_text = json.dumps(ACCEPT_WIRE | fields)
+
+    with pytest.raises(ValidationError):
+        AcceptInvitationArguments.model_validate_json(wire_text)
+
+
+def test_the_old_figure_carries_no_room() -> None:
+    wire_text = json.dumps(ACCEPT_WIRE | {"figure": FIGURE_WIRE | {"room": ROOM_WIRE}})
 
     with pytest.raises(ValidationError):
         AcceptInvitationArguments.model_validate_json(wire_text)
@@ -381,6 +398,7 @@ def test_clips_cannot_be_given_without_a_figure() -> None:
         [FIGURE_LOOK_WIRE, VIDEO_LOOK_WIRE | {"name": "a" * 64}],
         [VIDEO_LOOK_WIRE, VIDEO_LOOK_WIRE | {"name": "Studio-1"}, FIGURE_LOOK_WIRE],
         [FIGURE_LOOK_WIRE | {"gestures": {"wave": CLIP_WIRE}}],
+        [FIGURE_LOOK_WIRE | {"room": ROOM_WIRE}],
     ],
     ids=[
         "figure",
@@ -389,6 +407,7 @@ def test_clips_cannot_be_given_without_a_figure() -> None:
         "name-of-64-characters",
         "names-differing-in-case-only",
         "figure-with-a-clip",
+        "figure-with-a-room",
     ],
 )
 def test_accept_invitation_arguments_keep_the_looks_in_order_and_read_them_back(
@@ -431,6 +450,7 @@ def test_an_accept_without_looks_dumps_without_the_key_and_the_figure_stays_besi
         [{"kind": "hologram", "name": "studio-1"}],
         [VIDEO_LOOK_WIRE | {"url": "https://figures.example/a.glb"}],
         [VIDEO_LOOK_WIRE | {"gestures": {}}],
+        [VIDEO_LOOK_WIRE | {"room": ROOM_WIRE}],
         [FIGURE_LOOK_WIRE | {"name": "studio-1"}],
         [{"kind": "video"}],
         [VIDEO_LOOK_WIRE | {"name": ""}],
@@ -453,6 +473,7 @@ def test_an_accept_without_looks_dumps_without_the_key_and_the_figure_stays_besi
         "unknown-kind",
         "video-with-a-url",
         "video-with-gestures",
+        "video-with-a-room",
         "figure-with-a-name",
         "video-without-a-name",
         "empty-name",

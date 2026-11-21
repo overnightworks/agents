@@ -70,6 +70,10 @@ def _is_empty(value: dict[FigureGesture, HttpsFileRef]) -> bool:
     return not value
 
 
+def _is_none(value: HttpsFileRef | None) -> bool:
+    return value is None
+
+
 class FigureRef(HttpsFileRef):
     """Where an agent's 3D figure is (see ``HttpsFileRef``) and, optionally, its own clips: for a
     gesture of figure's base set, the file that replaces figure's neutral clip on this figure
@@ -111,9 +115,12 @@ same rule ``AcceptInvitationArguments.voices`` applies."""
 
 class FigureLook(FigureRef):
     """A look of the agent that is its 3D figure: the fields of ``FigureRef`` and ``kind``, the
-    ``figure`` tag that tells the look from a ``VideoLook``. A figure look plays gestures."""
+    ``figure`` tag that tells the look from a ``VideoLook``, and, optionally, ``room``, the agent's
+    own room, which an app hands to figure to draw behind the figure; left out of the JSON when
+    unset. ``FigureRef``, so the old ``figure``, carries no room. A figure look plays gestures."""
 
     kind: Literal["figure"]
+    room: HttpsFileRef | None = Field(default=None, exclude_if=_is_none)
 
 
 class VideoLook(StrictModel):
