@@ -24,9 +24,12 @@ from typing import Final, cast
 LABEL: Final = "**Member-tool wire:**"
 CURRENT_SNAPSHOT: Final = Path(__file__).resolve().parent / "member-tool-wire.json"
 
+_PROPERTIES: Final = "properties"
+_DEFINITIONS: Final = "$defs"
+
 # keywords whose value maps names or patterns to schemas, and those holding one schema or a list
 _SCHEMA_MAPS: Final = frozenset(
-    {"properties", "$defs", "definitions", "patternProperties", "dependentSchemas"}
+    {_PROPERTIES, _DEFINITIONS, "definitions", "patternProperties", "dependentSchemas"}
 )
 _SUBSCHEMAS: Final = frozenset(
     {
@@ -102,11 +105,11 @@ def _compared_schemas(old: object, new: object, *, root: bool = False) -> _Diffe
 
 
 def _is_gaining_map(keyword: str, root: bool) -> bool:
-    return keyword == "properties" or (keyword == "$defs" and root)
+    return keyword == _PROPERTIES or (keyword == _DEFINITIONS and root)
 
 
 def _is_gain(keyword: str, name: str, required: list[str], root: bool) -> bool:
-    return (keyword == "properties" and name not in required) or (keyword == "$defs" and root)
+    return (keyword == _PROPERTIES and name not in required) or (keyword == _DEFINITIONS and root)
 
 
 def _compared_keyword(
@@ -157,13 +160,11 @@ def _classified(previous: str, current: str) -> tuple[list[str], list[str], list
         if name not in before or name not in after:
             changed.append(name)
             continue
-        match _compared_schemas(before[name], after[name], root=True):
-            case _Difference.GAINED:
-                gained.append(name)
-            case _Difference.CHANGED:
-                changed.append(name)
-            case _Difference.NONE:
-                pass
+        difference = _compared_schemas(before[name], after[name], root=True)
+        if difference is _Difference.GAINED:
+            gained.append(name)
+        elif difference is _Difference.CHANGED:
+            changed.append(name)
     return tools, changed, gained
 
 
