@@ -556,9 +556,19 @@ def test_a_resume_refused_ends_the_answer_as_a_refused_play_does(place):
     assert ("play", "Zwei.") not in place.trace.calls
 
 
-def test_the_next_decision_sees_what_was_said_before_and_after_the_hold(place):
+@pytest.mark.parametrize(
+    ("hold_reply", "said_after_the_hold"),
+    [
+        ("[continue]", "Zwei."),
+        ("Klar, ich höre zu.", "Klar, ich höre zu."),
+        ("Klar. Ich höre zu.", "Klar. Ich höre zu."),
+    ],
+)
+def test_the_next_decision_sees_what_was_said_before_and_after_the_hold(
+    place, hold_reply, said_after_the_hold
+):
     voice, gateway = an_answer_of_two_that_is_playing(
-        place, completion("[continue]"), completion("Gern.")
+        place, completion(hold_reply), completion("Gern.")
     )
 
     async def hearing(trace):
@@ -573,7 +583,7 @@ def test_the_next_decision_sees_what_was_said_before_and_after_the_hold(place):
         ("user", ["Erzähl."]),
         ("assistant", "Eins."),
         ("user", ["Moment, wie meinst du das?", PAUSED_AT_ONE]),
-        ("assistant", "Zwei."),
+        ("assistant", said_after_the_hold),
         ("user", ["Danke."]),
     ]
 

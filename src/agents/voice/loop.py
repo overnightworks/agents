@@ -142,6 +142,10 @@ class _Answer:
         self.held = True
         self.marker = None
 
+    def drop_cancelled_paused(self) -> None:
+        """A cancelled paused sentence no longer counts as started, so ``mark`` moves down."""
+        self.mark = min(self.mark, len(self.started()))
+
     def recorded_at_pause(self) -> str | None:
         """What the segment is recorded as when a hold closes it, or ``None`` for undecided."""
         if self.segment():
@@ -357,7 +361,7 @@ class _VoiceLoop[Audio]:
             self._report(Held())
             if ending is HoldEnding.ANSWERED:
                 await self._stop(held_play)
-                self._paused = False
+                self._answer.drop_cancelled_paused()
                 stage, held_play = decision, None
             elif ending is HoldEnding.FINISHED:
                 stage.cut = True
@@ -388,6 +392,7 @@ class _VoiceLoop[Audio]:
                 return None
         else:
             await self._stop(play)
+            self._answer.drop_cancelled_paused()
         if ending in (HoldEnding.STOPPED, HoldEnding.DROPPED):
             self._finish_answer()
             return None
