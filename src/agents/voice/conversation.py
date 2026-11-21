@@ -5,7 +5,9 @@ of a decision's lines and what the agent played, or the silent reply; what the m
 did not play is never recorded. A decision sends at most ``window_bytes`` of it, counted as the
 UTF-8 bytes of the messages' texts, because a provider's tokens cannot be counted here; only the
 newest line goes beyond it, alone and behind ``WINDOW_NOTE`` once anything went. What a decision
-dropped never returns.
+dropped never returns. A decision on a paused answer also holds the loop's own line that says
+what was paused and unsaid; it is recorded with the decision's lines when the decision is, and
+dropped with them when they stay undecided.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ class Conversation:
         self._last_seq: int | None = None
         self._missed = 0
         self._noted = False
+        self._pause_line: str | None = None
 
     def hear(self, line: PlaceEntry) -> None:
         """Enter a line in ``seq`` order; the agent's own spoken line is skipped.
@@ -57,6 +60,16 @@ class Conversation:
             self._missed += line.seq - self._last_seq - 1
         self._last_seq = line.seq
 
+    def note_pause(self, paused_at: str | None, unsaid: list[str]) -> None:
+        """Add the loop's line about a paused answer to the lines the next decision opens over.
+
+        ``paused_at`` is the sentence that was playing, ``None`` when none was; ``unsaid`` are
+        the sentences written and not started.
+        """
+        fields = {"paused_at": paused_at, "unsaid": " ".join(unsaid)}
+        self._pause_line = json.dumps(fields, ensure_ascii=False)
+        self._undecided.append(self._pause_line)
+
     def open_decision(self) -> list[TurnMessage]:
         """The messages of a decision over every undecided line, ending with them.
 
@@ -75,16 +88,18 @@ class Conversation:
     def close_decision(self, reply: str | None) -> None:
         """Record the open decision's lines with ``reply``.
 
-        With ``None`` they stay undecided, ahead of the lines heard since.
+        With ``None`` they stay undecided, ahead of the lines heard since, without the pause line.
         """
         if reply is None:
-            self._undecided = [*self._deciding, *self._undecided]
+            kept = [line for line in self._deciding if line is not self._pause_line]
+            self._undecided = [*kept, *self._undecided]
         else:
             self._decided += [
                 _user_message(self._deciding),
                 TurnMessage(role=TurnRole.ASSISTANT, text=reply),
             ]
         self._deciding = []
+        self._pause_line = None
 
     def _drop_the_oldest(self) -> None:
         if not self._decided and len(self._deciding) <= 1:

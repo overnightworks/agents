@@ -13,7 +13,7 @@ import string
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, StrEnum, auto
-from typing import Final
+from typing import Final, Literal
 
 from agents.backend import TurnEvent
 from agents.turn_events import AssistantTextEvent, FinalEvent, ToolCallEvent
@@ -25,7 +25,12 @@ class Marker(StrEnum):
     """A word a round of the reply may open with, between square brackets."""
 
     SILENT = "silent"
+    CONTINUE = "continue"
+    FINISH = "finish"
 
+
+type HoldMarker = Literal[Marker.CONTINUE, Marker.FINISH]
+"""The markers only a decision on a talk-over reads: go on, or finish the sentence and stop."""
 
 SILENT_REPLY: Final = f"[{Marker.SILENT}]"
 """A reply that says nothing; the conversation records a silent decision as this."""
@@ -38,6 +43,16 @@ REPLY_RULES: Final = (
 )
 """What a runner appends when a ``ReplyReader`` reads its reply: the rules of a spoken reply."""
 
+HOLD_RULES: Final = (
+    "When someone talks over you, your reply is paused and you are asked again: the last user "
+    'message then ends with a line that has the keys "paused_at" (the sentence you were saying, '
+    'or null) and "unsaid" (the sentences you had written and not yet said). Open that reply '
+    f"with [{Marker.CONTINUE}] to go on from where you paused, [{Marker.FINISH}] to finish the "
+    f"sentence you were saying and stop, {SILENT_REPLY} to stop, or with the words to say "
+    "instead, which stop what you were saying."
+)
+"""What a runner tells the model about a paused reply; the holding reader reads these openings."""
+
 PROTOCOL_TEXT: Final = (
     "You take part in a conversation by voice. Each user message holds what was heard or "
     'written since your last reply, one JSON object per line: "name" is who it comes from, '
@@ -47,8 +62,10 @@ PROTOCOL_TEXT: Final = (
     '"missed_before" counts the lines that were not passed to you before it.\n'
     f"Once the conversation grows long, the first user message opens with {WINDOW_NOTE}; "
     "nobody said that line.\n"
-    f"Your earlier replies hold only what was spoken aloud, or {SILENT_REPLY}.\n"
+    f"Your earlier replies hold only what was spoken aloud, or {SILENT_REPLY}; a paused reply "
+    "holds what was spoken after the pause, or the marker it opened with.\n"
     f"After a tool call, reply {SILENT_REPLY} when you have nothing to add.\n"
+    f"{HOLD_RULES}\n"
     f"{REPLY_RULES}"
 )
 """Appended to the agent's prompt: the line format and note, the loop's replies, the reply rules."""
@@ -112,7 +129,7 @@ class Reading:
     """What one event of the turn released: whole sentences, and a round's marker once read."""
 
     sentences: tuple[str, ...] = ()
-    opening: StayedSilent | ReplyUnreadable | None = None
+    opening: StayedSilent | ReplyUnreadable | HoldMarker | None = None
 
 
 class _Round(Enum):
@@ -129,10 +146,13 @@ class ReplyReader:
     ASCII lower case, is the marker. ``silent`` mutes the round; any other word, no ``]`` in
     reach or a round that ends first mutes it as unreadable. Any other round is speech, and a
     ``[`` inside it is text, except that a sentence that is nothing but the ``silent`` marker is
-    dropped; the sentences before it were released and are spoken.
+    dropped; the sentences before it were released and are spoken. A reader made with
+    ``holding`` also reads ``continue`` and ``finish`` as their markers, which mute the round
+    too; any other reader reads them as unreadable.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, holding: bool = False) -> None:
+        self._holding = holding
         self._start_round()
 
     def read(self, event: TurnEvent) -> Reading:
@@ -158,7 +178,7 @@ class ReplyReader:
         if not self._opening.startswith(_MARKER_OPEN):
             self._round = _Round.SPEECH
             return Reading(_spoken(self._release.feed(self._opening)))
-        opening = _marker_of(self._opening)
+        opening = _marker_of(self._opening, holding=self._holding)
         if opening is not None:
             self._round = _Round.MUTED
         return Reading(opening=opening)
@@ -174,13 +194,21 @@ class ReplyReader:
         return reading
 
 
-def _marker_of(opening: str) -> StayedSilent | ReplyUnreadable | None:
+def _marker_of(
+    opening: str, *, holding: bool = False
+) -> StayedSilent | ReplyUnreadable | HoldMarker | None:
     """How a round opening with ``[`` reads, or ``None`` while its marker may still close."""
     close = opening.find(_MARKER_CLOSE, 1, _MARKER_REACH + 1)
     if close == -1:
         return ReplyUnreadable() if len(opening) > _MARKER_REACH else None
     word = opening[1:close].strip(" ").translate(_ASCII_LOWER)
-    return StayedSilent() if word == Marker.SILENT else ReplyUnreadable()
+    if word == Marker.SILENT:
+        return StayedSilent()
+    if holding and word == Marker.CONTINUE:
+        return Marker.CONTINUE
+    if holding and word == Marker.FINISH:
+        return Marker.FINISH
+    return ReplyUnreadable()
 
 
 def _spoken(released: tuple[str, ...]) -> tuple[str, ...]:

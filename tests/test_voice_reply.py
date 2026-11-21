@@ -2,6 +2,7 @@
 
 import json
 import random
+from typing import get_args
 
 import pytest
 
@@ -17,6 +18,7 @@ from agents.voice.reply import (
     PROTOCOL_TEXT,
     REPLY_RULES,
     SILENT_REPLY,
+    HoldMarker,
     ReplyReader,
     SentenceRelease,
 )
@@ -130,11 +132,26 @@ def test_the_protocol_text_names_every_key_a_written_line_carries():
     conversation.hear(a_line(1, "Eins."))
     conversation.hear(a_line(3, "Drei."))
     conversation.hear(a_line(5, "Ada legt ab.", kind="move", spoken=False, act=True))
+    conversation.note_pause("Eins.", ["Zwei."])
 
     written = conversation.open_decision()[-1].text.splitlines()
 
     keys = {key for line in written for key in json.loads(line)}
     assert {key for key in keys if f'"{key}"' not in PROTOCOL_TEXT} == set()
+
+
+@pytest.mark.parametrize("marker", get_args(HoldMarker.__value__))
+def test_the_protocol_text_names_each_hold_marker_the_holding_reader_takes(marker):
+    assert f"[{marker}]" in PROTOCOL_TEXT
+
+
+@pytest.mark.parametrize("marker", get_args(HoldMarker.__value__))
+def test_the_holding_reader_reads_hold_markers_and_the_default_reader_reads_them_unreadable(marker):
+    events = a_final(f"[{marker}] Weiter.")
+    holding = ReplyReader(holding=True)
+
+    assert [holding.read(event).opening for event in events] == [marker, None]
+    assert read_turn(events) == (UNREADABLE, [])
 
 
 def test_the_protocol_text_names_the_note_that_opens_a_window_with_earlier_parts_dropped():
