@@ -1,4 +1,4 @@
 # The figure release whose vocabulary agents generates its enums from. Raise it with
 # `uv run python scripts/generate_figure_vocabulary.py --pin <url> <integrity>`.
-url = "https://github.com/overnightworks/figure/releases/download/v0.7.0/overnightworks-figure-0.7.0.tgz"
-integrity = "sha512-/MltEimeiOvEuCKtaw41fyd9cBrocHlPsgwuF/WuoHtWKFKPsN5v3OI1FHGRBd1HuLsC3tTBuZjzREAD6UvbDg=="
+url = "https://github.com/overnightworks/figure/releases/download/v0.9.0/overnightworks-figure-0.9.0.tgz"
+integrity = "sha512-7rHxd0F7MD/J5FXST5hIOShwlga1UAzneAnoY4DGywhOw0YL5TATM04+YPom+SgJMbd4WLX169rwxhZ5eyGrHQ=="

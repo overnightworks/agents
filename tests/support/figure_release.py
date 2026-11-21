@@ -21,7 +21,12 @@ RELEASE_URL = "https://releases.example/figure-9.9.9.tgz"
 
 
 def vocabulary_document(**fields: object) -> dict[str, object]:
-    return {"version": 1, "gestures": ["wave", "nod"], "moods": ["happy", "sad_2"]} | fields
+    return {
+        "version": 1,
+        "gestures": ["wave", "nod"],
+        "framings": ["face", "fullBody"],
+        "moods": ["happy", "sad_2"],
+    } | fields
 
 
 def tarball(
