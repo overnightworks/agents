@@ -222,7 +222,6 @@ class _VoiceLoop[Audio]:
         self._last_played: list[str] = []
         self._talk = TalkOver()
         self._held = False
-        self._paused = False
         self._go = asyncio.Event()
         self._go.set()
         self._moved = asyncio.Event()
@@ -249,9 +248,12 @@ class _VoiceLoop[Audio]:
             return
         self._held = True
         self._go.clear()
+        await self._held_now()
+
+    async def _held_now(self) -> None:
+        """Report the hold and pause the sentence playing, if one is."""
         self._report(Held())
         if self._answer.playing is not None:
-            self._paused = True
             await self._voice.pause()
 
     def _hear_line(self, line: PlaceEntry) -> None:
@@ -314,7 +316,6 @@ class _VoiceLoop[Audio]:
 
     def _finish_answer(self) -> None:
         self._held = False
-        self._paused = False
         self._go.set()
         self._talk.answer_ends()
 
@@ -403,13 +404,16 @@ class _VoiceLoop[Audio]:
             return None
         if ending is HoldEnding.ANSWERED:
             stage, play = decision, None
-        self._held = False
-        self._go.set()
-        return stage, play or self._start_play(stage)
+        play = play or self._start_play(stage)
+        if self._talk.worded:
+            await self._held_now()
+        else:
+            self._held = False
+            self._go.set()
+        return stage, play
 
     async def _resumed(self, play: asyncio.Task[None] | None) -> bool:
         """Resume the paused sound; ``False`` once the host refused and the answer is over."""
-        self._paused = False
         if play is None or not self._answer.playing:
             return True
         sentence = self._answer.playing

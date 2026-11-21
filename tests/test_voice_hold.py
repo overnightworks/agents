@@ -624,6 +624,26 @@ def test_an_utterance_that_gains_words_only_after_the_answer_ended_holds_nothing
     assert len(gateway.requests) == 2
 
 
+def test_a_talk_over_that_starts_while_an_ending_resumes_the_sound_holds_it_again(place):
+    voice = RecordingVoice(place.trace, held={"Eins."}, seconds_per_resume=0.5)
+    gateway = FakeGateway(THE_FIRST_ANSWER, completion("[continue]"))
+
+    async def hearing(trace):
+        async for event in interjection_while_playing(trace):
+            yield event
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.until(lambda: ("resume", "Eins.") in trace.entries)
+        yield speaking(("Cy", "Noch eine Frage"))
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert place.trace.events.count(Held()) == 2
+    assert [call for call in place.trace.calls if call[0] == "pause"] == [("pause", "Eins.")] * 2
+    assert ("play", "Zwei.") not in place.trace.calls
+
+
 def test_a_resume_refused_ends_the_answer_as_a_refused_play_does(place):
     voice = RecordingVoice(
         place.trace, held={"Eins."}, raises={("resume", "Eins."): VoiceRefused()}

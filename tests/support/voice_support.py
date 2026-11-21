@@ -162,11 +162,12 @@ def _kind_of(entry: object) -> str | None:
 class RecordingVoice:
     """A ``VoiceOut`` whose sound is the sentence itself; it records each call in the trace.
 
-    Every render takes ``seconds_per_render`` and every play ``seconds_per_sentence`` on the
-    loop's clock, and a sentence in ``held`` plays until ``release`` ends it. A play does not
-    return while paused, until ``resume``; a sentence in ``ends_at_pause`` ends as it is paused,
-    so its ``resume`` has nothing to go on with. After that time, ``raises`` maps a call and its
-    sentence to what that call raises, and a call in ``hangs`` never returns.
+    Every render takes ``seconds_per_render``, every play ``seconds_per_sentence`` and every
+    resume ``seconds_per_resume`` on the loop's clock, and a sentence in ``held`` plays until
+    ``release`` ends it. A play does not return while paused, until ``resume``; a sentence in
+    ``ends_at_pause`` ends as it is paused, so its ``resume`` has nothing to go on with. After
+    that time, ``raises`` maps a call and its sentence to what that call raises, and a call in
+    ``hangs`` never returns.
     """
 
     def __init__(
@@ -179,6 +180,7 @@ class RecordingVoice:
         ends_at_pause: Collection[str] = (),
         seconds_per_render: float = 0.0,
         seconds_per_sentence: float = 0.0,
+        seconds_per_resume: float = 0.0,
     ) -> None:
         self._trace = trace
         self._raises = raises or {}
@@ -190,6 +192,7 @@ class RecordingVoice:
         self._sentence = ""
         self._render_seconds = seconds_per_render
         self._seconds = seconds_per_sentence
+        self._resume_seconds = seconds_per_resume
 
     def release(self, sentence: str) -> None:
         self._held[sentence].set()
@@ -215,6 +218,8 @@ class RecordingVoice:
 
     async def resume(self) -> None:
         self._trace.record(("resume", self._sentence))
+        if self._resume_seconds:
+            await asyncio.sleep(self._resume_seconds)
         await self._as_arranged("resume", self._sentence)
         self._resumed.set()
 
