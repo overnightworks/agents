@@ -5,11 +5,15 @@ from __future__ import annotations
 import io
 import json
 import runpy
+from enum import StrEnum
 from pathlib import Path
+from typing import Annotated, Any, Literal
 
 import pytest
+from pydantic import Field, create_model
 
 import scripts.member_tool_wire_diff as diff
+from agents.turn import StrictModel
 
 Tools = dict[str, dict[str, object]]
 
@@ -58,51 +62,200 @@ def test_the_line_names_the_tools_that_differ_from_the_previous_snapshot(
     assert diff.note_line(snapshot(BASE), snapshot(current)) == line
 
 
-RECORDS: dict[str, object] = {
-    "Alpha": {"properties": {"one": {}}},
-    "Beta": {"properties": {"two": {}}},
-}
+Mood = StrEnum("Mood", {"CALM": "calm"})
+MoodWithPanic = StrEnum("Mood", {"CALM": "calm", "PANIC": "panic"})
+
+
+class Circle(StrictModel):
+    tag: Literal["circle"] = "circle"
+
+
+class Square(StrictModel):
+    tag: Literal["square"] = "square"
+
+
+class Triangle(StrictModel):
+    tag: Literal["triangle"] = "triangle"
+
+
+def record(name: str, doc: str | None = None, **fields: Any) -> type[StrictModel]:
+    """A record named ``name``; each field is a ``(type, default)`` pair, ``...`` for no default."""
+    return create_model(name, __base__=StrictModel, __doc__=doc, **fields)  # pyright: ignore[reportCallIssue, reportUnknownVariableType]
+
+
+def resources_of(**records: type[StrictModel]) -> dict[str, object]:
+    return {name: model.model_json_schema() for name, model in records.items()}
+
+
+def wire_of(**records: type[StrictModel]) -> str:
+    return snapshot(BASE, resources_of(**records))
+
+
+def line_for(before: type[StrictModel], after: type[StrictModel]) -> str:
+    return diff.note_line(wire_of(Alpha=before), wire_of(Alpha=after))
+
+
+ADDED = "**Member-tool wire:** fields added: Alpha."
+CHANGED = "**Member-tool wire:** changed: resources: Alpha."
+
+
+def test_a_resource_record_that_differs_in_nothing_is_unchanged() -> None:
+    model = record("Alpha", one=(int, ...))
+
+    assert line_for(model, model) == "**Member-tool wire:** unchanged."
 
 
 @pytest.mark.parametrize(
-    ("current", "line"),
+    ("before", "after"),
     [
-        (RECORDS, "**Member-tool wire:** unchanged."),
-        (
-            {**RECORDS, "Alpha": {"properties": {"one": {}, "extra": {}}}},
-            "**Member-tool wire:** changed: resources: Alpha.",
+        pytest.param(
+            record("Alpha", one=(int, ...)),
+            record("Alpha", one=(int, ...), extra=(str | None, None)),
+            id="top level",
         ),
-        (
-            {**RECORDS, "Alpha": {"properties": {"other": {}}}},
-            "**Member-tool wire:** changed: resources: Alpha.",
+        pytest.param(
+            record("Alpha", inner=(record("Inner", one=(int, ...)), ...)),
+            record("Alpha", inner=(record("Inner", one=(int, ...), extra=(str | None, None)), ...)),
+            id="nested",
         ),
-        (
-            {**RECORDS, "Gamma": {"properties": {}}},
-            "**Member-tool wire:** changed: resources: Gamma.",
+        pytest.param(
+            record("Alpha", one=(int, ...)),
+            record("Alpha", one=(int, ...), mood=(Mood | None, None)),
+            id="with a new definition",
         ),
-        (
-            {"Alpha": RECORDS["Alpha"]},
-            "**Member-tool wire:** changed: resources: Beta.",
+        pytest.param(
+            record("Alpha", one=(int, ...)),
+            record("Alpha", one=(int, ...), title=(str | None, None)),
+            id="named title",
         ),
     ],
 )
-def test_the_line_names_the_resource_records_that_differ(
-    current: dict[str, object], line: str
+def test_an_added_optional_field_on_a_resource_record_is_named_as_added(
+    before: type[StrictModel], after: type[StrictModel]
 ) -> None:
-    assert diff.note_line(snapshot(BASE, RECORDS), snapshot(BASE, current)) == line
+    assert line_for(before, after) == ADDED
 
 
-def test_the_line_names_tools_and_resource_records_together() -> None:
-    current = {**RECORDS, "Alpha": {"properties": {}}}
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        pytest.param(
+            record("Alpha", one=(int, ...), gone=(int | None, None)),
+            record("Alpha", one=(int, ...)),
+            id="removed",
+        ),
+        pytest.param(
+            record("Alpha", one=(int, ...)),
+            record("Alpha", other=(int, ...)),
+            id="renamed",
+        ),
+        pytest.param(
+            record("Alpha", one=(int, ...)), record("Alpha", one=(str, ...)), id="retyped"
+        ),
+        pytest.param(
+            record("Alpha", one=(int, ...)),
+            record("Alpha", one=(int, ...), extra=(str, ...)),
+            id="newly required",
+        ),
+        pytest.param(
+            record("Alpha", one=(int, 1)),
+            record("Alpha", one=(int, 2)),
+            id="changed default",
+        ),
+        pytest.param(
+            record("Alpha", one=(Annotated[int, Field(ge=0)], ...)),
+            record("Alpha", one=(Annotated[int, Field(ge=1)], ...)),
+            id="changed bound",
+        ),
+        pytest.param(
+            record("Alpha", shape=(Annotated[Circle | Square, Field(discriminator="tag")], ...)),
+            record(
+                "Alpha",
+                shape=(Annotated[Circle | Square | Triangle, Field(discriminator="tag")], ...),
+            ),
+            id="new union variant",
+        ),
+        pytest.param(
+            record("Alpha", inner=(record("Inner", one=(int, ...)), ...)),
+            record("Alpha", inner=(record("Inner", one=(int, ...), extra=(str, ...)), ...)),
+            id="newly required in a nested record",
+        ),
+        pytest.param(
+            record("Alpha", inner=(record("Inner", one=(int, ...)), ...)),
+            record("Alpha", one=(int, ...)),
+            id="removed definition",
+        ),
+        pytest.param(
+            record("Alpha", mood=(Mood, ...)),
+            record("Alpha", mood=(MoodWithPanic, ...)),
+            id="added enum value",
+        ),
+        pytest.param(
+            record("Alpha", title=(int, ...)),
+            record("Alpha", title=(str, ...)),
+            id="a field named title retyped",
+        ),
+        pytest.param(
+            record("Alpha", description=(int, ...)),
+            record("Alpha", description=(int, ...), title=(str, ...)),
+            id="a field named description beside a new required one",
+        ),
+    ],
+)
+def test_a_removed_retyped_or_newly_required_field_is_named_as_changed(
+    before: type[StrictModel], after: type[StrictModel]
+) -> None:
+    assert line_for(before, after) == CHANGED
+
+
+def test_a_resource_record_differing_only_in_its_description_is_unchanged() -> None:
+    before = record("Alpha", "A docstring.", one=(int, Field(description="First")))
+    after = record("Alpha", "Another docstring.", one=(int, Field(description="Other")))
+
+    assert line_for(before, after) == "**Member-tool wire:** unchanged."
+
+
+def test_a_record_added_or_removed_is_named_as_changed() -> None:
+    alpha, beta = record("Alpha", one=(int, ...)), record("Beta", two=(int, ...))
+
+    assert diff.note_line(wire_of(Alpha=alpha), wire_of(Alpha=alpha, Beta=beta)) == (
+        "**Member-tool wire:** changed: resources: Beta."
+    )
+    assert diff.note_line(wire_of(Alpha=alpha, Beta=beta), wire_of(Alpha=alpha)) == (
+        "**Member-tool wire:** changed: resources: Beta."
+    )
+
+
+def test_an_added_optional_argument_still_changes_the_tool() -> None:
+    before = {"speak": {"arguments": record("A", one=(int, ...)).model_json_schema()}}
+    after = {
+        "speak": {
+            "arguments": record("A", one=(int, ...), extra=(str | None, None)).model_json_schema()
+        }
+    }
+
+    assert diff.note_line(snapshot(before), snapshot(after)) == (
+        "**Member-tool wire:** changed: speak."
+    )
+
+
+def test_changes_and_added_fields_share_one_line() -> None:
+    before = {"Alpha": record("Alpha", one=(int, ...)), "Beta": record("Beta", two=(int, ...))}
+    after = {
+        "Alpha": record("Alpha", one=(int, ...), extra=(str | None, None)),
+        "Beta": record("Beta", two=(str, ...)),
+    }
     changed_tools = {**BASE, "speak": {"arguments": {}, "results": []}}
 
-    assert diff.note_line(snapshot(BASE, RECORDS), snapshot(changed_tools, current)) == (
-        "**Member-tool wire:** changed: speak; resources: Alpha."
+    assert diff.note_line(wire_of(**before), snapshot(changed_tools, resources_of(**after))) == (
+        "**Member-tool wire:** changed: speak; resources: Beta. Fields added: Alpha."
     )
 
 
 def test_a_previous_snapshot_without_resources_sees_every_record_as_added() -> None:
-    assert diff.note_line(snapshot(BASE), snapshot(BASE, RECORDS)) == (
+    records = {"Alpha": record("Alpha", one=(int, ...)), "Beta": record("Beta", two=(int, ...))}
+
+    assert diff.note_line(snapshot(BASE), wire_of(**records)) == (
         "**Member-tool wire:** changed: resources: Alpha, Beta."
     )
 
