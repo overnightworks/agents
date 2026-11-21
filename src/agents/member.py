@@ -779,12 +779,9 @@ MEMBER_RESOURCE_RECORDS: Final[tuple[type[StrictModel], ...]] = get_args(
 def member_resource_from_json[RecordT: MemberResourceRecord](
     record: type[RecordT], text: str | bytes
 ) -> RecordT:
-    """A resource record a runner reads, ignoring a key of any depth that its release does not know.
-
-    Every field, enum value and rule across fields this release knows is checked as for the default
-    parse, which stays strict. The key is dropped, never carried; a view's ``state`` is the app's
-    document and keeps every key.
-    """
+    """``record`` read from ``text``, a key of any depth this release does not know dropped, never
+    carried; every field, enum value and rule across fields it knows is checked as the default parse
+    does, and a view's ``state`` keeps every key."""
     return record.model_validate_json(text, extra="ignore")
 
 
