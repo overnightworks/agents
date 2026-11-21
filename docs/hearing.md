@@ -65,7 +65,7 @@ end, or that session start.
 
 **HEARING-6 (L+A).** Only finished utterances are heard: one spoken line per utterance, under the
 speaker's shown name and the app's `kind`, and never provisional text as an entry; provisional text
-reaches a member only through HEARING-21. `heard` builds the line as
+reaches a member only through HEARING-21, and the voice loop only through HEARING-32. `heard` builds the line as
 `SpokenLine` (`spoken` true, `own` false) for every hearing member, carrying as `traceparent` the
 trace `heard` runs in, so the app calls it inside the request that heard the utterance and a runner
 continues that trace in the turn the line wakes; the app appends only finished utterances. Proved
@@ -247,6 +247,30 @@ held sentence's rest plays, faded back in, then the queue, and `interrupted` lea
 window change. It answers `ContinuedSpeaking(continued: true)`, and refuses `not_active`, or
 `not_interrupted` when no hold or another one stands. The fade and the resume belong to the app's speech service.
 
+**HEARING-32 (L+A).** An app that runs the voice loop gives its hearing, besides each finished
+line, every change of the partial speech at the place as `PartialsChanged`: one `PartialSpeech`
+per person other than the agent whose finished line it would give (HEARING-1, HEARING-4), in the
+order they started, empty when nobody speaks, whether or not the agent answers. A person's
+finished line comes before the change that drops that utterance's partial. The loop holds its
+answer itself and reads neither `talked_over` nor `interrupted`, which stay the member wire's hold
+for a runner outside the app: while it answers (the reply written or spoken), the first partial
+with a letter or digit of an utterance that began during the answer pauses the playing sentence
+(`VoiceOut.pause`) and starts no other; a partial without words and an utterance that began before
+the answer never pause it. A person who starts while the talk-over stands joins it; a start after
+it ended is a newer talk-over. The talk-over ends when each of its utterances has ended. Then,
+once the held turn has been read to its end (its `maxDurationSeconds` bounds that wait), one
+decision gets the talk so far, the lines heard since and what was paused and unsaid, and its
+reply's opening ends the hold: `[continue]` resumes the paused sentence and the rest plays,
+`[finish]` resumes it and drops the rest, `[silent]` stops, speech replaces the rest; anything
+else, a failed decision or none drops the rest and nothing more is said. An ending that plays
+something waits while a newer talk-over with words stands, and that talk-over gets its own
+decision. No timer ends a hold. The agent's own voice is kept out by the app's audio path; the
+loop does not test partials for echoes. A person whose question the speech service splits into
+two finals wakes the agent on the first and holds it on the second, so the first model call is
+spent for nothing and the hold decision waits for that reply to be written. On the member wire
+`continue_speaking` cannot express "finish": it plays the queue too. Proved by
+`tests/test_voice_hold.py`; the app proves its partials and its `pause` and `resume`.
+
 ## When the voice fails
 
 **HEARING-24 (A).** The app sets the window's `voice_state` for the member at that place:
@@ -287,6 +311,8 @@ app supplies:
 - the talked-over record with the partials, the stop and the style (HEARING-21 to
   HEARING-23), the hold, the continue, the `speak` with the id and the refusals `held` and
   `not_interrupted` (HEARING-30 and HEARING-31);
+- for the voice loop, the partial speech in its hearing and the pause and resume of its sound
+  (HEARING-32);
 - what seeing needs of it (HEARING-19); and
 - its privacy text, which states what is heard and seen and its legal basis.
 

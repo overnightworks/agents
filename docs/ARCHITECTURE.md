@@ -84,7 +84,9 @@ flowchart TB
   (`voice.loop.run_voice_loop`) on the `AgentBackend` port, its ports `VoiceOut` and `WakeRule`,
   the reply markers and sentence release (`voice.reply`), the running conversation
   (`voice.conversation`), the standard wake rule and the echo rule that keeps the agent's own
-  voice out of the conversation.
+  voice out of the conversation. The loop also holds its own answer when a person talks over it
+  (`voice.talk_over` decides what a talk-over is, from the partial speech the host gives), pauses
+  the host's sound through `VoiceOut` and ends the hold with one more decision.
 
 ## Runtime
 
@@ -100,6 +102,9 @@ The voice loop runs in the host's process too. The host's wake rule decides whic
 starts a decision. One decision is in flight at a time: one task reads its turn while another
 plays its sentences in order through the host's `VoiceOut`, so the turn's deadline bounds the
 writing, never the playing, and a third renders the next sentence, never more than one ahead.
+The loop holds itself: when a person talks over its answer it pauses the host's sound, waits until
+the talk-over has ended and the held turn has been read to its end, and runs one hold decision,
+so no two model calls overlap.
 
 The MCP person front is mounted by the host behind the host's own authentication gate. It
 resolves the person through a port, answers `tools/list` and `tools/call`, and replays a marked
@@ -182,6 +187,15 @@ that layer, and `quality / verdict` holds the import contracts and size and clon
 - Speaking as a tool the model calls: a tool runs only after its round is judged whole, so speech
   could not start early. The `speak` tool stays for the loop and is never offered to the model.
   Reopens if a tool call can run while its round is still written.
+- The host holding the sound on its own while the loop writes: two owners of one gate, since the
+  loop alone knows whether an answer is still written and owns the queue. An ending tool for the
+  hold: a tool runs only after its round is judged whole. Reopens if a host must hold sound the
+  loop does not know.
+- The voice loop reading the member wire's hold (`talked_over`, `interrupted`): that hold
+  (HEARING-30, 31) stays the hold a runner outside the app reads, while the loop runs in the app
+  and holds its own answer from the people's partial speech, so the two holds sit on two
+  boundaries and share only `PartialSpeech`. Reopens if a member-wire runner moves into the loop
+  or the loop drives a member over the wire.
 - A cap in the loop: the person's budget and the app's off switches bound an agent.
 - Dropping one line per call at the window's bound: it would rewrite the prompt on every call, so
   the window drops whole pairs until a quarter is free.
@@ -197,5 +211,8 @@ that layer, and `quality / verdict` holds the import contracts and size and clon
   answer's. An app counts drops through `EchoDropped`. The rule goes, with `EchoDropped` and its
   lines in `connector.md`, once a measurement of the echo in a room or a hearing that stops while
   the agent speaks makes it unneeded.
+- An echo the app's audio path leaks holds the voice loop: every sentence that plays can echo as
+  a new talk-over, so a leak costs a pause and a model call per sentence. The app's echo
+  cancellation keeps it out; the loop does not test partials for echoes.
 - LiteLLM sends a finish reason of its own when a provider's stream ends cleanly without one, so
   a cut round reads as complete; a cut tool round lost its call and its text showed as the answer.
