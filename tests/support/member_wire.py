@@ -10,7 +10,7 @@ from logline import current_traceparent, unit_trace
 from logline.trace import current_trace_id
 from pydantic import BaseModel, ValidationError
 
-from agents.figure_vocabulary import FigureGesture
+from agents.figure_vocabulary import FigureFraming, FigureGesture
 from agents.member import PlaceWindow
 
 
@@ -92,6 +92,11 @@ def turn_state_wire(**fields: object) -> dict[str, object]:
 def gesture_wire(**fields: object) -> dict[str, object]:
     first_gesture = next(iter(FigureGesture)).value
     return {"place": {"kind": "room", "id": "r-1"}, "gesture": first_gesture} | fields
+
+
+def framing_wire(**fields: object) -> dict[str, object]:
+    first_framing = next(iter(FigureFraming)).value
+    return {"place": {"kind": "room", "id": "r-1"}, "framing": first_framing} | fields
 
 
 def is_refused(record: type[BaseModel], wire: dict[str, Any]) -> bool:

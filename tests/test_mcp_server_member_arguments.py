@@ -14,6 +14,7 @@ from agents.member import (
     CONTINUE_SPEAKING_TOOL,
     DECLINE_INVITATION_TOOL,
     GESTURE_TOOL,
+    SET_FRAMING_TOOL,
     SET_TURN_STATE_TOOL,
     SPEAK_TOOL,
     STOP_SPEAKING_TOOL,
@@ -25,6 +26,7 @@ from tests.support.member_wire import (
     accept_wire,
     continue_wire,
     decline_wire,
+    framing_wire,
     gesture_wire,
     speak_wire,
     stop_wire,
@@ -42,6 +44,7 @@ _MEMBER_TOOLS = (
     STOP_SPEAKING_TOOL,
     CONTINUE_SPEAKING_TOOL,
     GESTURE_TOOL,
+    SET_FRAMING_TOOL,
     SET_TURN_STATE_TOOL,
 )
 
@@ -68,6 +71,7 @@ def front(person: Person) -> McpPersonFront:
         (STOP_SPEAKING_TOOL, {}, "place (missing)"),
         (CONTINUE_SPEAKING_TOOL, continue_wire(interrupted=""), "interrupted (too_short)"),
         (GESTURE_TOOL, gesture_wire(gesture="cartwheel"), "gesture (enum)"),
+        (SET_FRAMING_TOOL, framing_wire(framing="closeup"), "framing (enum)"),
         (SET_TURN_STATE_TOOL, turn_state_wire(stopped="whatever"), "stopped (enum)"),
     ],
 )
@@ -111,6 +115,7 @@ def test_a_member_tool_call_that_does_not_fit_its_record_is_a_tool_error_and_nev
         (STOP_SPEAKING_TOOL, stop_wire()),
         (CONTINUE_SPEAKING_TOOL, continue_wire()),
         (GESTURE_TOOL, gesture_wire()),
+        (SET_FRAMING_TOOL, framing_wire()),
         (SET_TURN_STATE_TOOL, turn_state_wire()),
         (SET_TURN_STATE_TOOL, turn_state_wire(stopped=None)),
     ],

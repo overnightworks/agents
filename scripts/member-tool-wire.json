@@ -865,6 +865,74 @@
         }
       ]
     },
+    "set_framing": {
+      "arguments": {
+        "additionalProperties": false,
+        "description": "The place and the framing your figure takes there: how much of you the people see, from your\nface to your whole body. The framing stays until you set another.",
+        "properties": {
+          "framing": {
+            "description": "A framing of how much of itself figure shows.",
+            "enum": [
+              "face",
+              "shoulders",
+              "upperBody",
+              "fullBody"
+            ],
+            "type": "string"
+          },
+          "place": {
+            "additionalProperties": false,
+            "description": "A place the member is in, opaque to everyone but the app: its kind and its id.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "place",
+          "framing"
+        ],
+        "type": "object"
+      },
+      "results": [
+        {
+          "$defs": {
+            "SetFramingRefusal": {
+              "description": "Why the app does not take a framing: ``not_active`` when the member left, was removed or is\npaused.",
+              "enum": [
+                "not_active"
+              ],
+              "title": "SetFramingRefusal",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "What ``set_framing`` answers on a refusal, as JSON in an ``is_error`` result.",
+          "properties": {
+            "refused": {
+              "$ref": "#/$defs/SetFramingRefusal"
+            }
+          },
+          "required": [
+            "refused"
+          ],
+          "title": "SetFramingRefused",
+          "type": "object"
+        }
+      ]
+    },
     "set_turn_state": {
       "arguments": {
         "additionalProperties": false,
