@@ -5,9 +5,10 @@ Compares the snapshot beside this script (``member-tool-wire.json``) with the pr
 read from standard input (empty when there is none). A tool counts as changed when it was added,
 removed, or its arguments or results differ in any byte, descriptions included, which reach the
 model. A resource record counts as changed when it was added or removed or its schema differs in
-anything but a ``title`` or ``description`` keyword, and as having gained fields when its schema
-differs only by properties the previous schema lacks that are not required, and by ``$defs`` entries
-it lacks. A snapshot without resources holds none. A schema does not show a ``model_validator``, an
+anything but a ``title`` or ``description`` keyword of a schema the guard walks, and as having
+gained fields when its schema differs only by properties the previous schema lacks that are not
+required, and by ``$defs`` entries it lacks. A keyword the guard does not know is compared byte for
+byte, so it can only make a record changed. A snapshot without resources holds none. A schema does not show a ``model_validator``, an
 ``AfterValidator`` or ``exclude_if``, so a rule across fields is not seen here.
 """
 
@@ -15,15 +16,17 @@ from __future__ import annotations
 
 import json
 import sys
+from enum import IntEnum
 from pathlib import Path
 from typing import Final, cast
 
 LABEL: Final = "**Member-tool wire:**"
 CURRENT_SNAPSHOT: Final = Path(__file__).resolve().parent / "member-tool-wire.json"
 
-_NAME_MAPS: Final = frozenset({"properties", "$defs"})
 # keywords whose value maps names or patterns to schemas, and those holding one schema or a list
-_SCHEMA_MAPS: Final = _NAME_MAPS | {"definitions", "patternProperties", "dependentSchemas"}
+_SCHEMA_MAPS: Final = frozenset(
+    {"properties", "$defs", "definitions", "patternProperties", "dependentSchemas"}
+)
 _SUBSCHEMAS: Final = frozenset(
     {
         "items",
@@ -49,78 +52,93 @@ _PROSE_KEYWORDS: Final = frozenset({"title", "description"})
 type Schema = dict[str, object]
 
 
+class _Difference(IntEnum):
+    NONE = 0
+    GAINED = 1
+    CHANGED = 2
+
+
 def _section(snapshot: str, key: str) -> dict[str, object]:
     document = cast("dict[str, dict[str, object]]", json.loads(snapshot))
     return document[key] if key != "resources" else document.get(key, {})
 
 
-def _named_schemas(keyword: str, value: object) -> Schema | None:
-    """The schemas ``keyword`` maps names or patterns to; ``None`` where it holds none."""
-    if keyword in _SCHEMA_MAPS and isinstance(value, dict):
-        return cast("Schema", value)
-    return None
+def _compared_bytes(old: object, new: object) -> _Difference:
+    same = json.dumps(old, sort_keys=True) == json.dumps(new, sort_keys=True)
+    return _Difference.NONE if same else _Difference.CHANGED
 
 
-def _without_prose(schema: object) -> object:
-    """``schema`` with ``title`` and ``description`` removed where they are schema keywords."""
-    if not isinstance(schema, dict):
-        return schema
-    return {
-        keyword: _without_prose_in(keyword, inner)
-        for keyword, inner in cast("Schema", schema).items()
-        if keyword not in _PROSE_KEYWORDS
-    }
+def _map_of(value: object) -> Schema | None:
+    return cast("Schema", value) if isinstance(value, dict) else None
 
 
-def _without_prose_in(keyword: str, value: object) -> object:
-    """The value of ``keyword``; only a keyword whose value holds schemas is walked."""
-    if (named := _named_schemas(keyword, value)) is not None:
-        return {name: _without_prose(inner) for name, inner in named.items()}
-    if keyword not in _SUBSCHEMAS:
-        return value
-    if isinstance(value, list):
-        return [_without_prose(item) for item in cast("list[object]", value)]
-    return _without_prose(value)
+def _list_of(value: object) -> list[object] | None:
+    return cast("list[object]", value) if isinstance(value, list) else None
 
 
-def _reduced(new: object, old: object) -> object:
-    """Schema ``new`` without the properties and ``$defs`` entries that are additions to ``old``."""
-    if not (isinstance(new, dict) and isinstance(old, dict)):
-        return cast("object", new)
-    schema, before = cast("Schema", new), cast("Schema", old)
-    required = cast("list[str]", schema.get("required", []))
-    reduced: Schema = {}
-    for keyword, value in schema.items():
-        if (named := _named_schemas(keyword, value)) is not None:
-            kept = _kept_names(keyword, named, before.get(keyword), required)
-            if kept or keyword in before:
-                reduced[keyword] = kept
-        elif keyword in _SUBSCHEMAS:
-            reduced[keyword] = _reduced_subschemas(value, before.get(keyword))
+def _compared_schemas(old: object, new: object, *, root: bool = False) -> _Difference:
+    """How schema ``new`` differs from ``old``; only a keyword known to hold schemas is walked.
+
+    Exactly two differences gain: a property the old schema lacks and ``required`` does not list,
+    and a ``$defs`` entry of the root the old schema lacks. Any other difference, an added or
+    removed keyword included, is a change, so a keyword not listed above can only make one.
+    """
+    before, after = _map_of(old), _map_of(new)
+    if before is None or after is None:
+        return _compared_bytes(old, new)
+    required = _list_of(after.get("required"))
+    listed = cast("list[str]", required) if required is not None else []
+    result = _Difference.NONE
+    for keyword in (before.keys() | after.keys()) - _PROSE_KEYWORDS:
+        if keyword in before and keyword in after:
+            difference = _compared_keyword(keyword, before[keyword], after[keyword], listed, root)
+        elif _is_gaining_map(keyword, root) and (added := _map_of(after.get(keyword))):
+            difference = _compared_names(keyword, {}, added, listed, root)
         else:
-            reduced[keyword] = value
-    return reduced
+            difference = _Difference.CHANGED
+        result = max(result, difference)
+    return result
 
 
-def _reduced_subschemas(new: object, old: object) -> object:
-    if isinstance(new, list) and isinstance(old, list):
-        items, olds = cast("list[object]", new), cast("list[object]", old)
-        if len(items) == len(olds):
-            return [_reduced(item, before) for item, before in zip(items, olds, strict=True)]
-        return items
-    return _reduced(cast("object", new), old)
+def _is_gaining_map(keyword: str, root: bool) -> bool:
+    return keyword == "properties" or (keyword == "$defs" and root)
 
 
-def _kept_names(keyword: str, named: Schema, old: object, required: list[str]) -> Schema:
-    """The entries of ``named`` that are no addition; only ``properties`` and ``$defs`` gain."""
-    known = cast("Schema", old) if isinstance(old, dict) else {}
-    return {
-        name: _reduced(inner, known.get(name))
-        for name, inner in named.items()
-        if name in known
-        or keyword not in _NAME_MAPS
-        or (keyword == "properties" and name in required)
-    }
+def _is_gain(keyword: str, name: str, required: list[str], root: bool) -> bool:
+    return (keyword == "properties" and name not in required) or (keyword == "$defs" and root)
+
+
+def _compared_keyword(
+    keyword: str, old: object, new: object, required: list[str], root: bool
+) -> _Difference:
+    old_map, new_map = _map_of(old), _map_of(new)
+    if keyword in _SCHEMA_MAPS and old_map is not None and new_map is not None:
+        return _compared_names(keyword, old_map, new_map, required, root)
+    if keyword in _SUBSCHEMAS:
+        old_list, new_list = _list_of(old), _list_of(new)
+        if old_list is not None and new_list is not None:
+            if len(old_list) != len(new_list):
+                return _Difference.CHANGED
+            pairs = zip(old_list, new_list, strict=True)
+            return max((_compared_schemas(o, n) for o, n in pairs), default=_Difference.NONE)
+        if old_list is None and new_list is None:
+            return _compared_schemas(old, new)
+    return _compared_bytes(old, new)
+
+
+def _compared_names(
+    keyword: str, old: Schema, new: Schema, required: list[str], root: bool
+) -> _Difference:
+    result = _Difference.NONE
+    for name in old.keys() | new.keys():
+        if name in old and name in new:
+            difference = _compared_schemas(old[name], new[name])
+        elif name in new and _is_gain(keyword, name, required, root):
+            difference = _Difference.GAINED
+        else:
+            difference = _Difference.CHANGED
+        result = max(result, difference)
+    return result
 
 
 def _classified(previous: str, current: str) -> tuple[list[str], list[str], list[str]]:
@@ -138,10 +156,13 @@ def _classified(previous: str, current: str) -> tuple[list[str], list[str], list
         if name not in before or name not in after:
             changed.append(name)
             continue
-        old, new = _without_prose(before[name]), _without_prose(after[name])
-        if old == new:
-            continue
-        (gained if _reduced(new, old) == old else changed).append(name)
+        match _compared_schemas(before[name], after[name], root=True):
+            case _Difference.GAINED:
+                gained.append(name)
+            case _Difference.CHANGED:
+                changed.append(name)
+            case _Difference.NONE:
+                pass
     return tools, changed, gained
 
 

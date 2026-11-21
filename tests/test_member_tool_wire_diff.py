@@ -231,6 +231,114 @@ def test_a_resource_schema_difference_other_than_an_added_optional_field_is_name
     ("before", "after"),
     [
         pytest.param(
+            {"type": "object"}, {"type": "object", "patternProperties": {}}, id="empty map added"
+        ),
+        pytest.param(
+            {"type": "object"}, {"type": "object", "dependentSchemas": {}}, id="empty map of others"
+        ),
+        pytest.param({"type": "object"}, {"type": "object", "$defs": {}}, id="empty $defs added"),
+        pytest.param(
+            {"type": "object"}, {"type": "object", "properties": {}}, id="empty properties added"
+        ),
+        pytest.param(
+            {"type": "object", "definitions": {"A": {}}},
+            {"type": "object"},
+            id="map removed",
+        ),
+        pytest.param(
+            {"type": "object"},
+            {"type": "object", "patternProperties": {"^x": {"type": "string"}}},
+            id="pattern property added",
+        ),
+        pytest.param(
+            {"type": "object"},
+            {"type": "object", "dependentRequired": {"a": ["b"]}},
+            id="unknown keyword added",
+        ),
+        pytest.param(
+            {"type": "object", "dependentRequired": {"a": ["b"]}},
+            {"type": "object", "dependentRequired": {"a": ["b", "c"]}},
+            id="unknown keyword changed",
+        ),
+        pytest.param(
+            {"type": "object", "x-note": {"description": "first"}},
+            {"type": "object", "x-note": {"description": "second"}},
+            id="prose inside an unknown keyword",
+        ),
+        pytest.param(
+            {"type": "object", "default": {"title": "first"}},
+            {"type": "object", "default": {"title": "second"}},
+            id="prose inside a default",
+        ),
+        pytest.param(
+            {"type": "object", "enum": [1]},
+            {"type": "object", "enum": [True]},
+            id="a value equal to another only in Python",
+        ),
+        pytest.param(
+            {"allOf": [{"type": "integer"}]},
+            {"allOf": [{"type": "integer"}, {"type": "string"}]},
+            id="a list of another length",
+        ),
+        pytest.param(
+            {"$defs": {"A": {"$defs": {"B": {}}}}},
+            {"$defs": {"A": {"$defs": {"B": {}, "C": {}}}}},
+            id="a $defs entry below the root",
+        ),
+        pytest.param(
+            {"type": "object", "properties": {"one": {"type": "integer"}}},
+            {
+                "type": "object",
+                "properties": {"one": {"type": "integer"}, "two": {"type": "integer"}},
+                "required": ["two"],
+            },
+            id="an added property the new required lists",
+        ),
+    ],
+)
+def test_a_schema_difference_the_guard_cannot_read_as_a_gain_is_named_as_changed(
+    before: dict[str, object], after: dict[str, object]
+) -> None:
+    assert diff.note_line(snapshot(BASE, {"Alpha": before}), snapshot(BASE, {"Alpha": after})) == (
+        CHANGED
+    )
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        pytest.param(
+            {"type": "object", "properties": {"one": {"type": "integer"}}},
+            {
+                "type": "object",
+                "properties": {"one": {"type": "integer"}, "two": {"type": "string"}},
+            },
+            id="a property",
+        ),
+        pytest.param(
+            {"type": "object"},
+            {"type": "object", "properties": {"two": {"type": "string"}}},
+            id="a property to a schema with none",
+        ),
+        pytest.param(
+            {"type": "object"},
+            {"type": "object", "$defs": {"Mood": {"type": "string"}}},
+            id="a $defs entry",
+        ),
+    ],
+)
+def test_a_schema_that_only_gains_what_the_old_one_lacks_is_named_as_added(
+    before: dict[str, object], after: dict[str, object]
+) -> None:
+    assert diff.note_line(snapshot(BASE, {"Alpha": before}), snapshot(BASE, {"Alpha": after})) == (
+        ADDED
+    )
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        pytest.param(
             record("Alpha", one=(int, ...)), record("Alpha", one=(int, ...)), id="in nothing"
         ),
         pytest.param(
