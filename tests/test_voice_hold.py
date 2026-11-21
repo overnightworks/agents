@@ -504,6 +504,40 @@ def test_an_ending_waits_while_a_newer_talk_over_stands_and_that_talk_over_gets_
     ]
 
 
+def test_a_second_hold_decision_waits_while_the_first_one_is_still_being_written(place):
+    trace = place.trace
+    voice = RecordingVoice(trace, held={"Eins."})
+    gateway = PacedGateway(
+        trace,
+        [piece("Eins. Zwei."), finish()],
+        [
+            piece("[continue]"),
+            lambda: trace.until(lambda: ("written to its end",) in trace.entries),
+        ],
+        [piece("[silent]"), finish()],
+    )
+
+    async def hearing(trace):
+        async for event in interjection_while_playing(trace):
+            yield event
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.until(lambda: HoldEnded(HoldEnding.CONTINUED) in trace.entries)
+        yield speaking(("Cy", "Noch eine Frage"))
+        await trace.until(lambda: trace.count(Held()) == 2)
+        yield a_line(3, "Noch eine Frage, bitte.", name="Cy")
+        yield speaking()
+        await trace.settled()
+        assert len(gateway.requests) == 2
+        trace.record(("written to its end",))
+        await trace.settled()
+        assert len(gateway.requests) == 3
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert HoldEnded(HoldEnding.STOPPED) in trace.events
+
+
 @pytest.mark.parametrize("more_words_after_the_ending", [False, True])
 def test_a_newer_talk_over_after_a_stopping_ending_holds_nothing_and_its_line_wakes_as_any_line(
     place, more_words_after_the_ending

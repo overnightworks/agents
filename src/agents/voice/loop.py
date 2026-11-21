@@ -296,7 +296,7 @@ class _VoiceLoop[Audio]:
             await self._speak(self._start_stage(self._conversation.open_decision()))
         finally:
             self._finish_answer()
-            readings = [stage.reading for stage in self._stages if stage.reading is not None]
+            readings = self._readings()
             for reading in readings:
                 reading.cancel()
             await asyncio.wait(readings)
@@ -304,6 +304,10 @@ class _VoiceLoop[Audio]:
         if answer.played:
             self._last_played = answer.played
         return bool(answer.played)
+
+    def _readings(self) -> list[asyncio.Task[None]]:
+        """Every turn of the answer so far, a hold decision's still being written included."""
+        return [stage.reading for stage in self._stages if stage.reading is not None]
 
     def _finish_answer(self) -> None:
         self._held = False
@@ -346,13 +350,11 @@ class _VoiceLoop[Audio]:
         self, stage: _Stage, play: asyncio.Task[None]
     ) -> tuple[_Stage, asyncio.Task[None]] | None:
         """Hold the answer until a decision ends the hold; what goes on, or ``None`` if nothing."""
-        readings = [stage.reading]
         held_play: asyncio.Task[None] | None = play
         while True:
-            await asyncio.wait([reading for reading in readings if reading is not None])
+            await asyncio.wait(self._readings())
             await self._until(lambda: not self._talk.standing)
             decision = self._open_hold(stage)
-            readings.append(decision.reading)
             ending = await decision.ending
             self._report(HoldEnded(ending))
             self._answer.marker = _RECORDED_ENDINGS[ending]
