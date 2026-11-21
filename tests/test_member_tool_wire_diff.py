@@ -97,6 +97,7 @@ def line_for(before: type[StrictModel], after: type[StrictModel]) -> str:
 
 NAMED_DESCRIPTION = record("Named", description=(str, ...))
 TITLE_PATTERN = StringConstraints(pattern="title")
+PROPERTIES_PATTERN = StringConstraints(pattern="properties")
 
 ADDED = "**Member-tool wire:** fields added: Alpha."
 CHANGED = "**Member-tool wire:** changed: resources: Alpha."
@@ -207,6 +208,17 @@ def test_an_added_optional_field_on_a_resource_record_is_named_as_added(
             record("Alpha", by_pattern=(dict[Annotated[str, TITLE_PATTERN], str], ...)),
             id="a pattern property named title retyped",
         ),
+        pytest.param(
+            record("Alpha", by_pattern=(dict[Annotated[str, PROPERTIES_PATTERN], int], ...)),
+            record(
+                "Alpha",
+                by_pattern=(
+                    dict[Annotated[str, PROPERTIES_PATTERN], Annotated[int, Field(ge=0)]],
+                    ...,
+                ),
+            ),
+            id="a pattern property named properties gaining a bound",
+        ),
     ],
 )
 def test_a_resource_schema_difference_other_than_an_added_optional_field_is_named_as_changed(
@@ -232,6 +244,23 @@ def test_a_resource_record_that_differs_in_nothing_but_prose_is_unchanged(
     before: type[StrictModel], after: type[StrictModel]
 ) -> None:
     assert line_for(before, after) == "**Member-tool wire:** unchanged."
+
+
+def test_prose_inside_a_content_schema_leaves_the_record_unchanged() -> None:
+    def content_record(description: str) -> dict[str, object]:
+        return {
+            "Alpha": {
+                "type": "string",
+                "contentMediaType": "application/json",
+                "contentSchema": {"type": "integer", "description": description},
+            }
+        }
+
+    line = diff.note_line(
+        snapshot(BASE, content_record("first")), snapshot(BASE, content_record("second"))
+    )
+
+    assert line == "**Member-tool wire:** unchanged."
 
 
 def test_a_record_added_or_removed_is_named_as_changed() -> None:

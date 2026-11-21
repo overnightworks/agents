@@ -34,6 +34,7 @@ _SUBSCHEMAS: Final = frozenset(
         "unevaluatedItems",
         "unevaluatedProperties",
         "propertyNames",
+        "contentSchema",
         "not",
         "if",
         "then",
@@ -43,7 +44,6 @@ _SUBSCHEMAS: Final = frozenset(
         "oneOf",
     }
 )
-_DATA_KEYWORDS: Final = frozenset({"default", "const", "enum", "examples", "discriminator"})
 _PROSE_KEYWORDS: Final = frozenset({"title", "description"})
 
 type Schema = dict[str, object]
@@ -52,6 +52,13 @@ type Schema = dict[str, object]
 def _section(snapshot: str, key: str) -> dict[str, object]:
     document = cast("dict[str, dict[str, object]]", json.loads(snapshot))
     return document[key] if key != "resources" else document.get(key, {})
+
+
+def _named_schemas(keyword: str, value: object) -> Schema | None:
+    """The schemas ``keyword`` maps names or patterns to; ``None`` where it holds none."""
+    if keyword in _SCHEMA_MAPS and isinstance(value, dict):
+        return cast("Schema", value)
+    return None
 
 
 def _without_prose(schema: object) -> object:
@@ -67,46 +74,52 @@ def _without_prose(schema: object) -> object:
 
 def _without_prose_in(keyword: str, value: object) -> object:
     """The value of ``keyword``; only a keyword whose value holds schemas is walked."""
-    if keyword in _SCHEMA_MAPS and isinstance(value, dict):
-        named = cast("Schema", value)
+    if (named := _named_schemas(keyword, value)) is not None:
         return {name: _without_prose(inner) for name, inner in named.items()}
-    if keyword in _SUBSCHEMAS and isinstance(value, list):
+    if keyword not in _SUBSCHEMAS:
+        return value
+    if isinstance(value, list):
         return [_without_prose(item) for item in cast("list[object]", value)]
-    if keyword in _SUBSCHEMAS:
-        return _without_prose(value)
-    return value
+    return _without_prose(value)
 
 
 def _reduced(new: object, old: object) -> object:
-    """``new`` without the properties and ``$defs`` entries that are additions to ``old``."""
-    if isinstance(new, list) and isinstance(old, list):
-        items, olds = cast("list[object]", new), cast("list[object]", old)
-        if len(items) != len(olds):
-            return items
-        return [_reduced(item, before) for item, before in zip(items, olds, strict=True)]
+    """Schema ``new`` without the properties and ``$defs`` entries that are additions to ``old``."""
     if not (isinstance(new, dict) and isinstance(old, dict)):
         return cast("object", new)
     schema, before = cast("Schema", new), cast("Schema", old)
-    required = schema.get("required", [])
+    required = cast("list[str]", schema.get("required", []))
     reduced: Schema = {}
     for keyword, value in schema.items():
-        if keyword in _DATA_KEYWORDS:
-            reduced[keyword] = value
-        elif keyword in _NAME_MAPS:
-            kept = _kept_names(keyword, cast("Schema", value), before, required)
+        if (named := _named_schemas(keyword, value)) is not None:
+            kept = _kept_names(keyword, named, before.get(keyword), required)
             if kept or keyword in before:
                 reduced[keyword] = kept
+        elif keyword in _SUBSCHEMAS:
+            reduced[keyword] = _reduced_subschemas(value, before.get(keyword))
         else:
-            reduced[keyword] = _reduced(value, before.get(keyword))
+            reduced[keyword] = value
     return reduced
 
 
-def _kept_names(keyword: str, named: Schema, before: Schema, required: object) -> Schema:
-    known = cast("Schema", before.get(keyword, {}))
+def _reduced_subschemas(new: object, old: object) -> object:
+    if isinstance(new, list) and isinstance(old, list):
+        items, olds = cast("list[object]", new), cast("list[object]", old)
+        if len(items) == len(olds):
+            return [_reduced(item, before) for item, before in zip(items, olds, strict=True)]
+        return items
+    return _reduced(cast("object", new), old)
+
+
+def _kept_names(keyword: str, named: Schema, old: object, required: list[str]) -> Schema:
+    """The entries of ``named`` that are no addition; only ``properties`` and ``$defs`` gain."""
+    known = cast("Schema", old) if isinstance(old, dict) else {}
     return {
         name: _reduced(inner, known.get(name))
         for name, inner in named.items()
-        if name in known or (keyword == "properties" and name in cast("list[str]", required))
+        if name in known
+        or keyword not in _NAME_MAPS
+        or (keyword == "properties" and name in required)
     }
 
 
