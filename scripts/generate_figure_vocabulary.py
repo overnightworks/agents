@@ -38,7 +38,7 @@ _PIN_COMMENT: Final = (
     "# The figure release whose vocabulary agents generates its enums from. Raise it with\n"
     "# `uv run python scripts/generate_figure_vocabulary.py --pin <url> <integrity>`.\n"
 )
-_TOKEN: Final = re.compile(r"^[a-z][A-Za-z0-9_]*$")
+_TOKEN: Final = re.compile(r"^[a-z]\w*$", re.ASCII)
 _WORD_BOUNDARY: Final = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _FETCH_SECONDS: Final = 60
 
