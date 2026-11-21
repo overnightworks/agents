@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import pytest
-from pydantic import Field, create_model
+from pydantic import Field, StringConstraints, create_model
 
 import scripts.member_tool_wire_diff as diff
 from agents.turn import StrictModel
@@ -94,6 +94,8 @@ def wire_of(**records: type[StrictModel]) -> str:
 def line_for(before: type[StrictModel], after: type[StrictModel]) -> str:
     return diff.note_line(wire_of(Alpha=before), wire_of(Alpha=after))
 
+
+TITLE_PATTERN = StringConstraints(pattern="title")
 
 ADDED = "**Member-tool wire:** fields added: Alpha."
 CHANGED = "**Member-tool wire:** changed: resources: Alpha."
@@ -199,6 +201,11 @@ def test_an_added_optional_field_on_a_resource_record_is_named_as_added(
             record("Alpha", description=(int, ...)),
             record("Alpha", description=(int, ...), title=(str, ...)),
             id="a field named description beside a new required one",
+        ),
+        pytest.param(
+            record("Alpha", by_pattern=(dict[Annotated[str, TITLE_PATTERN], int], ...)),
+            record("Alpha", by_pattern=(dict[Annotated[str, TITLE_PATTERN], str], ...)),
+            id="a pattern property named title retyped",
         ),
     ],
 )

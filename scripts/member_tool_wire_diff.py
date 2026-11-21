@@ -22,6 +22,27 @@ LABEL: Final = "**Member-tool wire:**"
 CURRENT_SNAPSHOT: Final = Path(__file__).resolve().parent / "member-tool-wire.json"
 
 _NAME_MAPS: Final = frozenset({"properties", "$defs"})
+# keywords whose value maps names or patterns to schemas, and those holding one schema or a list
+_SCHEMA_MAPS: Final = _NAME_MAPS | {"definitions", "patternProperties", "dependentSchemas"}
+_SUBSCHEMAS: Final = frozenset(
+    {
+        "items",
+        "prefixItems",
+        "additionalItems",
+        "contains",
+        "additionalProperties",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+        "propertyNames",
+        "not",
+        "if",
+        "then",
+        "else",
+        "allOf",
+        "anyOf",
+        "oneOf",
+    }
+)
 _DATA_KEYWORDS: Final = frozenset({"default", "const", "enum", "examples", "discriminator"})
 _PROSE_KEYWORDS: Final = frozenset({"title", "description"})
 
@@ -33,27 +54,27 @@ def _section(snapshot: str, key: str) -> dict[str, object]:
     return document[key] if key != "resources" else document.get(key, {})
 
 
-def _without_prose(value: object) -> object:
-    """``value`` with every ``title`` and ``description`` keyword removed; names and data stay."""
-    if isinstance(value, list):
-        return [_without_prose(item) for item in cast("list[object]", value)]
-    if not isinstance(value, dict):
-        return value
-    schema = cast("Schema", value)
+def _without_prose(schema: object) -> object:
+    """``schema`` with ``title`` and ``description`` removed where they are schema keywords."""
+    if not isinstance(schema, dict):
+        return schema
     return {
-        key: _without_prose_in(key, inner)
-        for key, inner in schema.items()
-        if key not in _PROSE_KEYWORDS
+        keyword: _without_prose_in(keyword, inner)
+        for keyword, inner in cast("Schema", schema).items()
+        if keyword not in _PROSE_KEYWORDS
     }
 
 
 def _without_prose_in(keyword: str, value: object) -> object:
-    if keyword in _DATA_KEYWORDS:
-        return value
-    if keyword in _NAME_MAPS and isinstance(value, dict):
+    """The value of ``keyword``; only a keyword whose value holds schemas is walked."""
+    if keyword in _SCHEMA_MAPS and isinstance(value, dict):
         named = cast("Schema", value)
         return {name: _without_prose(inner) for name, inner in named.items()}
-    return _without_prose(value)
+    if keyword in _SUBSCHEMAS and isinstance(value, list):
+        return [_without_prose(item) for item in cast("list[object]", value)]
+    if keyword in _SUBSCHEMAS:
+        return _without_prose(value)
+    return value
 
 
 def _reduced(new: object, old: object) -> object:
