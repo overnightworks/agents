@@ -1582,7 +1582,7 @@ in `tests/test_voice_sentences.py`.
   reports `SentenceRefused` for the paused sentence and ends the answer, as a refused play does.
   The decision waits for the held turn to be read to its end, which `maxDurationSeconds` bounds.
   Proved by
-  `test_a_hold_decision_that_fails_or_reads_unreadable_drops_the_rest_and_says_nothing`,
+  `test_a_failed_unreadable_or_empty_hold_decision_drops_the_rest_and_says_nothing`,
   `test_a_resume_refused_ends_the_answer_as_a_refused_play_does` and
   `test_when_hearing_ends_while_held_the_loop_stops_the_paused_sound_and_returns`.
 - A port that never returns holds the answer while hearing goes on; the app bounds its own ports.

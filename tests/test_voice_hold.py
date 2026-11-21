@@ -395,9 +395,19 @@ def test_the_tools_of_a_hold_decision_run_to_their_end_after_its_marker_ended_th
             ],
         ),
         (completion("[shout] Hallo."), [ReplyUnreadable()]),
+        (
+            completion(""),
+            [
+                DecisionFailed(
+                    TurnStopKind.FAILED,
+                    FailureCode.PROVIDER_ERROR,
+                    GatewayDetail.MALFORMED_REPLY,
+                )
+            ],
+        ),
     ],
 )
-def test_a_hold_decision_that_fails_or_reads_unreadable_drops_the_rest_and_says_nothing(
+def test_a_failed_unreadable_or_empty_hold_decision_drops_the_rest_and_says_nothing(
     place, hold_reply, decision_events
 ):
     voice, gateway = an_answer_of_two_that_is_playing(place, hold_reply, completion("Gern."))
