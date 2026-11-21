@@ -95,6 +95,7 @@ def line_for(before: type[StrictModel], after: type[StrictModel]) -> str:
     return diff.note_line(wire_of(Alpha=before), wire_of(Alpha=after))
 
 
+NAMED_DESCRIPTION = record("Named", description=(str, ...))
 TITLE_PATTERN = StringConstraints(pattern="title")
 
 ADDED = "**Member-tool wire:** fields added: Alpha."
@@ -201,6 +202,11 @@ def test_an_added_optional_field_on_a_resource_record_is_named_as_added(
             record("Alpha", description=(int, ...)),
             record("Alpha", description=(int, ...), title=(str, ...)),
             id="a field named description beside a new required one",
+        ),
+        pytest.param(
+            record("Alpha", inner=(NAMED_DESCRIPTION, NAMED_DESCRIPTION(description="first"))),
+            record("Alpha", inner=(NAMED_DESCRIPTION, NAMED_DESCRIPTION(description="second"))),
+            id="a default holding a key named description",
         ),
         pytest.param(
             record("Alpha", by_pattern=(dict[Annotated[str, TITLE_PATTERN], int], ...)),
