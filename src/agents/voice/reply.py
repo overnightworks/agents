@@ -63,7 +63,7 @@ PROTOCOL_TEXT: Final = (
     "not passed to you before it.\n"
     "Your reply is spoken in the language of the newest line of the last user message that has "
     'a "name" and is neither "own" nor an "act"; write it in that language, and when that line '
-    'has no "language", in the language the context names.\n'
+    'has no "language", or when no such line is there, in the language the context names.\n'
     f"Once the conversation grows long, the first user message opens with {WINDOW_NOTE}; "
     "nobody said that line.\n"
     f"Your earlier replies hold only what was spoken aloud, or {SILENT_REPLY}; a paused reply "
