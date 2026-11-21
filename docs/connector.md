@@ -1367,7 +1367,9 @@ decision waits for the whole first reply. Both costs are among those the app's o
 | speech | `answered` | stops the paused sentence, drops the queue and plays this decision's sentences |
 | anything else, no opening, or a failed decision | `dropped` | as `stopped`; its lines stay undecided |
 
-After a marker nothing later in that turn is spoken, and its tools still run. The decision's
+After a marker nothing later in that turn is spoken, and its tools still run to their end, also
+once the sound has stopped; the next decision starts after them, unless the app refused the
+sound. The decision's
 reply is recorded as the sentences that started after the ending, or, when none did, the marker
 it wrote; a drop records nothing and leaves the interjection's lines to the next decision. Only a
 reader made for a hold reads `[continue]` and `[finish]`; in any other decision they are
@@ -1408,7 +1410,12 @@ answer. Proved by `tests/test_voice_hold.py`:
 `test_silent_stops_the_paused_sentence_and_says_nothing_more`,
 `test_speech_in_the_hold_decision_replaces_the_rest_with_no_further_request`,
 `test_a_hold_reports_woke_held_woke_and_its_ending_in_this_order`,
-`test_an_ending_waits_while_a_newer_talk_over_stands_and_that_talk_over_gets_its_own_decision`
+`test_an_ending_waits_while_a_newer_talk_over_stands_and_that_talk_over_gets_its_own_decision`,
+`test_a_second_hold_decision_waits_while_the_first_one_is_still_being_written`,
+`test_a_talk_over_that_starts_while_an_ending_resumes_the_sound_holds_it_again`,
+`test_the_tools_of_a_hold_decision_run_to_their_end_after_its_marker_ended_the_hold`,
+`test_the_next_decision_sees_what_was_said_before_and_after_the_hold`,
+`test_an_utterance_that_gains_words_only_after_the_answer_ended_holds_nothing`
 and `test_a_newer_talk_over_after_a_stopping_ending_holds_nothing_and_its_line_wakes_as_any_line`.
 
 Proved by `tests/test_voice_loop.py`:
