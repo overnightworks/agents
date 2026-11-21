@@ -18,6 +18,7 @@ from agents.backend import AgentBackend, TurnPerson, TurnStopped
 from agents.member import PartialSpeech, PlaceEntry
 from agents.turn import TurnMessage
 from agents.voice import (
+    DecisionEnded,
     DecisionFailed,
     EchoDropped,
     HearingEvent,
@@ -92,12 +93,14 @@ async def run_voice_loop[Audio](
     it pauses the answer (``Held``); once that talk-over has ended and the held turn has been
     read, one decision ends the hold with ``[continue]``, ``[finish]``, ``[silent]`` or new
     speech (``HoldEnded``); without a decision the rest is dropped. A host that yields no
-    ``PartialsChanged`` is never held.
+    ``PartialsChanged`` is never held. Each decision a waking line started ends with one
+    ``DecisionEnded``, its holds included, once its sound and its turns have ended.
 
     When hearing ends, the loop closes the turn, stops the sound and returns. Any other error
     of a port or the backend, and a ``seq`` not above the last, closes the turn, stops the
     sound and is raised inside an ``ExceptionGroup``. On the host's cancel nothing more is
-    reported. A port that never returns holds the answer while hearing goes on.
+    reported, and none of these ends a decision with ``DecisionEnded``. A port that never returns
+    holds the answer while hearing goes on.
     """
     if agent.voice_window_bytes is None:
         raise ValueError(f"agent {agent.name}: the voice loop needs a voice section")
@@ -310,6 +313,7 @@ class _VoiceLoop[Audio]:
         self._conversation.close_decision(answer.recorded())
         if answer.played:
             self._last_played = answer.played
+        self._report(DecisionEnded())
         return bool(answer.played)
 
     def _readings(self) -> list[asyncio.Task[None]]:
@@ -441,7 +445,14 @@ class _VoiceLoop[Audio]:
                     self._take(reader.read(event), stage)
         except TurnStopped as stopped:
             self._answer.ended_short = True
-            self._report(DecisionFailed(stopped.kind, stopped.code, stopped.detail))
+            self._report(
+                DecisionFailed(
+                    stopped.kind,
+                    stopped.code,
+                    stopped.detail,
+                    retry_after_s=stopped.retry_after_s,
+                )
+            )
         stage.sentences.put_nowait(None)
         stage.decide(HoldEnding.DROPPED)
 

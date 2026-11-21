@@ -10,7 +10,7 @@ no base module imports it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
 
@@ -19,6 +19,7 @@ from agents.member import PartialSpeech, PlaceEntry
 from agents.turn import FailureCode, RejectionCode, StopOutcome, outcome_of_stop
 
 __all__ = [
+    "DecisionEnded",
     "DecisionFailed",
     "EchoDropped",
     "HearingEvent",
@@ -138,15 +139,36 @@ class SentenceRefused:
 
 @dataclass(frozen=True)
 class DecisionFailed:
-    """The decision's turn ended short with ``TurnStopped``; its kind, code and detail."""
+    """The decision's turn ended short with ``TurnStopped``; its kind, code and detail.
+
+    ``retry_after_s`` is the wait a busy refusal names, as the gateway gave it; ``None`` for every
+    other stop.
+    """
 
     kind: TurnStopKind
     code: RejectionCode | FailureCode
     detail: str | None
+    retry_after_s: int | None = field(default=None, kw_only=True)
 
     @property
     def outcome(self) -> StopOutcome:
         return outcome_of_stop(self.code)
+
+
+@dataclass(frozen=True)
+class DecisionEnded:
+    """The last event of a decision a waking line started, its holds included.
+
+    It comes after every other event of that decision (``Woke``, ``StayedSilent``,
+    ``ReplyUnreadable``, ``SentenceStarted``, ``SentenceRefused``, ``DecisionFailed``, ``Held``,
+    ``HoldEnded``). By then its sound has ended, each sentence it started having played to its
+    end, been refused or been stopped, and every turn it started, a hold decision's and their
+    tools included, has ended: read to its end, stopped with ``TurnStopped``, or closed after a
+    refused sound. The next ``Woke`` comes after it. The first ``Woke`` after the loop starts or
+    after a ``DecisionEnded`` opens a span; a ``Woke`` inside an open span is a hold decision.
+    ``EchoDropped`` is hearing's and may come on either side. When the loop itself ends, none is
+    reported.
+    """
 
 
 @dataclass(frozen=True)
@@ -188,6 +210,7 @@ type VoiceEvent = (
     | SentenceStarted
     | SentenceRefused
     | DecisionFailed
+    | DecisionEnded
     | EchoDropped
     | Held
     | HoldEnded

@@ -16,6 +16,7 @@ from agents.backend.fake_gateway import (
 from agents.backend.gateway import GatewayDetail
 from agents.turn import FailureCode
 from agents.voice import (
+    DecisionEnded,
     DecisionFailed,
     ReplyUnreadable,
     SentenceRefused,
@@ -30,6 +31,8 @@ from tests.support.gateway_turn_support import FailingTransport
 from tests.support.voice_lines import STREAMED_ANSWERS, a_line, random_pieces
 from tests.support.voice_support import (
     A_GATEWAY_REFUSAL,
+    A_REFUSED_TURN,
+    A_SILENT_ROUND,
     CONTEXT,
     PROMPT,
     RETURNED,
@@ -66,7 +69,7 @@ def test_a_spoken_line_that_wakes_sends_one_request_with_prompt_protocol_context
     assert rows_of(messages[0]) == [
         {"name": "Ada", "kind": "person", "own": False, "spoken": True, "text": "Kannst du helfen?"}
     ]
-    assert place.trace.events == [Woke(), SentenceStarted("Gern.")]
+    assert place.trace.events == [Woke(), SentenceStarted("Gern."), DecisionEnded()]
 
 
 def test_a_line_that_does_not_wake_sends_nothing_and_leads_the_next_decisions_message(place):
@@ -380,12 +383,6 @@ def test_no_line_after_a_decision_that_played_nothing_is_marked_first_after_answ
     assert place.trace.asked == [("Frage?", False), ("Danke.", False)]
 
 
-A_REFUSED_TURN = DecisionFailed(
-    TurnStopKind.FAILED, FailureCode.PROVIDER_UNAVAILABLE, GatewayDetail.GATEWAY_REFUSED
-)
-A_SILENT_ROUND = tool_round(tool_call("call-1", "look_up", {}), content="[silent]")
-
-
 @pytest.mark.parametrize(
     ("replies", "voice_raises", "events"),
     [
@@ -486,6 +483,11 @@ def test_a_refused_render_ends_the_answer_closes_the_turn_and_keeps_what_played(
     assert conversation_of(gateway.requests[1])[1] == ("assistant", "Eins.")
 
 
+A_STOPPED_TURN = DecisionFailed(
+    TurnStopKind.FAILED, FailureCode.PROVIDER_UNAVAILABLE, GatewayDetail.CONNECTION_FAILED
+)
+
+
 def test_a_turn_stopped_after_a_sentence_played_plays_out_the_queued_one_and_drops_the_rest(
     place,
 ):
@@ -518,13 +520,13 @@ def test_a_turn_stopped_after_a_sentence_played_plays_out_the_queued_one_and_dro
         "Gern.",
     ]
     assert trace.played == ["Eins.", "Zwei.", "Gern."]
-    assert (
-        DecisionFailed(
-            TurnStopKind.FAILED, FailureCode.PROVIDER_UNAVAILABLE, GatewayDetail.CONNECTION_FAILED
-        )
-        in trace.events
-    )
+    assert A_STOPPED_TURN in trace.events
     assert conversation_of(gateway.requests[1])[1] == ("assistant", "Eins. Zwei.")
+    assert trace.order_of(DecisionEnded(), ("played", "Zwei."), A_STOPPED_TURN)[:3] == [
+        A_STOPPED_TURN,
+        ("played", "Zwei."),
+        DecisionEnded(),
+    ]
 
 
 def test_playing_longer_than_the_turns_limit_plays_every_sentence_without_a_limit_failure(place):
@@ -617,6 +619,7 @@ def test_a_voice_that_raises_another_error_closes_the_turn_and_raises_it(place, 
 
     assert ending.raised.subgroup(RuntimeError) is not None
     assert ("closed",) in trace.entries
+    assert DecisionEnded() not in trace.events
     assert not any(isinstance(event, SentenceRefused) for event in trace.events)
 
 
@@ -630,10 +633,11 @@ def arranged(place, state: str) -> tuple[PacedGateway, RecordingVoice]:
 
 
 @pytest.mark.parametrize(
-    ("state", "stopped"), [("idle", []), ("deciding", []), ("playing", [("stopped", "Eins.")])]
+    ("state", "stopped", "ends"),
+    [("idle", [], 1), ("deciding", [], 0), ("playing", [("stopped", "Eins.")], 0)],
 )
 def test_when_hearing_ends_the_loop_closes_the_turn_stops_the_sound_and_returns(
-    place, state, stopped
+    place, state, stopped, ends
 ):
     gateway, voice = arranged(place, state)
 
@@ -645,6 +649,7 @@ def test_when_hearing_ends_the_loop_closes_the_turn_stops_the_sound_and_returns(
 
     assert ("closed",) in place.trace.entries
     assert [call for call in place.trace.calls if call[0] == "stopped"] == stopped
+    assert place.trace.events.count(DecisionEnded()) == ends
 
 
 @pytest.mark.parametrize(
