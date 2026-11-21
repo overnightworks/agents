@@ -102,12 +102,6 @@ ADDED = "**Member-tool wire:** fields added: Alpha."
 CHANGED = "**Member-tool wire:** changed: resources: Alpha."
 
 
-def test_a_resource_record_that_differs_in_nothing_is_unchanged() -> None:
-    model = record("Alpha", one=(int, ...))
-
-    assert line_for(model, model) == "**Member-tool wire:** unchanged."
-
-
 @pytest.mark.parametrize(
     ("before", "after"),
     [
@@ -215,16 +209,28 @@ def test_an_added_optional_field_on_a_resource_record_is_named_as_added(
         ),
     ],
 )
-def test_a_removed_retyped_or_newly_required_field_is_named_as_changed(
+def test_a_resource_schema_difference_other_than_an_added_optional_field_is_named_as_changed(
     before: type[StrictModel], after: type[StrictModel]
 ) -> None:
     assert line_for(before, after) == CHANGED
 
 
-def test_a_resource_record_differing_only_in_its_description_is_unchanged() -> None:
-    before = record("Alpha", "A docstring.", one=(int, Field(description="First")))
-    after = record("Alpha", "Another docstring.", one=(int, Field(description="Other")))
-
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        pytest.param(
+            record("Alpha", one=(int, ...)), record("Alpha", one=(int, ...)), id="in nothing"
+        ),
+        pytest.param(
+            record("Alpha", "A docstring.", one=(int, Field(description="First"))),
+            record("Alpha", "Another docstring.", one=(int, Field(description="Other"))),
+            id="only in its description",
+        ),
+    ],
+)
+def test_a_resource_record_that_differs_in_nothing_but_prose_is_unchanged(
+    before: type[StrictModel], after: type[StrictModel]
+) -> None:
     assert line_for(before, after) == "**Member-tool wire:** unchanged."
 
 

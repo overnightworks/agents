@@ -90,18 +90,6 @@ def mutated(wire: dict[str, Any], **fields: Any) -> dict[str, Any]:
             id="an unknown standing state",
         ),
         pytest.param(PlaceView, mutated(VIEW, awaits_you="yes"), id="a view's retyped field"),
-    ],
-)
-def test_the_tolerant_reader_still_refuses_a_missing_retyped_or_unknown_valued_field(
-    record: type[MemberResourceRecord], wire: dict[str, Any]
-) -> None:
-    with pytest.raises(ValidationError):
-        member_resource_from_json(record, json.dumps({**wire, "added_later": 1}))
-
-
-@pytest.mark.parametrize(
-    ("record", "wire"),
-    [
         pytest.param(PlaceWindow, mutated(WINDOW, entries=[entry(1, cut=True)]), id="cut unspoken"),
         pytest.param(
             PlaceWindow,
@@ -115,7 +103,7 @@ def test_the_tolerant_reader_still_refuses_a_missing_retyped_or_unknown_valued_f
         ),
     ],
 )
-def test_the_tolerant_reader_still_holds_the_cross_field_rules(
+def test_the_tolerant_reader_still_refuses_what_the_default_parse_refuses_besides_a_key(
     record: type[MemberResourceRecord], wire: dict[str, Any]
 ) -> None:
     with pytest.raises(ValidationError):
