@@ -1,0 +1,8 @@
+claim_id = "3a506ab51e5145f7ac73327686d635f5"
+agent = "Claude 3759dda9-2bf6-41bc-a6f7-642352e1bbcb"
+role = "builder"
+base = "245a4d8f70f76a9c149a343280dd4cb3605be9fe"
+branch = "claude/issue-1015-a-member-resource-record-that-only-gains"
+scope = ["docs/ARCHITECTURE.md", "docs/connector.md", "scripts/member_tool_wire_diff.py", "src/agents/member.py", "tests"]
+opened_commit = "14dd52fc1cc771445c05f42e4cb610d0f2f5b42c"
+whole_reason = "One growth rule for the member resource records: an older runner reads an added optional field, everything else stays a change."
