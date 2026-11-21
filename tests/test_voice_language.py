@@ -119,17 +119,29 @@ def test_an_answer_that_replaces_a_held_one_renders_in_the_language_of_the_inter
     assert rendered_in(place, "Klar, ich höre zu.") == [expected]
 
 
-@pytest.mark.parametrize("marker", ["[continue]", "[finish]"])
 @pytest.mark.parametrize("interjection", ["en", None])
-def test_a_held_answer_that_goes_on_renders_only_in_its_own_language(place, marker, interjection):
-    voice, gateway = an_answer_of_two_that_is_playing(place, completion(marker))
+def test_a_held_answer_that_goes_on_renders_its_later_sentences_in_its_own_language(
+    place, interjection
+):
+    trace = place.trace
+    voice = RecordingVoice(trace, held={"Eins."})
+    gateway = PacedGateway(
+        trace,
+        [
+            piece("Eins. Zwei."),
+            lambda: trace.until(lambda: Held() in trace.entries),
+            piece(" Drei."),
+            finish(),
+        ],
+        [piece("[continue]"), finish()],
+    )
 
     assert (
         place.run(a_talk_over_the_held_answer("de", interjection, voice), gateway, voice=voice)
         == RETURNED
     )
 
-    assert {language for _, language in place.trace.rendered_languages} == {"de"}
+    assert rendered_in(place, "Drei.") == ["de"]
 
 
 def test_a_replacing_answer_over_no_new_line_renders_with_none_once_a_sentence_started(place):
