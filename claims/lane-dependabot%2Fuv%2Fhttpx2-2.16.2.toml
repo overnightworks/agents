@@ -1,0 +1,7 @@
+claim_id = "f3d4971e6ec84b0ea7049d9816e58bfb"
+agent = "Claude 3759dda9-2bf6-41bc-a6f7-642352e1bbcb"
+role = "builder"
+base = "8f863d3e1d34417e007ae5fa4ea7aac1f897ef26"
+branch = "dependabot/uv/httpx2-2.16.2"
+scope = ["uv.lock"]
+opened_commit = "f0f70d5a6cc28c53ac9bb0e2a60bc96eed60dc3e"
