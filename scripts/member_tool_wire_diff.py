@@ -8,8 +8,9 @@ model. A resource record counts as changed when it was added or removed or its s
 anything but a ``title`` or ``description`` keyword of a schema the guard walks, and as having
 gained fields when its schema differs only by properties the previous schema lacks that are not
 required, and by ``$defs`` entries it lacks. A keyword the guard does not know is compared byte for
-byte, so it can only make a record changed. A snapshot without resources holds none. A schema does not show a ``model_validator``, an
-``AfterValidator`` or ``exclude_if``, so a rule across fields is not seen here.
+byte, so it can only make a record changed. A snapshot without resources holds none. A schema does
+not show a ``model_validator``, an ``AfterValidator`` or ``exclude_if``, so a rule across fields is
+not seen here.
 """
 
 from __future__ import annotations
