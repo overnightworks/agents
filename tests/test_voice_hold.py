@@ -26,39 +26,24 @@ from tests.support.voice_lines import a_line, speaking
 from tests.support.voice_support import (
     A_GATEWAY_REFUSAL,
     RETURNED,
+    THE_FIRST_ANSWER,
     PacedGateway,
     RecordingVoice,
     a_lookup_tool,
+    an_answer_of_two_that_is_playing,
     conversation_of,
     finish,
+    interjection_while_playing,
     messages_of,
     piece,
     rows_of,
+    the_hold_ends,
+    the_person_finishes,
 )
 
 place = voice_support.place
 
 PAUSED_AT_ONE = {"paused_at": "Eins.", "unsaid": "Zwei."}
-THE_FIRST_ANSWER = completion("Eins. Zwei.")
-
-
-def an_answer_of_two_that_is_playing(place, *later_replies):
-    """A voice that plays ``Eins.`` until released and a gateway whose first reply has both."""
-    voice = RecordingVoice(place.trace, held={"Eins."})
-    return voice, FakeGateway(THE_FIRST_ANSWER, *later_replies)
-
-
-async def interjection_while_playing(trace):
-    """The first line wakes the agent; a person then starts talking over its playing sentence."""
-    yield a_line(1, "Erzähl.")
-    await trace.until(lambda: ("play", "Eins.") in trace.entries)
-    yield speaking(("Ben", "Moment"))
-    await trace.until(lambda: Held() in trace.entries)
-
-
-async def the_person_finishes(trace, *, text="Moment, wie meinst du das?", seq=2):
-    yield a_line(seq, text, name="Ben")
-    yield speaking()
 
 
 def test_the_first_words_of_a_talk_over_pause_the_playing_sentence_and_start_no_other(place):
@@ -243,17 +228,6 @@ def test_the_hold_decision_waits_for_the_held_reply_to_be_written_to_its_end(pla
 
     assert rows_of(messages_of(gateway.requests[1])[-1])[-1] == PAUSED_AT_ONE
     assert trace.played == ["Eins.", "Zwei."]
-
-
-async def the_hold_ends(trace, voice):
-    """A talk-over that ended: the person's line and then no partial; the held sound is freed."""
-    async for event in interjection_while_playing(trace):
-        yield event
-    async for event in the_person_finishes(trace):
-        yield event
-    await trace.until(lambda: any(isinstance(entry, HoldEnded) for entry in trace.entries))
-    voice.release("Eins.")
-    await trace.settled()
 
 
 def test_continue_resumes_the_paused_sentence_and_plays_the_rest_of_the_answer(place):
@@ -798,52 +772,6 @@ def test_a_hold_reports_woke_held_woke_and_its_ending_in_this_order(
         *ending_events,
         DecisionEnded(),
     ]
-
-
-@pytest.mark.parametrize(
-    ("reply", "last_played"),
-    [("[continue]", "Zwei."), ("[finish]", "Eins."), ("Gut.", "Gut.")],
-)
-def test_an_answer_with_a_hold_reports_two_woke_and_one_end_after_its_ending_has_played(
-    place, reply, last_played
-):
-    voice, gateway = an_answer_of_two_that_is_playing(place, completion(reply))
-
-    async def hearing(trace):
-        async for event in the_hold_ends(trace, voice):
-            yield event
-
-    assert place.run(hearing, gateway, voice=voice) == RETURNED
-
-    trace = place.trace
-    assert trace.events.count(Woke()) == 2
-    assert trace.events.count(DecisionEnded()) == 1
-    assert trace.events[-1] == DecisionEnded()
-    assert trace.order_of(("played", last_played), DecisionEnded())[-1] == DecisionEnded()
-    assert trace.entries.index(("played", last_played)) < trace.entries.index(DecisionEnded())
-
-
-@pytest.mark.parametrize(
-    ("reply", "ending"),
-    [(completion("[silent]"), HoldEnding.STOPPED), (A_GATEWAY_REFUSAL, HoldEnding.DROPPED)],
-)
-def test_a_stopping_or_dropping_hold_reports_the_end_after_the_paused_sentence_was_stopped(
-    place, reply, ending
-):
-    voice, gateway = an_answer_of_two_that_is_playing(place, reply)
-
-    async def hearing(trace):
-        async for event in the_hold_ends(trace, voice):
-            yield event
-
-    assert place.run(hearing, gateway, voice=voice) == RETURNED
-
-    trace = place.trace
-    assert trace.events.count(DecisionEnded()) == 1
-    assert trace.order_of(HoldEnded(ending), ("stopped", "Eins."), DecisionEnded())[-1] == (
-        DecisionEnded()
-    )
-    assert trace.entries.index(("stopped", "Eins.")) < trace.entries.index(DecisionEnded())
 
 
 def test_after_continue_the_next_waking_decision_starts_only_once_the_held_rest_has_played(place):

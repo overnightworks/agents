@@ -21,14 +21,17 @@ import httpx2
 import pytest
 
 from agents.agent_file import AgentDefinition
-from agents.backend.fake_gateway import Reply
-from agents.backend.gateway import GatewayBackend
+from agents.backend import TurnStopKind
+from agents.backend.fake_gateway import FakeGateway, Reply, completion, tool_call, tool_round
+from agents.backend.gateway import GatewayBackend, GatewayDetail
 from agents.member import PlaceEntry
 from agents.tools import HandTool, ToolDeclaration, ToolEffect, ToolOutcome
-from agents.voice import HearingEvent, VoiceEvent, WakeRule, Woke
+from agents.turn import FailureCode
+from agents.voice import DecisionFailed, HearingEvent, Held, HoldEnded, VoiceEvent, WakeRule, Woke
 from agents.voice.loop import run_voice_loop
 from tests.support.gateway_turn_support import a_chunk, a_gateway_config, a_person, an_event_stream
 from tests.support.virtual_time import VirtualTimeLoop
+from tests.support.voice_lines import a_line, speaking
 
 PROMPT: Final = "Du hörst zu und antwortest kurz."
 CONTEXT: Final = "Im Raum sind Ada und Ben."
@@ -38,6 +41,13 @@ _VOICE_EVENTS: Final = VoiceEvent.__value__
 
 A_GATEWAY_REFUSAL: Final = Reply(status=400, body=b'{"error": {"type": "budget_exceeded"}}')
 """A decision the gateway refuses with a 400: the turn ends failed, not as a spent budget."""
+A_REFUSED_TURN: Final = DecisionFailed(
+    TurnStopKind.FAILED, FailureCode.PROVIDER_UNAVAILABLE, GatewayDetail.GATEWAY_REFUSED
+)
+"""What the loop reports for a decision answered with ``A_GATEWAY_REFUSAL``."""
+A_SILENT_ROUND: Final = tool_round(tool_call("call-1", "look_up", {}), content="[silent]")
+"""A tool round that calls ``look_up`` and says ``[silent]``."""
+THE_FIRST_ANSWER: Final = completion("Eins. Zwei.")
 
 type Wait = Callable[[], Awaitable[object]]
 type StreamPart = bytes | Wait | Exception
@@ -468,6 +478,36 @@ class VoicePlace:
             return waking is None or line.text in waking
 
         return wakes
+
+
+def an_answer_of_two_that_is_playing(place, *later_replies):
+    """A voice that plays ``Eins.`` until released and a gateway whose first reply has both."""
+    voice = RecordingVoice(place.trace, held={"Eins."})
+    return voice, FakeGateway(THE_FIRST_ANSWER, *later_replies)
+
+
+async def interjection_while_playing(trace):
+    """The first line wakes the agent; a person then starts talking over its playing sentence."""
+    yield a_line(1, "Erzähl.")
+    await trace.until(lambda: ("play", "Eins.") in trace.entries)
+    yield speaking(("Ben", "Moment"))
+    await trace.until(lambda: Held() in trace.entries)
+
+
+async def the_person_finishes(trace, *, text="Moment, wie meinst du das?", seq=2):
+    yield a_line(seq, text, name="Ben")
+    yield speaking()
+
+
+async def the_hold_ends(trace, voice):
+    """A talk-over that ended: the person's line and then no partial; the held sound is freed."""
+    async for event in interjection_while_playing(trace):
+        yield event
+    async for event in the_person_finishes(trace):
+        yield event
+    await trace.until(lambda: any(isinstance(entry, HoldEnded) for entry in trace.entries))
+    voice.release("Eins.")
+    await trace.settled()
 
 
 @pytest.fixture
