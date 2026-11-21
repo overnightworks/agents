@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Annotated, Any, Literal
 
 import pytest
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from agents.member import (
     MemberResourceRecord,
@@ -18,6 +18,7 @@ from agents.member import (
     StandingState,
     member_resource_from_json,
 )
+from agents.turn import StrictModel
 from tests.support.member_wire import entry, talked_window_wire
 
 PLACE = {"kind": "room", "id": "r-1"}
@@ -119,6 +120,27 @@ def test_the_tolerant_reader_still_holds_the_cross_field_rules(
 ) -> None:
     with pytest.raises(ValidationError):
         member_resource_from_json(record, json.dumps({**wire, "added_later": 1}))
+
+
+class Circle(StrictModel):
+    tag: Literal["circle"] = "circle"
+
+
+class Square(StrictModel):
+    tag: Literal["square"] = "square"
+
+
+class ShapedWindow(PlaceWindow):
+    shape: Annotated[Circle | Square, Field(discriminator="tag")]
+
+
+def test_an_unknown_variant_of_a_tagged_union_is_refused_by_the_tolerant_reader() -> None:
+    known = json.dumps(mutated(WINDOW, shape={"tag": "circle", "added_later": 1}))
+    unknown = json.dumps(mutated(WINDOW, shape={"tag": "hexagon", "added_later": 1}))
+
+    assert member_resource_from_json(ShapedWindow, known).shape == Circle()
+    with pytest.raises(ValidationError):
+        member_resource_from_json(ShapedWindow, unknown)
 
 
 def test_a_views_state_keeps_an_unknown_key_of_the_apps_document() -> None:
