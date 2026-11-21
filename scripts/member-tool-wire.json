@@ -231,7 +231,7 @@
         },
         "PlaceEntry": {
           "additionalProperties": false,
-          "description": "One line of a place; ``kind`` is the app's own text, ``own`` marks the member's line and\n``spoken`` a line said aloud and heard, one finished utterance, rather than written. A line\nenters once its sentence has ended and is never changed; ``cut`` marks a spoken sentence cut\nbefore its end, whose ``text`` is the part heard up to the cut, or the whole sentence when the\napp cannot tell how far it played. ``act`` marks a written line that says what someone did\nrather than what someone said: it is told and never calls the member to act. ``continues``\nmarks a spoken line whose speaker's next sentence at the place already waits to play as the\nline enters; the app copies that fact and decides nothing on it. ``traceparent``\nis the trace the line entered in, which a runner continues in the turn the line wakes.",
+          "description": "One line of a place; ``kind`` is the app's own text, ``own`` marks the member's line and\n``spoken`` a line said aloud and heard, one finished utterance, rather than written. A line\nenters once its sentence has ended and is never changed; ``cut`` marks a spoken sentence cut\nbefore its end, whose ``text`` is the part heard up to the cut, or the whole sentence when the\napp cannot tell how far it played. ``act`` marks a written line that says what someone did\nrather than what someone said: it is told and never calls the member to act. ``continues``\nmarks a spoken line whose speaker's next sentence at the place already waits to play as the\nline enters; the app copies that fact and decides nothing on it. ``language`` is the ISO 639-1\ncode a spoken line was heard in; absent, the app names none. ``traceparent`` is the trace the\nline entered in, which a runner continues in the turn the line wakes.",
           "properties": {
             "act": {
               "default": false,
@@ -252,6 +252,19 @@
               "minLength": 1,
               "title": "Kind",
               "type": "string"
+            },
+            "language": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z]{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Language"
             },
             "name": {
               "minLength": 1,

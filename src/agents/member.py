@@ -20,7 +20,6 @@ from collections.abc import Mapping
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated, Final, Self, get_args
-from urllib.parse import quote, unquote
 
 from pydantic import (
     AfterValidator,
@@ -29,13 +28,20 @@ from pydantic import (
     Field,
     StrictBool,
     StringConstraints,
-    ValidationError,
     ValidationInfo,
     field_validator,
     model_validator,
 )
 
 from agents.figure_vocabulary import FigureFraming, FigureGesture, FigureMood
+from agents.member_place import (
+    STANDING_URI,
+    PlaceRef,
+    place_ref_from_view_uri,
+    place_ref_from_window_uri,
+    place_view_uri,
+    place_window_uri,
+)
 from agents.member_presentation import (
     FigureLook,
     FigureRef,
@@ -163,17 +169,6 @@ SET_FRAMING_TOOL: Final = "set_framing"
 """The name of the tool that sets how much of the member's figure shows at a place."""
 SET_TURN_STATE_TOOL: Final = "set_turn_state"
 """The name of the tool that states whether the member's turns at a place answer."""
-STANDING_URI: Final = "member://standing"
-"""The resource that answers with the member's ``MemberStanding``."""
-_PLACE_WINDOW_URI_PREFIX: Final = f"{STANDING_URI}/places/"
-_VIEW_SEGMENT: Final = "/view"
-
-
-class PlaceRef(StrictModel):
-    """A place the member is in, opaque to everyone but the app: its kind and its id."""
-
-    kind: NonEmptyUnicodeText
-    id: NonEmptyUnicodeText
 
 
 class StandingState(StrEnum):
@@ -661,8 +656,9 @@ class PlaceEntry(StrictModel):
     app cannot tell how far it played. ``act`` marks a written line that says what someone did
     rather than what someone said: it is told and never calls the member to act. ``continues``
     marks a spoken line whose speaker's next sentence at the place already waits to play as the
-    line enters; the app copies that fact and decides nothing on it. ``traceparent``
-    is the trace the line entered in, which a runner continues in the turn the line wakes."""
+    line enters; the app copies that fact and decides nothing on it. ``language`` is the ISO 639-1
+    code a spoken line was heard in; absent, the app names none. ``traceparent`` is the trace the
+    line entered in, which a runner continues in the turn the line wakes."""
 
     seq: int = Field(ge=1)
     kind: NonEmptyUnicodeText
@@ -673,6 +669,7 @@ class PlaceEntry(StrictModel):
     cut: bool = Field(default=False, exclude_if=_is_false)
     act: bool = Field(default=False, exclude_if=_is_false)
     continues: bool = Field(default=False, exclude_if=_is_false)
+    language: SpokenLanguage | None = Field(default=None, exclude_if=_is_none)
     traceparent: OptionalTraceparent
 
     @model_validator(mode="after")
@@ -691,6 +688,12 @@ class PlaceEntry(StrictModel):
     def _only_a_spoken_line_continues(self) -> Self:
         if self.continues and not self.spoken:
             raise ValueError("only a spoken line continues")
+        return self
+
+    @model_validator(mode="after")
+    def _only_a_spoken_line_has_a_language(self) -> Self:
+        if self.language is not None and not self.spoken:
+            raise ValueError("only a spoken line has a language")
         return self
 
     @model_validator(mode="after")
@@ -730,26 +733,6 @@ class PlaceWindow(StrictModel):
         return self
 
 
-def place_window_uri(place: PlaceRef) -> str:
-    """The resource of one place's window; each segment is escaped, so ``/`` stays opaque."""
-    return _PLACE_WINDOW_URI_PREFIX + f"{quote(place.kind, safe='')}/{quote(place.id, safe='')}"
-
-
-def place_ref_from_window_uri(uri: object) -> PlaceRef | None:
-    """The place a window URI names, or ``None`` for anything but its canonical spelling."""
-    if not isinstance(uri, str) or not uri.startswith(_PLACE_WINDOW_URI_PREFIX):
-        return None
-    segments = uri.removeprefix(_PLACE_WINDOW_URI_PREFIX).split("/")
-    if len(segments) != 2 or not all(segments):
-        return None
-    try:
-        kind, place_id = (unquote(segment, errors="strict") for segment in segments)
-        place = PlaceRef(kind=kind, id=place_id)
-    except UnicodeDecodeError, ValidationError:
-        return None
-    return place if place_window_uri(place) == uri else None
-
-
 class PlaceView(StrictModel):
     """The state of one place for the member, as the app serves it.
 
@@ -783,15 +766,3 @@ def member_resource_from_json[RecordT: MemberResourceRecord](
     carried; every field, enum value and rule across fields it knows is checked as the default parse
     does, and a view's ``state`` keeps every key."""
     return record.model_validate_json(text, extra="ignore")
-
-
-def place_view_uri(place: PlaceRef) -> str:
-    """The resource of one place's view: the place's window URI and the segment ``view``."""
-    return place_window_uri(place) + _VIEW_SEGMENT
-
-
-def place_ref_from_view_uri(uri: object) -> PlaceRef | None:
-    """The place a view URI names, or ``None`` for anything but its canonical spelling."""
-    if not isinstance(uri, str) or not uri.endswith(_VIEW_SEGMENT):
-        return None
-    return place_ref_from_window_uri(uri.removesuffix(_VIEW_SEGMENT))

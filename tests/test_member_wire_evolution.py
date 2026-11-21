@@ -94,6 +94,9 @@ def mutated(wire: dict[str, Any], **fields: Any) -> dict[str, Any]:
         pytest.param(PlaceView, mutated(VIEW, awaits_you="yes"), id="a view's retyped field"),
         pytest.param(PlaceWindow, mutated(WINDOW, entries=[entry(1, cut=True)]), id="cut unspoken"),
         pytest.param(
+            PlaceWindow, mutated(WINDOW, entries=[entry(1, language="de")]), id="language unspoken"
+        ),
+        pytest.param(
             PlaceWindow,
             mutated(WINDOW, starts_at=1, entries=[entry(1), entry(1)]),
             id="seq not ascending",

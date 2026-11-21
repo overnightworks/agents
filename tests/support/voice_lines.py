@@ -17,8 +17,11 @@ def a_line(
     own=False,
     spoken=True,
     act=False,
+    language: str | None = None,
 ) -> PlaceEntry:
-    return PlaceEntry(seq=seq, kind=kind, name=name, text=text, own=own, spoken=spoken, act=act)
+    return PlaceEntry(
+        seq=seq, kind=kind, name=name, text=text, own=own, spoken=spoken, act=act, language=language
+    )
 
 
 def speaking(*partials: tuple[str, str]) -> PartialsChanged:
