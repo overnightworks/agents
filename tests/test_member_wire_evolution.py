@@ -69,8 +69,10 @@ def test_a_resource_record_with_an_unknown_key_reads_as_without_it(
 def test_the_default_parse_still_refuses_a_resource_record_with_an_unknown_key(
     record: type[MemberResourceRecord], wire: dict[str, Any], path: tuple[str | int, ...]
 ) -> None:
+    payload = with_key_at(wire, path)
+
     with pytest.raises(ValidationError):
-        record.model_validate_json(with_key_at(wire, path))
+        record.model_validate_json(payload)
 
 
 def mutated(wire: dict[str, Any], **fields: Any) -> dict[str, Any]:
