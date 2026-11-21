@@ -25,7 +25,7 @@ from agents.backend.fake_gateway import Reply
 from agents.backend.gateway import GatewayBackend
 from agents.member import PlaceEntry
 from agents.tools import HandTool
-from agents.voice import VoiceEvent, WakeRule, Woke
+from agents.voice import HearingEvent, VoiceEvent, WakeRule, Woke
 from agents.voice.loop import run_voice_loop
 from tests.support.gateway_turn_support import a_chunk, a_gateway_config, a_person, an_event_stream
 from tests.support.virtual_time import VirtualTimeLoop
@@ -62,8 +62,8 @@ class Trace:
 
     Voice events are recorded as reported; the support's own entries are tuples that start
     with their kind: ``render``, ``unrendered`` (a render cancelled), ``play``, ``played``,
-    ``stopped`` (a play cancelled), ``asked``, ``tool``, ``written``, ``closed``, ``cancelled``
-    and ``ended`` (the loop's run is over).
+    ``stopped`` (a play cancelled), ``pause``, ``resume``, ``asked``, ``tool``, ``written``,
+    ``closed``, ``cancelled`` and ``ended`` (the loop's run is over).
     """
 
     def __init__(self) -> None:
@@ -100,7 +100,7 @@ class Trace:
 
     @property
     def calls(self) -> list[tuple[str, str]]:
-        kinds = {"render", "unrendered", "play", "played", "stopped"}
+        kinds = {"render", "unrendered", "play", "played", "stopped", "pause", "resume"}
         return [entry for entry in self.entries if isinstance(entry, tuple) and entry[0] in kinds]
 
     @property
@@ -144,9 +144,10 @@ class RecordingVoice:
     """A ``VoiceOut`` whose sound is the sentence itself; it records each call in the trace.
 
     Every render takes ``seconds_per_render`` and every play ``seconds_per_sentence`` on the
-    loop's clock, and a sentence in ``held`` plays until ``release`` ends it. After that time,
-    ``raises`` maps a call and its sentence to what that call raises, and a call in ``hangs``
-    never returns.
+    loop's clock, and a sentence in ``held`` plays until ``release`` ends it. A play does not
+    return while paused, until ``resume``; a sentence in ``ends_at_pause`` ends as it is paused,
+    so its ``resume`` has nothing to go on with. After that time, ``raises`` maps a call and its
+    sentence to what that call raises, and a call in ``hangs`` never returns.
     """
 
     def __init__(
@@ -156,6 +157,7 @@ class RecordingVoice:
         raises: dict[tuple[str, str], Exception] | None = None,
         hangs: Collection[tuple[str, str]] = (),
         held: Collection[str] = (),
+        ends_at_pause: Collection[str] = (),
         seconds_per_render: float = 0.0,
         seconds_per_sentence: float = 0.0,
     ) -> None:
@@ -163,6 +165,10 @@ class RecordingVoice:
         self._raises = raises or {}
         self._hangs = hangs
         self._held = {sentence: asyncio.Event() for sentence in held}
+        self._ends_at_pause = ends_at_pause
+        self._resumed = asyncio.Event()
+        self._resumed.set()
+        self._sentence = ""
         self._render_seconds = seconds_per_render
         self._seconds = seconds_per_sentence
 
@@ -180,13 +186,29 @@ class RecordingVoice:
             raise
         return sentence
 
+    async def pause(self) -> None:
+        self._trace.record(("pause", self._sentence))
+        if self._sentence in self._ends_at_pause:
+            if self._sentence in self._held:
+                self._held[self._sentence].set()
+            return
+        self._resumed.clear()
+
+    async def resume(self) -> None:
+        self._trace.record(("resume", self._sentence))
+        await self._as_arranged("resume", self._sentence)
+        self._resumed.set()
+
     async def play(self, audio: str) -> None:
         try:
             self._trace.record(("play", audio))
+            self._sentence = audio
+            self._resumed.set()
             if audio in self._held:
                 await self._held[audio].wait()
             if self._seconds:
                 await asyncio.sleep(self._seconds)
+            await self._resumed.wait()
             await self._as_arranged("play", audio)
         except asyncio.CancelledError:
             self._trace.record(("stopped", audio))
@@ -282,11 +304,12 @@ def rows_of(message: dict) -> list[dict]:
     return [json.loads(row) for row in message["content"].splitlines()]
 
 
-def texts_of(message: dict) -> list[str]:
-    return [row["text"] for row in rows_of(message)]
+def texts_of(message: dict) -> list[str | dict]:
+    """The lines' texts; a line of the loop's own, which has no text, as its keys and values."""
+    return [row.get("text", row) for row in rows_of(message)]
 
 
-def conversation_of(request: httpx2.Request) -> list[tuple[str, list[str] | str]]:
+def conversation_of(request: httpx2.Request) -> list[tuple[str, list[str | dict] | str]]:
     """A request's messages after the system one: a user message as its lines' texts."""
     return [
         (message["role"], texts_of(message) if message["role"] == "user" else message["content"])
@@ -304,7 +327,7 @@ class Ending:
 
 RETURNED: Final = Ending()
 
-type Hearing = Callable[[Trace], AsyncIterator[PlaceEntry]]
+type Hearing = Callable[[Trace], AsyncIterator[HearingEvent]]
 
 
 @dataclass

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import random
 
-from agents.member import PlaceEntry, PlaceWindow
+from agents.member import PartialSpeech, PlaceEntry, PlaceWindow
+from agents.voice import PartialsChanged
 
 
 def a_line(
@@ -18,6 +19,11 @@ def a_line(
     act=False,
 ) -> PlaceEntry:
     return PlaceEntry(seq=seq, kind=kind, name=name, text=text, own=own, spoken=spoken, act=act)
+
+
+def speaking(*partials: tuple[str, str]) -> PartialsChanged:
+    """The partial speech at the place: each partial is a person's name and the words so far."""
+    return PartialsChanged(tuple(PartialSpeech(name=name, text=text) for name, text in partials))
 
 
 STREAMED_ANSWERS = [
