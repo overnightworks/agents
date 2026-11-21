@@ -1,0 +1,8 @@
+claim_id = "6f5bba09180f48c8ae61824caa908818"
+agent = "Claude 8c157831-3ad7-436a-9c17-26e3c63d9b92"
+role = "builder"
+base = "25b389d9af0c2eabaca36d2e91f12d9f16f04831"
+branch = "claude/issue-1058-the-figure-an-agent-accepts-carries-its"
+scope = ["docs/calling.md", "docs/connector.md", "scripts/member-tool-wire.json", "src/agents/member_presentation.py", "tests/test_mcp_server_member_arguments.py", "tests/test_member_invitation_arguments.py"]
+opened_commit = "8b2376de91a70b1f343bbf6d7decff8c92d52cee"
+whole_reason = "One room field on the figure look, with its wire snapshot, docs and tests; the field, its docs and its snapshot change together or the contract and its statement disagree."
