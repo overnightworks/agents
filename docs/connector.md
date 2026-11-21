@@ -697,7 +697,7 @@ holds. Proved by
 `tests/test_mcp_server_resources.py`, `tests/test_mcp_server_listen_view.py` and
 `tests/test_voice_loop.py`.
 
-An accept may name the agent's looks, `looks` as a list of `FigureLook(kind, url, sha256, gestures)` and
+An accept may name the agent's looks, `looks` as a list of `FigureLook(kind, url, sha256, gestures, room)` and
 `VideoLook(kind, name)`, first choice first; its 3D figure, `figure` as `FigureRef(url, sha256, gestures)`;
 and the voices it would speak with, `voices` as a list of voice names, the persona's order of
 preference with the first choice first; all are optional, and an accept without them dumps without
@@ -725,6 +725,10 @@ rest ([CALLING-41](calling.md)):
   empty, a gesture has at most one clip and a clip cannot be sent without a figure. `HttpsFileRef`
   owns the url and digest check that `FigureRef` shares, and the app treats a clip as it treats the
   figure.
+- `room`, on a `FigureLook` only, is an `HttpsFileRef(url, sha256)`, the agent's own room, left out
+  of the JSON when unset; `FigureRef`, so the old `figure`, has none. The app treats it as it treats
+  the figure and hands its bytes to figure's `room` mount option, whose room check judges them; a
+  room that is refused shows none and the accept stands ([CALLING-52](calling.md)).
 - It passes the voices to its speech service unchanged and in order; the library folds no case and
   picks no voice, and the speech service picks the voice that speaks each sentence. A name that
   service does not offer is refused there, and the app answers with the refusal it already has; the

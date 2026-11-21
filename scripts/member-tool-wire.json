@@ -479,7 +479,7 @@
                   "oneOf": [
                     {
                       "additionalProperties": false,
-                      "description": "A look of the agent that is its 3D figure: the fields of ``FigureRef`` and ``kind``, the\n``figure`` tag that tells the look from a ``VideoLook``. A figure look plays gestures.",
+                      "description": "A look of the agent that is its 3D figure: the fields of ``FigureRef`` and ``kind``, the\n``figure`` tag that tells the look from a ``VideoLook``, and, optionally, ``room``, the agent's\nown room, which an app hands to figure to draw behind the figure; left out of the JSON when\nunset. ``FigureRef``, so the old ``figure``, carries no room. A figure look plays gestures.",
                       "properties": {
                         "gestures": {
                           "additionalProperties": {
@@ -512,6 +512,32 @@
                         "kind": {
                           "const": "figure",
                           "type": "string"
+                        },
+                        "room": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "description": "Where a file is and the digest its bytes must have: ``url`` is an absolute ``https``\naddress with a host and no user part, query or fragment, and ``sha256`` is 64 lowercase\nhexadecimal characters. The record checks the form only; whether to fetch the file is the\napp's decision.",
+                              "properties": {
+                                "sha256": {
+                                  "pattern": "^[0-9a-f]{64}$",
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "url",
+                                "sha256"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "default": null
                         },
                         "sha256": {
                           "pattern": "^[0-9a-f]{64}$",
