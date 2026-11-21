@@ -78,7 +78,66 @@
     {
       "run": "8af766978df94cdaad8b8be2fa29a7de",
       "start_tip": "e112cc64b256ff001ed5ebe0ae09d48b61087adb",
-      "follows": true
+      "follows": true,
+      "end_tip": "1528a0957d7603e8acb417a9f1b63245193eae57",
+      "ran": [
+        "review",
+        "fix",
+        "test",
+        "gate"
+      ],
+      "record": {
+        "version": 1,
+        "stages": {
+          "build": "sonnet/high",
+          "fix": "sonnet/high",
+          "review": "opus/medium",
+          "test": "sonnet/high",
+          "gate": "gpt-6-astra/high",
+          "land": "haiku/low"
+        },
+        "fix_rounds": {
+          "review": 0,
+          "gate": 0,
+          "ci": 2,
+          "test": 1
+        },
+        "blocking": {
+          "review": 0,
+          "gate": 0,
+          "ci": 6,
+          "test": 0
+        },
+        "misses": {
+          "review": 0,
+          "gate": 0,
+          "ci": 2,
+          "test": 0
+        },
+        "verdicts": [
+          {
+            "stage": "review",
+            "verdict": "approve",
+            "sha": "391b87dfc055a4863778c6fc10d9268b3f10cd4c"
+          },
+          {
+            "stage": "gate",
+            "verdict": "approve",
+            "sha": "391b87dfc055a4863778c6fc10d9268b3f10cd4c"
+          },
+          {
+            "stage": "review",
+            "verdict": "approve",
+            "sha": "0b6f9fd4c66f63fde34bf73e3b1c27bbc6fccf42"
+          },
+          {
+            "stage": "review",
+            "verdict": "approve",
+            "sha": "1528a0957d7603e8acb417a9f1b63245193eae57"
+          }
+        ],
+        "risk": "material"
+      }
     }
   ]
 }
