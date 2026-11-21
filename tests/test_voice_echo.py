@@ -4,6 +4,7 @@ import pytest
 
 from agents.backend.fake_gateway import FakeGateway, completion
 from agents.voice import (
+    DecisionEnded,
     EchoDropped,
     SentenceRefused,
     SentenceStarted,
@@ -227,9 +228,11 @@ def test_an_echo_heard_while_the_next_decision_is_read_repeats_the_answer_before
         Woke(),
         SentenceStarted(FIRST),
         SentenceStarted(SECOND),
+        DecisionEnded(),
         Woke(),
         EchoDropped(FIRST_HEARD_BACK),
         SentenceStarted("Gern."),
+        DecisionEnded(),
     ]
     assert trace.asked == [(QUESTION, False), ("Und weiter?", True)]
 

@@ -9,6 +9,7 @@ from agents.backend.fake_gateway import FakeGateway, completion, tool_call, tool
 from agents.backend.gateway import GatewayDetail
 from agents.turn import FailureCode
 from agents.voice import (
+    DecisionEnded,
     DecisionFailed,
     Held,
     HoldEnded,
@@ -164,6 +165,7 @@ def test_a_talk_over_while_the_reply_is_still_written_starts_no_sentence_until_t
         HoldEnded(HoldEnding.CONTINUED),
         SentenceStarted("Eins."),
         SentenceStarted("Zwei."),
+        DecisionEnded(),
     ]
     assert all(call[0] not in {"pause", "resume"} for call in trace.calls)
 
@@ -301,7 +303,7 @@ def test_finish_resumes_the_paused_sentence_and_drops_the_rest(place):
     assert place.trace.played == ["Eins."]
     assert ("resume", "Eins.") in place.trace.calls
     assert ("play", "Zwei.") not in place.trace.calls
-    assert place.trace.events[-1] == HoldEnded(HoldEnding.FINISHED)
+    assert place.trace.events[-2:] == [HoldEnded(HoldEnding.FINISHED), DecisionEnded()]
 
 
 def test_finish_with_no_sentence_paused_says_nothing_more(place):
@@ -328,7 +330,13 @@ def test_finish_with_no_sentence_paused_says_nothing_more(place):
 
     assert place.run(hearing, gateway) == RETURNED
 
-    assert trace.events == [Woke(), Held(), Woke(), HoldEnded(HoldEnding.FINISHED)]
+    assert trace.events == [
+        Woke(),
+        Held(),
+        Woke(),
+        HoldEnded(HoldEnding.FINISHED),
+        DecisionEnded(),
+    ]
     assert trace.played == []
 
 
@@ -343,7 +351,11 @@ def test_silent_stops_the_paused_sentence_and_says_nothing_more(place):
 
     assert ("stopped", "Eins.") in place.trace.calls
     assert place.trace.played == []
-    assert place.trace.events[-2:] == [StayedSilent(), HoldEnded(HoldEnding.STOPPED)]
+    assert place.trace.events[-3:] == [
+        StayedSilent(),
+        HoldEnded(HoldEnding.STOPPED),
+        DecisionEnded(),
+    ]
 
 
 def test_speech_in_the_hold_decision_replaces_the_rest_with_no_further_request(place):
@@ -451,8 +463,10 @@ def test_a_failed_unreadable_or_empty_hold_decision_drops_the_rest_and_says_noth
         Woke(),
         *decision_events,
         HoldEnded(HoldEnding.DROPPED),
+        DecisionEnded(),
         Woke(),
         SentenceStarted("Gern."),
+        DecisionEnded(),
     ]
     assert ("stopped", "Eins.") in place.trace.calls
     assert place.trace.played == ["Gern."]
@@ -551,6 +565,7 @@ def test_an_ending_waits_while_a_newer_talk_over_stands_and_that_talk_over_gets_
         Woke(),
         StayedSilent(),
         HoldEnded(HoldEnding.STOPPED),
+        DecisionEnded(),
     ]
     assert [call for call in trace.calls if call[0] == "pause"] == [("pause", "Eins.")]
     assert conversation_of(gateway.requests[2])[-2:] == [
@@ -629,7 +644,13 @@ def test_a_newer_talk_over_after_a_stopping_ending_holds_nothing_and_its_line_wa
     assert place.run(hearing, gateway, voice=voice) == RETURNED
 
     assert trace.events.count(Held()) == 1
-    assert trace.events[-3:] == [HoldEnded(HoldEnding.STOPPED), Woke(), SentenceStarted("Ja?")]
+    assert trace.events[-5:] == [
+        HoldEnded(HoldEnding.STOPPED),
+        DecisionEnded(),
+        Woke(),
+        SentenceStarted("Ja?"),
+        DecisionEnded(),
+    ]
 
 
 def test_an_utterance_that_gains_words_only_after_the_answer_ended_holds_nothing(place):
@@ -652,8 +673,10 @@ def test_an_utterance_that_gains_words_only_after_the_answer_ended_holds_nothing
     assert place.trace.events == [
         Woke(),
         SentenceStarted("Eins."),
+        DecisionEnded(),
         Woke(),
         SentenceStarted("Gern."),
+        DecisionEnded(),
     ]
     assert len(gateway.requests) == 2
 
@@ -690,7 +713,11 @@ def test_a_resume_refused_ends_the_answer_as_a_refused_play_does(place):
 
     assert place.run(hearing, gateway, voice=voice) == RETURNED
 
-    assert place.trace.events[-2:] == [HoldEnded(HoldEnding.CONTINUED), SentenceRefused("Eins.")]
+    assert place.trace.events[-3:] == [
+        HoldEnded(HoldEnding.CONTINUED),
+        SentenceRefused("Eins."),
+        DecisionEnded(),
+    ]
     assert ("stopped", "Eins.") in place.trace.calls
     assert ("play", "Zwei.") not in place.trace.calls
 
@@ -737,7 +764,7 @@ def test_a_hold_marker_outside_a_hold_reads_unreadable_and_speaks_nothing(place,
 
     assert place.run(hearing, gateway) == RETURNED
 
-    assert place.trace.events == [Woke(), ReplyUnreadable()]
+    assert place.trace.events == [Woke(), ReplyUnreadable(), DecisionEnded()]
     assert place.trace.calls == []
 
 
@@ -769,7 +796,54 @@ def test_a_hold_reports_woke_held_woke_and_its_ending_in_this_order(
         Woke(),
         *decision_events,
         *ending_events,
+        DecisionEnded(),
     ]
+
+
+@pytest.mark.parametrize(
+    ("reply", "last_played"),
+    [("[continue]", "Zwei."), ("[finish]", "Eins."), ("Gut.", "Gut.")],
+)
+def test_an_answer_with_a_hold_reports_two_woke_and_one_end_after_its_ending_has_played(
+    place, reply, last_played
+):
+    voice, gateway = an_answer_of_two_that_is_playing(place, completion(reply))
+
+    async def hearing(trace):
+        async for event in the_hold_ends(trace, voice):
+            yield event
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    trace = place.trace
+    assert trace.events.count(Woke()) == 2
+    assert trace.events.count(DecisionEnded()) == 1
+    assert trace.events[-1] == DecisionEnded()
+    assert trace.order_of(("played", last_played), DecisionEnded())[-1] == DecisionEnded()
+    assert trace.entries.index(("played", last_played)) < trace.entries.index(DecisionEnded())
+
+
+@pytest.mark.parametrize(
+    ("reply", "ending"),
+    [(completion("[silent]"), HoldEnding.STOPPED), (A_GATEWAY_REFUSAL, HoldEnding.DROPPED)],
+)
+def test_a_stopping_or_dropping_hold_reports_the_end_after_the_paused_sentence_was_stopped(
+    place, reply, ending
+):
+    voice, gateway = an_answer_of_two_that_is_playing(place, reply)
+
+    async def hearing(trace):
+        async for event in the_hold_ends(trace, voice):
+            yield event
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    trace = place.trace
+    assert trace.events.count(DecisionEnded()) == 1
+    assert trace.order_of(HoldEnded(ending), ("stopped", "Eins."), DecisionEnded())[-1] == (
+        DecisionEnded()
+    )
+    assert trace.entries.index(("stopped", "Eins.")) < trace.entries.index(DecisionEnded())
 
 
 def test_after_continue_the_next_waking_decision_starts_only_once_the_held_rest_has_played(place):

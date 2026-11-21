@@ -9,13 +9,15 @@ import pytest
 from agents.backend import TurnStopKind
 from agents.backend.fake_gateway import (
     FakeGateway,
+    Reply,
     completion,
     tool_call,
     tool_round,
 )
 from agents.backend.gateway import GatewayDetail
-from agents.turn import FailureCode
+from agents.turn import FailureCode, RejectionCode
 from agents.voice import (
+    DecisionEnded,
     DecisionFailed,
     ReplyUnreadable,
     SentenceRefused,
@@ -66,7 +68,7 @@ def test_a_spoken_line_that_wakes_sends_one_request_with_prompt_protocol_context
     assert rows_of(messages[0]) == [
         {"name": "Ada", "kind": "person", "own": False, "spoken": True, "text": "Kannst du helfen?"}
     ]
-    assert place.trace.events == [Woke(), SentenceStarted("Gern.")]
+    assert place.trace.events == [Woke(), SentenceStarted("Gern."), DecisionEnded()]
 
 
 def test_a_line_that_does_not_wake_sends_nothing_and_leads_the_next_decisions_message(place):
@@ -486,6 +488,11 @@ def test_a_refused_render_ends_the_answer_closes_the_turn_and_keeps_what_played(
     assert conversation_of(gateway.requests[1])[1] == ("assistant", "Eins.")
 
 
+A_STOPPED_TURN = DecisionFailed(
+    TurnStopKind.FAILED, FailureCode.PROVIDER_UNAVAILABLE, GatewayDetail.CONNECTION_FAILED
+)
+
+
 def test_a_turn_stopped_after_a_sentence_played_plays_out_the_queued_one_and_drops_the_rest(
     place,
 ):
@@ -518,13 +525,113 @@ def test_a_turn_stopped_after_a_sentence_played_plays_out_the_queued_one_and_dro
         "Gern.",
     ]
     assert trace.played == ["Eins.", "Zwei.", "Gern."]
-    assert (
-        DecisionFailed(
-            TurnStopKind.FAILED, FailureCode.PROVIDER_UNAVAILABLE, GatewayDetail.CONNECTION_FAILED
-        )
-        in trace.events
-    )
+    assert A_STOPPED_TURN in trace.events
     assert conversation_of(gateway.requests[1])[1] == ("assistant", "Eins. Zwei.")
+    assert trace.order_of(DecisionEnded(), ("played", "Zwei."), A_STOPPED_TURN)[:3] == [
+        A_STOPPED_TURN,
+        ("played", "Zwei."),
+        DecisionEnded(),
+    ]
+
+
+def test_a_decision_reports_its_end_once_its_last_sentence_has_played(place):
+    trace = place.trace
+    voice = RecordingVoice(trace, seconds_per_sentence=5)
+    gateway = PacedGateway(trace, [piece("Eins. Zwei."), finish()], [piece("Gern."), finish()])
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.until(lambda: ("play", "Eins.") in trace.entries)
+        yield a_line(2, "Und?")
+        await trace.until(lambda: trace.count(DecisionEnded()) == 2)
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert trace.order_of(Woke(), DecisionEnded(), ("played", "Zwei."), ("played", "Gern.")) == [
+        Woke(),
+        ("played", "Zwei."),
+        DecisionEnded(),
+        Woke(),
+        ("played", "Gern."),
+        DecisionEnded(),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("reply", "report"),
+    [
+        (completion("[silent]"), StayedSilent()),
+        (completion("[shout] Hallo."), ReplyUnreadable()),
+        (A_GATEWAY_REFUSAL, A_REFUSED_TURN),
+    ],
+)
+def test_a_silent_unreadable_or_failed_decision_reports_its_end_once(place, reply, report):
+    gateway = FakeGateway(reply)
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.settled()
+
+    assert place.run(hearing, gateway) == RETURNED
+
+    assert place.trace.events == [Woke(), report, DecisionEnded()]
+
+
+@pytest.mark.parametrize(
+    "refusal", [{("play", "Eins."): VoiceRefused()}, {("render", "Zwei."): VoiceRefused()}]
+)
+def test_a_refused_sound_reports_the_end_after_the_turn_was_closed(place, refusal):
+    trace = place.trace
+    voice = RecordingVoice(trace, raises=refusal)
+    gateway = PacedGateway(trace, [piece("Eins. Zwei. Drei. Vier"), hang])
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    refused = next(event for event in trace.events if isinstance(event, SentenceRefused))
+    assert trace.order_of(refused, ("closed",), DecisionEnded()) == [
+        refused,
+        ("closed",),
+        DecisionEnded(),
+    ]
+
+
+def test_a_decision_reports_its_end_only_after_its_tools_have_run(place):
+    gateway = FakeGateway(A_SILENT_ROUND, completion("[silent]"))
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        for _ in range(3):
+            await trace.settled()
+
+    tools = [a_lookup_tool(place.trace, takes_a_moment=True)]
+    assert place.run(hearing, gateway, tools=tools) == RETURNED
+
+    assert place.trace.order_of(("tool", "answered"), DecisionEnded()) == [
+        ("tool", "answered"),
+        DecisionEnded(),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("reply", "wait"),
+    [(Reply(429, {"Retry-After": "7"}), 7), (Reply(429), None)],
+)
+def test_a_busy_refusal_reports_its_wait_on_the_failed_decision(place, reply, wait):
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.settled()
+
+    assert place.run(hearing, FakeGateway(reply)) == RETURNED
+
+    assert place.trace.events == [
+        Woke(),
+        DecisionFailed(TurnStopKind.REFUSED, RejectionCode.BUSY, None, retry_after_s=wait),
+        DecisionEnded(),
+    ]
 
 
 def test_playing_longer_than_the_turns_limit_plays_every_sentence_without_a_limit_failure(place):
@@ -666,6 +773,24 @@ def test_the_hosts_cancel_closes_the_turn_stops_the_sound_and_reports_nothing_mo
     assert entries.index(("closed",)) > entries.index(("cancelled",))
     assert [call for call in place.trace.calls if call[0] == "stopped"] == stopped
     assert place.trace.events_after(("cancelled",)) == []
+
+
+@pytest.mark.parametrize(
+    ("state", "voice_raises"),
+    [("deciding", {}), ("playing", {}), ("playing", {("play", "Eins."): RuntimeError("no sound")})],
+)
+def test_a_decision_the_loops_own_end_cuts_reports_no_end(place, state, voice_raises):
+    gateway, voice = arranged(place, state)
+    if voice_raises:
+        voice = RecordingVoice(place.trace, raises=voice_raises)
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.settled()
+
+    place.run(hearing, gateway, voice=voice)
+
+    assert DecisionEnded() not in place.trace.events
 
 
 @pytest.mark.parametrize("call", ["render", "play"])

@@ -149,6 +149,10 @@ class Trace:
     def count(self, entry: object) -> int:
         return self.entries.count(entry)
 
+    def order_of(self, *marks: object) -> list[object]:
+        """The entries that are one of ``marks``, in the order they were recorded."""
+        return [entry for entry in self.entries if entry in marks]
+
     def events_after(self, mark: object) -> list[object]:
         """The voice events recorded after ``mark`` first was."""
         later = self.entries[self.entries.index(mark) + 1 :]

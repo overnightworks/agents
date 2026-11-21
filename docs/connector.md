@@ -52,7 +52,8 @@ never stored beside it:
 | `refused: budget_spent` | `budget_spent` | no, until the budget changes |
 | every `failed` code | `unavailable` | maybe, later, by the person |
 
-`retry_after_s` comes only with `busy`, as the gateway gave it; the outcome never changes it. Proved
+`retry_after_s` comes only with `busy`, as the gateway gave it, on `TurnStopped` and on the voice
+loop's `DecisionFailed` alike; the outcome never changes it. Proved
 by `tests/test_backend_port.py`: `test_every_stop_code_has_exactly_its_outcome`,
 `test_the_outcome_table_covers_every_stop_code`,
 `test_a_turn_stop_and_a_failed_decision_of_one_code_give_the_same_outcome`,
@@ -1349,10 +1350,10 @@ await run_voice_loop(
   line heard after a decision that played at least one sentence ended, while no decision is in
   flight, and false for every other line, one heard while an answer plays included.
 - `report` receives each `VoiceEvent`: `Woke`, `StayedSilent`, `ReplyUnreadable`,
-  `SentenceStarted(text)`, `SentenceRefused(text)`, `DecisionFailed(kind, code, detail)`, whose
-  `outcome` is the stop's `StopOutcome`, `EchoDropped(text)`, `Held` and
-  `HoldEnded(ending)` with the `HoldEnding` `continued`, `finished`, `stopped`, `answered` or
-  `dropped`.
+  `SentenceStarted(text)`, `SentenceRefused(text)`,
+  `DecisionFailed(kind, code, detail, retry_after_s=...)`, whose `outcome` is the stop's
+  `StopOutcome`, `DecisionEnded`, `EchoDropped(text)`, `Held` and `HoldEnded(ending)` with the
+  `HoldEnding` `continued`, `finished`, `stopped`, `answered` or `dropped`.
 
 **Being talked over.** The loop holds its answer itself, from the partial speech it is given, and
 reads neither `talked_over` nor `interrupted`, which stay the member wire's hold for a runner
@@ -1405,6 +1406,7 @@ Woke  [StayedSilent|ReplyUnreadable]*  SentenceStarted*      the answer
 | HoldEnded(stopped | dropped)
   [SentenceRefused]                                           a refused resume or play
   (Held ... HoldEnded)*                                       a newer talk-over
+  DecisionEnded                                               the span is over
 ```
 
 A talk-over that starts while the decision is in flight reports nothing until the ending is
@@ -1547,6 +1549,25 @@ no rate limit; the person's budget at the gateway bounds it. Proved by
 `test_a_waking_line_heard_while_an_answer_plays_is_decided_after_it_plays_uncut` and
 `test_two_hundred_waking_lines_each_after_the_last_answer_get_two_hundred_decisions`.
 
+`DecisionEnded` is the last event of a decision a waking line started, its holds included: it
+comes after every other event of that decision (`Woke`, `StayedSilent`, `ReplyUnreadable`,
+`SentenceStarted`, `SentenceRefused`, `DecisionFailed`, `Held`, `HoldEnded`). By then its sound has
+ended, each sentence it started having played to its end, been refused or been stopped, and every
+turn it started, a hold decision's and their tools included, has ended: read to its end, stopped
+with `TurnStopped`, or closed after a refused sound. The next `Woke` comes after it. The first
+`Woke` after the loop starts or after a `DecisionEnded` opens a span; a `Woke` inside an open span is
+a hold decision and gets no end of its own. `EchoDropped` is hearing's, not a decision's, and may
+come before or after it. When the loop itself ends (hearing ends, an error, the app's cancel), no
+`DecisionEnded` is reported; the app frees what it holds when `run_voice_loop` returns, raises or
+is cancelled. Proved by `tests/test_voice_loop.py`:
+`test_a_decision_reports_its_end_once_its_last_sentence_has_played`,
+`test_a_silent_unreadable_or_failed_decision_reports_its_end_once`,
+`test_a_refused_sound_reports_the_end_after_the_turn_was_closed`,
+`test_a_decision_reports_its_end_only_after_its_tools_have_run` and
+`test_a_decision_the_loops_own_end_cuts_reports_no_end`, and by `tests/test_voice_hold.py`:
+`test_an_answer_with_a_hold_reports_two_woke_and_one_end_after_its_ending_has_played` and
+`test_a_stopping_or_dropping_hold_reports_the_end_after_the_paused_sentence_was_stopped`.
+
 **The reply** is read per round, and a tool call ends a round. Leading whitespace is skipped. A
 round that opens with `[` is held until `]` closes it within 16 characters; the word between,
 trimmed of spaces and folded to ASCII lower case, is the marker. `silent` speaks nothing of the
@@ -1574,10 +1595,11 @@ in `tests/test_voice_sentences.py`.
   `test_a_refused_render_ends_the_answer_closes_the_turn_and_keeps_what_played`,
   `test_a_render_refused_while_the_one_before_it_plays_is_reported_after_that_one_played` and
   `test_a_refused_play_never_plays_starts_or_records_the_sentence_rendered_after_it`.
-- `TurnStopped` is reported as `DecisionFailed`; the sentences already queued play out and the
-  held rest is dropped. Proved by
-  `test_a_turn_stopped_after_a_sentence_played_plays_out_the_queued_one_and_drops_the_rest` and
-  `test_a_turn_stopped_while_a_sentence_plays_still_plays_the_one_rendered_after_it`.
+- `TurnStopped` is reported as `DecisionFailed` with the stop's `retry_after_s`; the sentences
+  already queued play out and the held rest is dropped. Proved by
+  `test_a_turn_stopped_after_a_sentence_played_plays_out_the_queued_one_and_drops_the_rest`,
+  `test_a_turn_stopped_while_a_sentence_plays_still_plays_the_one_rendered_after_it` and
+  `test_a_busy_refusal_reports_its_wait_on_the_failed_decision`.
 - A decision that played nothing and was not silent leaves its lines undecided, and only a new
   waking line starts the next decision, so a spent budget never makes the loop retry on its own.
   Proved by `test_a_decision_that_played_nothing_leaves_its_lines_undecided_until_a_line_wakes`.
@@ -1587,7 +1609,8 @@ in `tests/test_voice_sentences.py`.
 - When hearing ends, the loop closes the turn, stops the sound and returns. Any other error of a
   port or the backend, and a `seq` not above the last, closes the turn, stops the sound and is
   raised inside an `ExceptionGroup`. On the app's cancel `CancelledError` propagates, the sound
-  stops, the render ahead is cancelled and nothing more is reported. Proved by
+  stops, the render ahead is cancelled and nothing more is reported; none of these ends a
+  decision with `DecisionEnded`. Proved by
   `test_when_hearing_ends_the_loop_closes_the_turn_stops_the_sound_and_returns`,
   `test_a_backend_error_other_than_a_stopped_turn_is_raised`,
   `test_a_hearing_that_breaks_its_order_or_raises_ends_the_loop_closed_and_silent`,
