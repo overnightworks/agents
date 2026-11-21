@@ -57,7 +57,7 @@ flowchart TB
 
 - The **base** depends on `pydantic` and `ruamel.yaml` only: `agent_file` (the agent-file reader),
   `tools` (the tool contract and the one owner that turns a record into a tool's input schema),
-  `figure_vocabulary` (figure's gestures and moods, generated from the pinned figure release, so
+  `figure_vocabulary` (figure's gestures, framings and moods, generated from the pinned figure release, so
   figure alone decides what an agent can show), `turn` (the turn's vocabulary, the size bounds and
   the failure codes), `turn_events`, `config`, the `backend` port and `member` with
   `member_presentation` (the records an app and an agent say to each other about a member, the

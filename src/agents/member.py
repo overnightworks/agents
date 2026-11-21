@@ -2,11 +2,12 @@
 
 An app writes these records and an agent's runner reads them: where the member stands in every
 place (``Standing``), the window of lines one place shows (``PlaceWindow``), the state of one
-place (``PlaceView``), the arguments of accepting and declining an invitation and of speaking,
-stopping and continuing in a place, what accepting and declining answer when they refuse, what
-speaking and stopping answer (a sentence voiced, or written as a line when the voice failed), and
-what the window says when people talk over the member (``TalkedOver``), when the member is held by
-it (``Interrupted``) and whether the member's voice at the place has failed (``VoiceState``). The
+place (``PlaceView``), the arguments of accepting and declining an invitation, of speaking,
+stopping and continuing in a place and of setting the framing, what accepting, declining and
+setting the framing answer when they refuse, what speaking and stopping answer (a sentence voiced,
+or written as a line when the voice failed), and what the window says when people talk over the
+member (``TalkedOver``), when the member is held by it (``Interrupted``) and whether the member's
+voice at the place has failed (``VoiceState``). The
 URIs name the resources that serve them; a URI is no credential, so a guessed one yields nothing.
 This module is base, so a runner parses all of it without the ``mcp-server`` extra.
 """
@@ -33,7 +34,7 @@ from pydantic import (
     model_validator,
 )
 
-from agents.figure_vocabulary import FigureGesture, FigureMood
+from agents.figure_vocabulary import FigureFraming, FigureGesture, FigureMood
 from agents.member_presentation import (
     FigureLook,
     FigureRef,
@@ -60,6 +61,7 @@ __all__ = [
     "MEMBER_RESOURCE_RECORDS",
     "MEMBER_TOOL_ARGUMENTS",
     "MEMBER_TOOL_RESULTS",
+    "SET_FRAMING_TOOL",
     "SET_TURN_STATE_TOOL",
     "SPEAK_TOOL",
     "STANDING_URI",
@@ -97,6 +99,9 @@ __all__ = [
     "PlaceView",
     "PlaceWindow",
     "Relayed",
+    "SetFramingArguments",
+    "SetFramingRefusal",
+    "SetFramingRefused",
     "SetTurnStateArguments",
     "SetTurnStateRefusal",
     "SetTurnStateRefused",
@@ -120,6 +125,7 @@ __all__ = [
     "VoiceStyle",
     "Voices",
     "Written",
+    "framing_tool",
     "gesture_tool",
     "member_arguments",
     "place_ref_from_view_uri",
@@ -151,6 +157,8 @@ CONTINUE_SPEAKING_TOOL: Final = "continue_speaking"
 """The name of the tool that lets a held sentence go on."""
 GESTURE_TOOL: Final = "gesture"
 """The name of the tool that makes a gesture with the member's figure at a place."""
+SET_FRAMING_TOOL: Final = "set_framing"
+"""The name of the tool that sets how much of the member's figure shows at a place."""
 SET_TURN_STATE_TOOL: Final = "set_turn_state"
 """The name of the tool that states whether the member's turns at a place answer."""
 STANDING_URI: Final = "member://standing"
@@ -491,6 +499,14 @@ class GestureArguments(StrictModel):
     gesture: Annotated[FigureGesture, Field(strict=False)]
 
 
+class SetFramingArguments(StrictModel):
+    """The place and the framing your figure takes there: how much of you the people see, from your
+    face to your whole body. The framing stays until you set another."""
+
+    place: PlaceRef
+    framing: Annotated[FigureFraming, Field(strict=False)]
+
+
 MEMBER_TOOL_ARGUMENTS: Final[Mapping[str, type[StrictModel]]] = MappingProxyType(
     {
         ACCEPT_INVITATION_TOOL: AcceptInvitationArguments,
@@ -499,6 +515,7 @@ MEMBER_TOOL_ARGUMENTS: Final[Mapping[str, type[StrictModel]]] = MappingProxyType
         STOP_SPEAKING_TOOL: StopSpeakingArguments,
         CONTINUE_SPEAKING_TOOL: ContinueSpeakingArguments,
         GESTURE_TOOL: GestureArguments,
+        SET_FRAMING_TOOL: SetFramingArguments,
         SET_TURN_STATE_TOOL: SetTurnStateArguments,
     }
 )
@@ -535,6 +552,19 @@ class GestureRefused(StrictModel):
     refused: Annotated[GestureRefusal, Field(strict=False)]
 
 
+class SetFramingRefusal(StrEnum):
+    """Why the app does not take a framing: ``not_active`` when the member left, was removed or is
+    paused."""
+
+    NOT_ACTIVE = "not_active"
+
+
+class SetFramingRefused(StrictModel):
+    """What ``set_framing`` answers on a refusal, as JSON in an ``is_error`` result."""
+
+    refused: Annotated[SetFramingRefusal, Field(strict=False)]
+
+
 MEMBER_TOOL_RESULTS: Final[Mapping[str, tuple[type[StrictModel], ...]]] = MappingProxyType(
     {
         ACCEPT_INVITATION_TOOL: (AcceptInvitationRefused,),
@@ -543,12 +573,13 @@ MEMBER_TOOL_RESULTS: Final[Mapping[str, tuple[type[StrictModel], ...]]] = Mappin
         STOP_SPEAKING_TOOL: (StoppedSpeaking, DroppedSpeaking, StopSpeakingRefused),
         CONTINUE_SPEAKING_TOOL: (ContinuedSpeaking, ContinueSpeakingRefused),
         GESTURE_TOOL: (Relayed, GestureRefused),
+        SET_FRAMING_TOOL: (SetFramingRefused,),
         SET_TURN_STATE_TOOL: (SetTurnStateRefused,),
     }
 )
 """The answer records each member tool may return, as JSON, by the tool's name; the keys are
 those of ``MEMBER_TOOL_ARGUMENTS``. A success the app does not pin to a record (an accepted
-invitation, a decline, a turn state) lists only its refusal."""
+invitation, a decline, a framing, a turn state) lists only its refusal."""
 
 
 def gesture_tool() -> ToolDeclaration:
@@ -558,6 +589,17 @@ def gesture_tool() -> ToolDeclaration:
         name=GESTURE_TOOL,
         description="Make a gesture with your figure at a place, as a person waves.",
         parameters=tool_parameters(GestureArguments),
+        effect=ToolEffect.SIDE_EFFECTING,
+    )
+
+
+def framing_tool() -> ToolDeclaration:
+    """The declaration of ``SET_FRAMING_TOOL`` as an agent sees it. An app offers it only while the
+    seat's shown look plays framings; its schema's enum is the framings the agent can take."""
+    return ToolDeclaration(
+        name=SET_FRAMING_TOOL,
+        description="Set how much of your figure shows at a place, from your face to your body.",
+        parameters=tool_parameters(SetFramingArguments),
         effect=ToolEffect.SIDE_EFFECTING,
     )
 

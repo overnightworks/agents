@@ -28,26 +28,28 @@ def run(root: Path, content: bytes, *argv: str) -> int:
     return generator.main(argv, root=root, download=lambda _url: content)
 
 
-def generated_enums(root: Path) -> tuple[Any, Any]:
+def generated_enums(root: Path) -> tuple[Any, Any, Any]:
     spec = importlib.util.spec_from_file_location("generated", root / generator.MODULE_PATH)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.FigureGesture, module.FigureMood
+    return module.FigureGesture, module.FigureFraming, module.FigureMood
 
 
 def test_the_enums_hold_the_release_tokens_in_order_and_the_header_names_the_release(
     tmp_path: Path,
 ) -> None:
-    release = tarball(vocabulary_document() | {"framings": ["close"]})
+    release = tarball()
     root = repository(tmp_path, pin_for(release))
 
     assert run(root, release) == 0
 
-    gestures, moods = generated_enums(root)
+    gestures, framings, moods = generated_enums(root)
     document = vocabulary_document()
     assert [gesture.value for gesture in gestures] == document["gestures"]
+    assert [framing.value for framing in framings] == document["framings"]
+    assert [framing.name for framing in framings] == ["FACE", "FULL_BODY"]
     assert [mood.value for mood in moods] == document["moods"]
     header = (root / generator.MODULE_PATH).read_text(encoding="utf-8")
     assert RELEASE_URL in header
@@ -72,9 +74,29 @@ def test_a_second_run_leaves_the_module_as_it_was(tmp_path: Path) -> None:
         pytest.param(tarball(vocabulary_document(version=True)), id="boolean-version"),
         pytest.param(tarball(vocabulary_document(version=1.0)), id="float-version"),
         pytest.param(b"not a tarball", id="not-a-tarball"),
-        pytest.param(tarball({"gestures": ["wave"], "moods": ["happy"]}), id="no-version"),
-        pytest.param(tarball({"version": 1, "moods": ["happy"]}), id="no-gestures"),
-        pytest.param(tarball({"version": 1, "gestures": ["wave"]}), id="no-moods"),
+        pytest.param(
+            tarball({"gestures": ["wave"], "framings": ["face"], "moods": ["happy"]}),
+            id="no-version",
+        ),
+        pytest.param(
+            tarball({"version": 1, "framings": ["face"], "moods": ["happy"]}), id="no-gestures"
+        ),
+        pytest.param(
+            tarball({"version": 1, "gestures": ["wave"], "framings": ["face"]}), id="no-moods"
+        ),
+        pytest.param(
+            tarball({"version": 1, "gestures": ["wave"], "moods": ["happy"]}), id="no-framings"
+        ),
+        pytest.param(tarball(vocabulary_document(framings=[])), id="empty-framings"),
+        pytest.param(tarball(vocabulary_document(framings="face")), id="framings-not-a-list"),
+        pytest.param(
+            tarball(vocabulary_document(framings=["face", "face"])), id="repeated-framing"
+        ),
+        pytest.param(
+            tarball(vocabulary_document(framings=["upperBody", "upper_body"])),
+            id="two-framings-one-member-name",
+        ),
+        pytest.param(tarball(vocabulary_document(framings=["Face"])), id="capitalised-framing"),
         pytest.param(tarball(vocabulary_document(gestures="wave")), id="gestures-not-a-list"),
         pytest.param(tarball(vocabulary_document(moods=[])), id="empty-moods"),
         pytest.param(tarball(vocabulary_document(gestures=["wave", "wave"])), id="repeated"),
