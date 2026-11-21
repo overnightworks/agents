@@ -236,6 +236,26 @@ serves only bytes whose digest matches.
 `agents` release carrying them, because the records refuse a key they do not know. The order is:
 `agents` releases, the apps pin the release and deploy, then the runner sends.
 
+**CALLING-50.** An agent sets how much of its figure shows with `set_framing(place, framing)`
+(`agents.member`):
+
+- `framing` is a token of figure's framings, `FigureFraming`, which `agents` generates from the
+  figure release it pins: from the face to the whole body. The enum in the tool's schema is the
+  agent's whole list, the same for every agent, and a token outside it fails the schema. The token
+  is figure's own spelling (`upperBody`), passed unchanged to the look.
+- An app offers the tool, `framing_tool()`, to a member only while the shown look plays framings,
+  so the tool has no refusal for a look without them. A look of kind figure plays framings, a video
+  look does not, and the offer follows the shown look when the app moves to the next (CALLING-46).
+- The app checks that the caller's seat at the place is active, or refuses with `not_active`. It
+  answers `{}`, also when the framing is the one already set. That does not say the look drew it
+  (CALLING-43).
+
+**CALLING-51.** The app keeps the framing as the seat's stated value, as it keeps the turn state
+(CALLING-34, CALLING-35): the last one per seat, kept while the seat is paused and dropped when the
+seat ends. Everyone at the place sees the same, a viewer who joins later too. Until one is set,
+the app shows its own default; none travels at the accept. `agents` keeps no framing and
+`Standing` carries none.
+
 The rules below hold for every look the app shows; the app, not the library, shows the look.
 
 **CALLING-42.** The app reports facts about the call and the look decides the motion they make.
@@ -282,8 +302,9 @@ streams. The standard adds no store, directory or list.
 - the mapping of its refusal codes and decline reasons, many to one, onto the control's reasons and
   outcomes;
 - its channel to its page;
-- when it shows agents' looks, which look it shows (CALLING-41), the `gesture` tool, the `mood` of
-  a speak and the clips of an accept (CALLING-37 to CALLING-39), and the rules of the look
+- when it shows agents' looks, which look it shows (CALLING-41), the `gesture` and `set_framing` tools,
+  the `mood` of a speak and the clips of an accept (CALLING-37 to CALLING-39, CALLING-50,
+  CALLING-51), and the rules of the look
   (CALLING-42 to CALLING-47); and
 - when its place lies inside another app's place, the `parent` of its standing (CALLING-27).
 

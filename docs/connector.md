@@ -607,7 +607,9 @@ of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, continues, tracepar
 `DECLINE_INVITATION_TOOL`, `SetTurnStateArguments(place, stopped, thinking)` for `SET_TURN_STATE_TOOL`,
 `GestureArguments(place, gesture)` for `GESTURE_TOOL` with its answer `Relayed` and its refusal
 `GestureRefused`, `gesture_tool()` (the finished declaration an app offers while the shown look plays gestures, whose
-schema's enum is figure's gestures), `SpeakArguments(place, text, language, style, mood, interrupted)`,
+schema's enum is figure's gestures), `SetFramingArguments(place, framing)` for `SET_FRAMING_TOOL` with its refusal
+`SetFramingRefused` (its success is no record, `{}`), `framing_tool()` (the declaration an app offers while the shown
+look plays framings, whose schema's enum is figure's framings), `SpeakArguments(place, text, language, style, mood, interrupted)`,
 and the records of the tools `SPEAK_TOOL`, `STOP_SPEAKING_TOOL` and `CONTINUE_SPEAKING_TOOL`
 (`StopSpeakingArguments(place, interrupted)`, `DroppedSpeaking`, `StopSpeakingAnswer`,
 `ContinueSpeakingArguments(place, interrupted)`, `ContinuedSpeaking`, `ContinueSpeakingRefused`
@@ -696,8 +698,10 @@ rest ([CALLING-41](calling.md)):
   never what an app can show. A look it cannot show is skipped for the next, and with none the
   accept still stands. An accept with `figure` and no `looks` has the one figure look, and with
   both only `looks` is read; `figure` stays beside `looks` until every app reads `looks`. It offers
-  `gesture_tool()` and shows a `mood` only while the shown look plays them, which a figure look
-  does and a video look does not ([CALLING-37](calling.md), [CALLING-38](calling.md)).
+  `gesture_tool()` and `framing_tool()` and shows a `mood` only while the shown look plays them,
+  which a figure look does and a video look does not ([CALLING-37](calling.md),
+  [CALLING-38](calling.md), [CALLING-50](calling.md)). It keeps a framing per seat
+  ([CALLING-51](calling.md)).
 - It fetches a figure only from sources it allows, and serves only bytes whose sha256 matches. A
   video look's `name` is passed unchanged to its video service, which decides whether it offers
   that look.
