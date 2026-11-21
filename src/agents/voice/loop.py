@@ -8,6 +8,7 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Final
 
 from logline import unit_trace
@@ -337,7 +338,7 @@ class _VoiceLoop[Audio]:
         play: asyncio.Task[None] | None = self._start_play(stage)
         try:
             while play is not None:
-                await self._until(lambda: self._held or play is None or play.done())
+                await self._until(partial(self._held_or_done, play))
                 if not self._held:
                     return await play
                 held = await self._hold(stage, play)
@@ -345,6 +346,9 @@ class _VoiceLoop[Audio]:
         finally:
             if play is not None:
                 await self._stop(play)
+
+    def _held_or_done(self, play: asyncio.Task[None]) -> bool:
+        return self._held or play.done()
 
     async def _stop(self, play: asyncio.Task[None] | None) -> None:
         if play is not None:
