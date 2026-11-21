@@ -14,7 +14,6 @@ from agents.backend.fake_gateway import (
     tool_round,
 )
 from agents.backend.gateway import GatewayDetail
-from agents.tools import HandTool, ToolDeclaration, ToolEffect, ToolOutcome
 from agents.turn import FailureCode
 from agents.voice import (
     DecisionFailed,
@@ -36,6 +35,7 @@ from tests.support.voice_support import (
     RETURNED,
     PacedGateway,
     RecordingVoice,
+    a_lookup_tool,
     conversation_of,
     finish,
     hang,
@@ -46,20 +46,6 @@ from tests.support.voice_support import (
 )
 
 place = voice_support.place
-
-
-def a_lookup_tool(trace) -> HandTool:
-    async def look_up(principal, arguments):
-        trace.record(("tool", "look_up"))
-        return ToolOutcome(content="gefunden", is_error=False)
-
-    declaration = ToolDeclaration(
-        name="look_up",
-        description="Looks something up.",
-        parameters={"type": "object", "properties": {}},
-        effect=ToolEffect.READ_ONLY,
-    )
-    return HandTool(declaration=declaration, handler=look_up)
 
 
 def test_a_spoken_line_that_wakes_sends_one_request_with_prompt_protocol_context_and_the_line(

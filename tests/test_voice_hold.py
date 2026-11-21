@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from agents.backend import TurnStopKind
-from agents.backend.fake_gateway import FakeGateway, completion
+from agents.backend.fake_gateway import FakeGateway, completion, tool_call, tool_round
 from agents.backend.gateway import GatewayDetail
 from agents.turn import FailureCode
 from agents.voice import (
@@ -27,6 +27,7 @@ from tests.support.voice_support import (
     RETURNED,
     PacedGateway,
     RecordingVoice,
+    a_lookup_tool,
     conversation_of,
     finish,
     messages_of,
@@ -358,6 +359,26 @@ def test_speech_in_the_hold_decision_replaces_the_rest_with_no_further_request(p
     assert ("stopped", "Eins.") in place.trace.calls
     assert ("play", "Zwei.") not in place.trace.calls
     assert len(gateway.requests) == 2
+
+
+@pytest.mark.parametrize("marker", ["[continue]", "[finish]", "[silent]"])
+def test_the_tools_of_a_hold_decision_run_to_their_end_after_its_marker_ended_the_hold(
+    place, marker
+):
+    voice, gateway = an_answer_of_two_that_is_playing(
+        place, tool_round(tool_call("call-1", "look_up", {}), content=marker), completion()
+    )
+    tools = [a_lookup_tool(place.trace, takes_a_moment=True)]
+
+    async def hearing(trace):
+        async for event in the_hold_ends(trace, voice):
+            yield event
+        await trace.settled()
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
+
+    assert place.trace.count(("tool", "answered")) == 1
 
 
 @pytest.mark.parametrize(

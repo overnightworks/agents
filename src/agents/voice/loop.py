@@ -294,6 +294,9 @@ class _VoiceLoop[Audio]:
         self._stages = []
         try:
             await self._speak(self._start_stage(self._conversation.open_decision()))
+            self._finish_answer()
+            if not answer.ended_short:  # a refused sound closes the turns, as a cancel does
+                await asyncio.wait(self._readings())
         finally:
             self._finish_answer()
             readings = self._readings()

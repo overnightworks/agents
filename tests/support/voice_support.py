@@ -24,7 +24,7 @@ from agents.agent_file import AgentDefinition
 from agents.backend.fake_gateway import Reply
 from agents.backend.gateway import GatewayBackend
 from agents.member import PlaceEntry
-from agents.tools import HandTool
+from agents.tools import HandTool, ToolDeclaration, ToolEffect, ToolOutcome
 from agents.voice import HearingEvent, VoiceEvent, WakeRule, Woke
 from agents.voice.loop import run_voice_loop
 from tests.support.gateway_turn_support import a_chunk, a_gateway_config, a_person, an_event_stream
@@ -55,6 +55,25 @@ def finish(reason: str = "stop") -> bytes:
 
 async def hang() -> None:
     await asyncio.Event().wait()
+
+
+def a_lookup_tool(trace: Trace, *, takes_a_moment: bool = False) -> HandTool:
+    """A tool that records ``("tool", "look_up")`` when called; slow, also when it has answered."""
+
+    async def look_up(principal, arguments):
+        trace.record(("tool", "look_up"))
+        if takes_a_moment:
+            await trace.settled()
+            trace.record(("tool", "answered"))
+        return ToolOutcome(content="gefunden", is_error=False)
+
+    declaration = ToolDeclaration(
+        name="look_up",
+        description="Looks something up.",
+        parameters={"type": "object", "properties": {}},
+        effect=ToolEffect.READ_ONLY,
+    )
+    return HandTool(declaration=declaration, handler=look_up)
 
 
 class Trace:
