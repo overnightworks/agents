@@ -1,5 +1,5 @@
 claim_id = "ea17bc131a39406da0f06cf774c73bf8"
-agent = "Claude 3759dda9-2bf6-41bc-a6f7-642352e1bbcb"
+agent = "Claude 8c157831-3ad7-436a-9c17-26e3c63d9b92"
 role = "builder"
 base = "245a4d8f70f76a9c149a343280dd4cb3605be9fe"
 branch = "claude/issue-1056-the-voice-loop-holds-a-talked-over-agent"
