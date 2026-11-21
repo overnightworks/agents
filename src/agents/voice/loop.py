@@ -125,6 +125,7 @@ class _Answer:
         default_factory=list[StayedSilent | ReplyUnreadable]
     )
     ended_short: bool = False
+    sound_refused: bool = False
     mark: int = 0
     held: bool = False
     marker: str | None = None
@@ -297,7 +298,7 @@ class _VoiceLoop[Audio]:
         try:
             await self._speak(self._start_stage(self._conversation.open_decision()))
             self._finish_answer()
-            if not answer.ended_short:  # a refused sound closes the turns, as a cancel does
+            if not answer.sound_refused:  # a refused sound closes the turns, as a cancel does
                 await asyncio.wait(self._readings())
         finally:
             self._finish_answer()
@@ -422,6 +423,7 @@ class _VoiceLoop[Audio]:
         except VoiceRefused:
             await self._stop(play)
             self._answer.ended_short = True
+            self._answer.sound_refused = True
             self._report(SentenceRefused(sentence))
             self._finish_answer()
             return False
@@ -470,6 +472,7 @@ class _VoiceLoop[Audio]:
                     refused = await self._play_one(*rendered, stage)
                 if refused is not None:
                     self._answer.ended_short = True
+                    self._answer.sound_refused = True
                     self._report(refused)
                     return
         finally:

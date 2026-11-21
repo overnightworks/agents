@@ -381,6 +381,30 @@ def test_the_tools_of_a_hold_decision_run_to_their_end_after_its_marker_ended_th
     assert place.trace.count(("tool", "answered")) == 1
 
 
+@pytest.mark.parametrize("marker", ["[continue]", "[finish]", "[silent]"])
+def test_the_tools_of_a_hold_decision_finish_after_the_held_turn_failed_following_a_sentence(
+    place, marker
+):
+    voice = RecordingVoice(place.trace, held={"Eins."})
+    gateway = FakeGateway(
+        tool_round(tool_call("call-1", "look_up", {}), content="Eins. Zwei."),
+        A_GATEWAY_REFUSAL,
+        tool_round(tool_call("call-2", "look_up", {}), content=marker),
+        completion(),
+    )
+    tools = [a_lookup_tool(place.trace, takes_a_moment=True)]
+
+    async def hearing(trace):
+        async for event in the_hold_ends(trace, voice):
+            yield event
+        await trace.settled()
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
+
+    assert place.trace.count(("tool", "answered")) == 2
+
+
 @pytest.mark.parametrize(
     ("hold_reply", "decision_events"),
     [
