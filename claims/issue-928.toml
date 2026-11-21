@@ -1,0 +1,8 @@
+claim_id = "f27de28e737848f2bbbb36990f888001"
+agent = "Claude 73e9ae46-448d-4d75-805a-0e3a38db6e95"
+role = "builder"
+base = "23cbafa6b3dd539d2825c74e73c5d78107733eed"
+branch = "claude/issue-928-agent-sets-figure-framing"
+scope = ["docs/ARCHITECTURE.md", "docs/calling.md", "docs/connector.md", "scripts", "src/agents/figure_vocabulary.py", "src/agents/member.py", "tests"]
+opened_commit = "5e1b91c2d429c1a33ae04657537dc8121cff1481"
+whole_reason = "One framing contract: the generated set and the tool that sets it per seat, served and read together."
