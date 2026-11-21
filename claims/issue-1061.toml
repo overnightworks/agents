@@ -1,0 +1,7 @@
+claim_id = "e693cdd457ba486493d247654924af57"
+agent = "Claude 73e9ae46-448d-4d75-805a-0e3a38db6e95"
+role = "builder"
+base = "c0e9aaba12da3150d5a6a776bf98766a3a47036b"
+branch = "claude/issue-1061-agents-pins-tandem-v0-13-1"
+scope = ["pyproject.toml", "uv.lock"]
+opened_commit = "3f2a19d26a827b990b6247be39721b2231c845c0"
