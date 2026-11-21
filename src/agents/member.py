@@ -7,7 +7,8 @@ stopping and continuing in a place and of setting the framing, what accepting, d
 setting the framing answer when they refuse, what speaking and stopping answer (a sentence voiced,
 or written as a line when the voice failed), and what the window says when people talk over the
 member (``TalkedOver``), when the member is held by it (``Interrupted``) and whether the member's
-voice at the place has failed (``VoiceState``). The
+voice at the place has failed (``VoiceState``). A runner reads a standing, window or view with
+``member_resource_from_json``, which ignores a key its release does not know. The
 URIs name the resources that serve them; a URI is no credential, so a guessed one yields nothing.
 This module is base, so a runner parses all of it without the ``mcp-server`` extra.
 """
@@ -128,6 +129,7 @@ __all__ = [
     "framing_tool",
     "gesture_tool",
     "member_arguments",
+    "member_resource_from_json",
     "place_ref_from_view_uri",
     "place_ref_from_window_uri",
     "place_view_uri",
@@ -772,6 +774,18 @@ MEMBER_RESOURCE_RECORDS: Final[tuple[type[StrictModel], ...]] = get_args(
     MemberResourceRecord.__value__
 )
 """Each of ``MemberResourceRecord``; a record they nest travels inside their schema."""
+
+
+def member_resource_from_json[RecordT: MemberResourceRecord](
+    record: type[RecordT], text: str | bytes
+) -> RecordT:
+    """A resource record a runner reads, ignoring a key of any depth that its release does not know.
+
+    Every field, enum value and rule across fields this release knows is checked as for the default
+    parse, which stays strict. The key is dropped, never carried; a view's ``state`` is the app's
+    document and keeps every key.
+    """
+    return record.model_validate_json(text, extra="ignore")
 
 
 def place_view_uri(place: PlaceRef) -> str:

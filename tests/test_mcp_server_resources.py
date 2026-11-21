@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from mcp_types import TextResourceContents
+from pydantic import ValidationError
 
 from agents.mcp_server import McpPersonFront
 from agents.member import (
@@ -18,6 +19,7 @@ from agents.member import (
     PlaceView,
     PlaceWindow,
     StandingState,
+    member_resource_from_json,
     place_window_uri,
 )
 from agents.tools import Principal
@@ -170,6 +172,26 @@ def test_a_runner_parses_what_it_reads_into_the_record_the_app_gave(
     assert content["mimeType"] == "application/json"
     assert content["text"] == record.model_dump_json()
     assert record_type.model_validate_json(content["text"]) == record
+
+
+class NewerWindow(PlaceWindow):
+    """A window as a newer release of the app writes it: one optional field the reader lacks."""
+
+    sound: str | None = None
+
+
+def test_a_window_a_newer_app_serves_reads_with_its_known_fields_through_the_front(
+    front: McpPersonFront, app: MemberApp
+) -> None:
+    alice = a_member("alice")
+    known = a_window("alice line")
+    app.readable[alice][window_uri("p1")] = NewerWindow(**known.model_dump(), sound="chime")
+
+    [content] = answered(front, alice, "resources/read", uri=window_uri("p1"))["result"]["contents"]
+
+    assert member_resource_from_json(PlaceWindow, content["text"]) == known
+    with pytest.raises(ValidationError):
+        PlaceWindow.model_validate_json(content["text"])
 
 
 def test_a_views_state_reaches_the_reader_equal_to_what_the_app_gave(
