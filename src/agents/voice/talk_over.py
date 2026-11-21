@@ -29,13 +29,18 @@ class TalkOver:
     def answer_begins(self) -> None:
         """An answer starts: every utterance so far began before it."""
         self._answering = True
+        self._forget_what_began_during_the_answer()
+
+    def answer_ends(self) -> None:
+        """An answer ends: no utterance of it is a talk-over any more, whatever it says next."""
+        self._answering = False
+        self._forget_what_began_during_the_answer()
+
+    def _forget_what_began_during_the_answer(self) -> None:
         self._utterances = {
             name: replace(utterance, began_during_answer=False)
             for name, utterance in self._utterances.items()
         }
-
-    def answer_ends(self) -> None:
-        self._answering = False
 
     def partials(self, speech: Sequence[PartialSpeech]) -> None:
         """The partial speech at the place now: whoever is not in it has ended their utterance."""

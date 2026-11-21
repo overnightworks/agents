@@ -504,8 +504,9 @@ def test_an_ending_waits_while_a_newer_talk_over_stands_and_that_talk_over_gets_
     ]
 
 
+@pytest.mark.parametrize("more_words_after_the_ending", [False, True])
 def test_a_newer_talk_over_after_a_stopping_ending_holds_nothing_and_its_line_wakes_as_any_line(
-    place,
+    place, more_words_after_the_ending
 ):
     trace = place.trace
     voice = RecordingVoice(trace, held={"Eins."})
@@ -529,6 +530,9 @@ def test_a_newer_talk_over_after_a_stopping_ending_holds_nothing_and_its_line_wa
         yield speaking(("Cy", "Noch eine Frage"))
         trace.record(("newer",))
         await trace.until(lambda: HoldEnded(HoldEnding.STOPPED) in trace.entries)
+        if more_words_after_the_ending:
+            await trace.settled()
+            yield speaking(("Cy", "Noch eine Frage, bitte"))
         yield a_line(3, "Noch eine Frage, bitte.", name="Cy")
         yield speaking()
         await trace.settled()
@@ -537,6 +541,32 @@ def test_a_newer_talk_over_after_a_stopping_ending_holds_nothing_and_its_line_wa
 
     assert trace.events.count(Held()) == 1
     assert trace.events[-3:] == [HoldEnded(HoldEnding.STOPPED), Woke(), SentenceStarted("Ja?")]
+
+
+def test_an_utterance_that_gains_words_only_after_the_answer_ended_holds_nothing(place):
+    voice = RecordingVoice(place.trace, held={"Eins."})
+    gateway = FakeGateway(completion("Eins."), completion("Gern."))
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.until(lambda: ("play", "Eins.") in trace.entries)
+        yield speaking(("Ben", "…"))
+        voice.release("Eins.")
+        await trace.settled()
+        yield speaking(("Ben", "Moment"))
+        yield a_line(2, "Moment.", name="Ben")
+        yield speaking()
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert place.trace.events == [
+        Woke(),
+        SentenceStarted("Eins."),
+        Woke(),
+        SentenceStarted("Gern."),
+    ]
+    assert len(gateway.requests) == 2
 
 
 def test_a_resume_refused_ends_the_answer_as_a_refused_play_does(place):
