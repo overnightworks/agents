@@ -1,4 +1,4 @@
-"""The ``language`` of a place's line: the code a spoken line was heard in, when the app names one."""
+"""The ``language`` of a place's line: the code a spoken line was heard in, if the app names it."""
 
 from __future__ import annotations
 

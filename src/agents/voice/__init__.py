@@ -15,7 +15,7 @@ from enum import StrEnum
 from typing import Protocol
 
 from agents.backend import TurnStopKind
-from agents.member import PartialSpeech, PlaceEntry
+from agents.member import PartialSpeech, PlaceEntry, SpokenLanguage
 from agents.turn import FailureCode, RejectionCode, StopOutcome, outcome_of_stop
 
 __all__ = [
@@ -52,8 +52,13 @@ class VoiceOut[Audio](Protocol):
     the loop then resumes it or stops it by cancelling its ``play``.
     """
 
-    async def render(self, sentence: str) -> Audio:
-        """The sentence's sound, neither played nor queued: it is heard only through ``play``."""
+    async def render(self, sentence: str, *, language: SpokenLanguage | None) -> Audio:
+        """The sentence's sound, neither played nor queued: it is heard only through ``play``.
+
+        ``language`` is the answered line's language: that of the newest line the decision sends
+        that a person said or wrote; ``None`` when that line names none or the decision answers no
+        such line, and the host speaks in its own default.
+        """
         ...
 
     async def play(self, audio: Audio) -> None:

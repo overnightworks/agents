@@ -603,7 +603,7 @@ the tool and the exception's class
 `agents.member` owns what an app and an agent say to each other about a member:
 `PlaceRef`, `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
 `STANDING_URI`, `member://standing`, answers with), `PlaceWindow(generation, starts_at, entries, talked_over, interrupted, voice_state)`
-of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, continues, traceparent)`, `LEASE_SECONDS` (120),
+of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, continues, language, traceparent)`, `LEASE_SECONDS` (120),
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
 `LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, looks, figure, voices)` for the tool
 `ACCEPT_INVITATION_TOOL`, `DeclineInvitationArguments(place, invitation, epoch, reason)` for
@@ -625,7 +625,10 @@ rather than what someone said, and a line that is no act dumps without the key; 
 refused with `act`, so a cut line is too. `continues` is true only on a spoken
 line whose speaker's next sentence at the place already waits to play as the line enters, and a line
 that does not continue dumps without the key; a written line is refused with `continues`, and so is
-a cut line; the library decides nothing on it. An act
+a cut line; the library decides nothing on it. `language` is the ISO 639-1 code a spoken line was
+heard in; only a spoken line carries it, absent means the app names none, and a line without it
+dumps without the key; a written line is refused with `language`. Proved by
+`tests/test_member_line_language.py`. An act
 line is told and never calls the member to act. At a place with a view, `awaits_you` calls the
 member to act. Whether a line that is no act wakes the member stays the runner's wake rule. A
 window's `seq` ascends strictly and may skip; a non-empty window starts at its first `seq`; an
@@ -1316,7 +1319,8 @@ await run_voice_loop(
 - `agent` is the `AgentDefinition`, with a `voice` section; without one, `run_voice_loop` raises
   `ValueError` before it reads `hearing`. The system text is its prompt, then the library's
   protocol text (`voice.reply.PROTOCOL_TEXT`: the line format, the window note, how the loop
-  records replies and ends with `REPLY_RULES`), then `context`, the app's pinned part.
+  records replies, the reply's language and ends with `REPLY_RULES`), then `context`, the
+  app's pinned part.
   `REPLY_RULES` is the one text of what a spoken reply is: heard once, plain sentences without
   markup, lists, headings or emoji, only the words said aloud and never what the agent does or
   why, `[silent]` alone to say nothing. It names no channel to answer in; a runner whose reply
@@ -1330,8 +1334,16 @@ await run_voice_loop(
   they started, empty when nobody speaks. The app gives each change whether or not the agent
   answers, and a person's finished line comes before the change that drops that utterance's
   partial. An app that yields only lines is never held. A new window generation is a new loop.
-- `voice` is the app's `VoiceOut[Audio]`: `render(sentence)` returns the sound and neither plays
-  nor queues it, and `play(audio)` returns when it has ended. A sound is heard only through its
+- `voice` is the app's `VoiceOut[Audio]`: `render(sentence, *, language)` returns the sound and
+  neither plays nor queues it. `language` is the answered line's language: that of the newest
+  line the decision sends, after the window's drops, that a person said or wrote, so not the
+  agent's own, an act or the loop's pause line. It is `None` when that line names none (a written
+  line, or a spoken one the app heard in no language) or the decision sends no such line, and the
+  app speaks in its own default; an older line's language never stands in. A held answer that
+  goes on keeps its own language, and one that replaces it takes the language of the interjection
+  it answers. An app whose lines carry no language names its language in the prompt or `context`.
+  The protocol text tells the model the same rule, so what it writes and what the app speaks
+  agree. Proved by `tests/test_voice_language.py`. `play(audio)` returns when it has ended. A sound is heard only through its
   own `play`, and cancelling or refusing a `play` stops that sound at once. Either raises
   `VoiceRefused` when the app cannot speak now. The loop plays the sentences in order: `play` for
   a sentence starts only after it returned for the one before. While one sentence plays, the loop
