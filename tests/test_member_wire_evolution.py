@@ -23,7 +23,7 @@ from tests.support.member_wire import entry, talked_window_wire
 
 PLACE = {"kind": "room", "id": "r-1"}
 INVITATION = {"id": "i-1", "epoch": 3, "expires_at": "2026-11-08T12:00:00Z"}
-PARENT = {"app": "https://hopin.example/mcp", "place": {"kind": "room", "id": "p-9"}}
+PARENT = {"app": "https://app.example/mcp", "place": {"kind": "room", "id": "p-9"}}
 STANDING = {"place": PLACE, "state": "invited", "invitation": INVITATION, "parent": PARENT}
 STANDINGS = {"standings": [STANDING]}
 WINDOW = talked_window_wire(interrupted={"id": "h-1"}, voice_state="available")
