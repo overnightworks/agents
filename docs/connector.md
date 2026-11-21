@@ -71,10 +71,12 @@ differ, and the release refuses a wheel whose member differs from the committed 
 `MEMBER_TOOL_RESULTS`, refusals included, and under `resources` the schema of each record a member
 resource carries, listed in `MEMBER_RESOURCE_RECORDS`. `scripts/generate_member_tool_wire.py` writes
 it and CI fails when it and the code differ. Every release note ends with a `**Member-tool wire:**`
-line that says `unchanged` or `changed` with the names of the tools whose arguments or results
-differ and, after `resources:`, of the resource records whose schema differs (an added field counts,
-as an older strict reader rejects it), from the previous release's snapshot
-(`scripts/member_tool_wire_diff.py`), so a runner that serves an app reads it there.
+line that says `unchanged`, `fields added:` with the names of the resource records that only gained
+optional fields, or `changed` with the names of the tools whose arguments or results differ and,
+after `resources:`, of the resource records whose schema differs in anything else (followed by
+`Fields added:` when other records only gained fields), from the previous release's snapshot
+(`scripts/member_tool_wire_diff.py`), so a runner that serves an app reads it there. The guard
+compares schemas: a rule across fields or a validator does not show in one, so its author names it.
 
 `AssistantTextEvent` is a piece of the assistant's text, yielded as the gateway streams it, before
 its round is judged. Pieces come from every round, including a round that ends in tool calls: its
@@ -619,12 +621,10 @@ heard, false for a written one; every dumped entry carries it, and an entry with
 written. `cut` is true only on a spoken line whose sentence was cut before its end, and a line that
 is not cut dumps without the key. `act` is true only on a written line that says what someone did
 rather than what someone said, and a line that is no act dumps without the key; a spoken line is
-refused with `act`, so a cut line is too. A runner that predates the field refuses a window
-carrying `act`, as it refuses a standing carrying `parent`. `continues` is true only on a spoken
+refused with `act`, so a cut line is too. `continues` is true only on a spoken
 line whose speaker's next sentence at the place already waits to play as the line enters, and a line
 that does not continue dumps without the key; a written line is refused with `continues`, and so is
-a cut line. A runner that predates the field refuses a window carrying it, as with `act`, so a
-runner takes the release before its app sets the mark; the library decides nothing on it. An act
+a cut line; the library decides nothing on it. An act
 line is told and never calls the member to act. At a place with a view, `awaits_you` calls the
 member to act. Whether a line that is no act wakes the member stays the runner's wake rule. A
 window's `seq` ascends strictly and may skip; a non-empty window starts at its first `seq`; an
@@ -634,6 +634,22 @@ empty window is valid and its `starts_at` is the `seq` the next line gets. A pla
 `place_ref_from_window_uri(uri)` returns the `PlaceRef` for that canonical spelling only and
 `None` for anything else. A URI is no credential.
 
+**How the member wire grows.** The member records are strict: building one with an unknown field
+fails, an app refuses an unknown argument key from every caller, and a runner an unknown key in an
+answer. A runner reads a standing, window or view through `member_resource_from_json`, which
+ignores a key its release does not know, at any depth, and checks every field, enum value and rule
+across fields it knows as before; a view's `state` is the app's document and keeps every key. A
+release adds a field to a resource record without the runner taking it first only when the field
+is optional, left out of the JSON while unset, and means nothing a runner that ignores it acts
+wrongly on; a field that restricts what the member may do or changes the meaning of a field the
+runner knows (as `act` does for a line's text) is a change. A union of two or more records inside a
+resource record is told apart by a required tag, never by which keys are present, and a new
+variant is a change. A runner on a release before the function, or one that parses with the
+default, refuses every key it does not know, so until the deployed runner reads through the
+function a change and an added field alike wait for the runner's release.
+Proved by `tests/test_member_wire_evolution.py`, `tests/test_mcp_server_resources.py` and
+`tests/test_member_tool_wire_diff.py`.
+
 **A trace on a line and on a view.** `PlaceEntry` and `PlaceView` carry an optional `traceparent`,
 a W3C trace context the app set when the line entered or the view's `revision` moved: the app writes
 `logline.current_traceparent()`, which is `None` outside a trace, and a record without one dumps
@@ -642,8 +658,7 @@ trace context is carried, and `logline.unit_trace` is the one reader that starts
 The runner opens the turn a line or revision woke under `unit_trace` of that value, so the turn
 runs in the trace of the change that woke it; the voice loop does so for each decision, under the
 newest line that woke it, and the hearing front's `heard` writes the line's value from the trace the
-utterance was heard in. Records are strict, so a runner that predates the field refuses a record that
-carries it: readers raise their agents version before any app sets it. Proved by
+utterance was heard in. Proved by
 `tests/test_mcp_server_hearing.py`: `test_the_heard_line_carries_the_trace_the_utterance_was_heard_in`,
 and `tests/test_voice_trace.py`: `test_each_answer_runs_in_the_trace_of_the_line_that_woke_it`.
 
@@ -675,7 +690,7 @@ than the revision they lead to; a change that adds lines and moves the revision 
 a change of the revision alone signals the view, and a line alone the window. A runner reads the
 view, then the window, so the window may already hold lines past the view's revision. It tells each
 line with its `kind` and `act`, and the per-line sentence of [the member module](#the-member-module)
-holds. No app writes act lines at a place until its runner has the field. Proved by
+holds. Proved by
 `test_an_act_line_survives_the_wire_with_its_marker`,
 `test_a_line_that_is_no_act_dumps_without_the_key` and
 `test_a_spoken_line_is_refused_with_act` in `tests/test_member_act.py`, and by
@@ -726,8 +741,7 @@ A `Standing` carries `parent` as `ParentPlace(app, place)`, absent from its JSON
 names the place this one lies inside: `app` is the parent app's MCP resource URL, parsed as an
 absolute http or https URL, never fetched, so two spellings of one address compare equal as parsed
 URLs; `place` is a `PlaceRef`. A malformed parent fails the parse of the standing. An app sets it
-from the invitation on ([calling.md](calling.md), CALLING-27 and CALLING-28), and a runner that
-predates the field refuses a standing carrying it. Proved by `tests/test_member.py`.
+from the invitation on ([calling.md](calling.md), CALLING-27 and CALLING-28). Proved by `tests/test_member.py`.
 
 An `accept_invitation` refusal is an `is_error` result whose content is
 `AcceptInvitationRefused(refused)` as JSON, in `speak`'s shape (`SpeakRefused`), with one
@@ -1132,10 +1146,9 @@ carries no `interrupted` ([HEARING-30](hearing.md), [HEARING-9](hearing.md)).
 A runner needs no gate for sending the id: it sends only an id it read from a window's
 `interrupted`, which only an app with the hold writes.
 
-**Rollout order.** A runner on an older release refuses a window with `interrupted` and the answers
-`DroppedSpeaking`, `held` and `not_interrupted`, so a host's runner takes the release before its
-app writes or answers any of them. An app on an older release refuses a `speak` with `interrupted`,
-so a runner sends it only once its app has shipped the hold.
+**Rollout order.** Answers and arguments are strict: a runner takes the release before its app
+answers `DroppedSpeaking`, `held` or `not_interrupted`, and an app on an older release refuses a
+`speak` with `interrupted`, so a runner sends it only once its app has shipped the hold.
 
 Proved by `tests/test_member.py` (among them
 `test_speak_arguments_with_a_malformed_language_are_refused`) and `tests/test_member_speaking.py`

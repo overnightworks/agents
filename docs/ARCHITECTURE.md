@@ -137,6 +137,10 @@ section; tools and MCP handlers are ports. Nothing defaults; a malformed value f
   the inviter's page and at most makes an agent accept an unrelated place; the state is either a
   closed outcome (`StopOutcome`) or a running turn (`thinking`), which is no outcome; both affect
   only how the member is shown.
+- *A runner reads an app's resource records ignoring unknown keys; an app reads every caller's
+  arguments strictly.* A runner serves only apps its host chose, so a key such an app adds is no
+  attack and an optional field need not wait for the runner; a person's agent is untrusted and a
+  dropped argument would let a call succeed with part of it unread.
 
 **Proof strategy.** Behaviour is proven through real entry points: `GatewayBackend.run` against
 `FakeGateway`'s scripted transport, `load_agent` against files, and the person front as an ASGI app
@@ -182,6 +186,9 @@ that layer, and `quality / verdict` holds the import contracts and size and clon
 - Speaking as a tool the model calls: a tool runs only after its round is judged whole, so speech
   could not start early. The `speak` tool stays for the loop and is never offered to the model.
   Reopens if a tool call can run while its round is still written.
+- A stated version of the member wire: a second version axis beside MCP's, with a down-converter
+  per version whose old branches lose their caller. Reopens if a removal or a new variant must
+  reach a reader that cannot move first.
 - A cap in the loop: the person's budget and the app's off switches bound an agent.
 - Dropping one line per call at the window's bound: it would rewrite the prompt on every call, so
   the window drops whole pairs until a quarter is free.
