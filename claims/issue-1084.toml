@@ -1,8 +1,0 @@
-claim_id = "8f4beff273b841d0b984af171e403e25"
-agent = "Claude 8efd9444-79aa-4140-bdee-51202585646f"
-role = "builder"
-base = "df11a8cd1c7ce51db4abc8ccfb458a6ca6a3a76f"
-branch = "claude/issue-1084-agents-calling-k1"
-scope = [".aco/ahead-of-caller.toml", ".importlinter", "docs/ARCHITECTURE.md", "docs/VISION.md", "docs/calling.md", "docs/connector.md", "src/agents/calling.py", "tests/test_calling.py"]
-opened_commit = "7b68786896b956adf53bcb7dd1c4b24a1491f872"
-whole_reason = "One new pure module, its import contract, its tests and the ruled text that names it change together; split, a document would name a module that does not exist."
