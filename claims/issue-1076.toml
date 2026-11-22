@@ -1,0 +1,7 @@
+claim_id = "5e8818b7328a4e629938d164eb2a88a0"
+agent = "Claude 8c157831-3ad7-436a-9c17-26e3c63d9b92"
+role = "builder"
+base = "88dd18eb95f97063e99ed58b66f33c3584b5e22f"
+branch = "claude/issue-1076-calling-6-says-what-ends-an-open-invitat"
+scope = ["docs/calling.md"]
+opened_commit = "a7227816c2d237736d092a787d8dbb4c965a3cef"
