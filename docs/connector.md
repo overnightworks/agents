@@ -845,7 +845,8 @@ name, the one segment (`[a-z0-9][a-z0-9-]*`) your app gives its own tandem. agen
 it stores, tandem's channel included, under `<prefix>-agents`, so its keys and wakes never meet your
 app's; it refuses a prefix ending in `-agents`. A member's lease keeps its keys beside the listen
 record's, `<prefix>-agents:tandem:v1:epoch` and `<prefix>-agents:tandem:v1:l:member:*`, on tandem's
-leases of family `member`; the `redis` extra names tandem by range only (the README's extras section owns it) and the host pins the tag itself, as it
+leases of family `member`, and one `<prefix>-agents:v1:member-facts:*` key per member, which expires
+with its lease; the `redis` extra names tandem by range only (the README's extras section owns it) and the host pins the tag itself, as it
 pins logline, because uv resolves one version.
 The client carries a `Retry` and sets
 `socket_timeout` and `socket_connect_timeout`: without the timeouts a publish to a silent Redis
@@ -1011,13 +1012,26 @@ allow. A stream that honored only `toolsListChanged` counts for no URI in `liste
 `tests/test_mcp_server_offered_tools.py`.
 
 **The lease.** Every call a member makes is an admitted call, each opening of a stream included,
-and the app renews the member's lease on each with `await leases.renew(principal)`, where
+and the app renews the member's lease on each with `await leases.renew(principal, facts)`, where
 `leases` is a `MemberLeases(store, lease_ended=...)` (exported by `agents.mcp_server`, `store` a
 `LeaseRecord` such as `RedisPlaceStore`). `renew` is async, so an app calls it from an async site, an
 ASGI wrapper around the front, never from the synchronous `resolve_person`. A runner that calls
 again within `LEASE_SECONDS` keeps its lease. The lease says nothing about listening: a call from an
 agent that listens nowhere renews it too. The listen is the offer rule only; a request to call an
 agent and the agent's accept keep the lease as their check.
+
+`renew` takes the member's `MemberFacts(owner, name)` (from `agents.member`): what the verified
+token of the call states of its owner's subject and its own name. The store keeps them beside the
+lease for `LEASE_SECONDS` from the latest renewal, so a renamed agent shows its new name from its
+next call; an owner change replaces them and keeps the generation. Two pods renewing one member at
+once may store their facts out of order, and the next renewal corrects them.
+`await leases.facts(principals)` answers, in one read on every pod, the facts of each of those
+principals that has some; a principal is left out when it never renewed, its lease lapsed, the
+store lost its data, or its latest renewal raised, which may have kept the lease without its facts.
+A stored value that cannot be read raises `PlaceStoreError` with a text that carries none of it,
+and fails every batch read that includes its principal until that agent renews. An app reads the
+facts for its roster and for the owner a person's call binds to, never logs them, and keeps no copy
+of its own.
 
 `renew` answers `LeaseRenewal(started, generation)`. The generation is a random text, new at every
 start, and an app compares it by equality only: a renewal the store replays answers
@@ -1030,7 +1044,7 @@ namespace or a Redis restart, for `LEASE_SECONDS`, when a lease may have been lo
 state, and an add an app accepts then is caught only by its own reconcile. `await leases.live()`
 answers `LeaseRoster(holders, settled)`: the principals whose lease runs, and whether `settled`, which
 is true once `LEASE_SECONDS` have passed since the namespace began, so that a principal missing from
-`holders` is gone and not lost. All three raise `PlaceStoreError` when the store fails.
+`holders` is gone and not lost. All four raise `PlaceStoreError` when the store fails.
 
 `leases.running()` is entered once in the app's lifespan, on every pod. It hands each lapse to
 `lease_ended(principal, generation)` on one live pod, at least once: the store's claim on the lapse

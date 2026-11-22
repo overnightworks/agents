@@ -77,8 +77,9 @@ flowchart TB
   port of `mcp_server.place_store`: `ResourceChanges` publishes an address, never content, on
   tandem's wake channel under `<key_prefix>-agents`, apart from the host's own keys, and the same
   port keeps the listen record, so every pod answers who listens and a pod that dies loses its
-  claim after `claim_for`. The `LeaseRecord` port keeps a member's lease on tandem's `Leases`, so a
-  lease survives the pod that renewed it; `MemberLeases` (`mcp_server.leases`) supervises the lapse
+  claim after `claim_for`. The `LeaseRecord` port keeps a member's lease on tandem's `Leases`, and beside it the
+  member's owner and name for the lease's span, so a lease and its facts survive the pod that
+  renewed them; `MemberLeases` (`mcp_server.leases`) supervises the lapse
   service. `agents.mcp_server` does not re-export `RedisPlaceStore`, so an app without
   `ResourceChanges` or `MemberLeases` never loads tandem. `docs/connector.md` owns the contract.
 - The **`voice` extra** adds `syntok` and logline's `unit_trace` for `agents.voice`: the voice loop
