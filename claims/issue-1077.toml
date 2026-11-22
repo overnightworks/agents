@@ -1,5 +1,5 @@
 claim_id = "b9bd0c2727e44ccfb9d612db0d4624af"
-agent = "Claude 8c157831-3ad7-436a-9c17-26e3c63d9b92"
+agent = "Claude 8efd9444-79aa-4140-bdee-51202585646f"
 role = "builder"
 base = "6c23c94f98dcf3e4f93bfe546b265ea3389fed97"
 branch = "claude/issue-1077-an-agent-s-owner-and-name-ride-its-membe"
