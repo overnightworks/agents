@@ -41,8 +41,9 @@ def server() -> FakeServer:
     return FakeServer()
 
 
-def a_pod(server: FakeServer) -> RedisPlaceStore:
-    return RedisPlaceStore(FakeAsyncRedis(server=server), key_prefix=_PREFIX)
+def a_pod(server: FakeServer, *, decoding: bool = False) -> RedisPlaceStore:
+    client = FakeAsyncRedis(server=server, decode_responses=decoding)
+    return RedisPlaceStore(client, key_prefix=_PREFIX)
 
 
 async def a_settled_namespace(pod: RedisPlaceStore, clock: RedisClock) -> None:
@@ -474,15 +475,19 @@ def test_a_facts_key_holding_no_member_facts_fails_the_batch_read_with_place_sto
 @pytest.mark.parametrize(
     "trailing", [pytest.param(b"", id="valid UTF-8"), pytest.param(b"\xff", id="no UTF-8")]
 )
+@pytest.mark.parametrize(
+    "decoding",
+    [pytest.param(False, id="a raw client"), pytest.param(True, id="a decoding client")],
+)
 def test_an_unreadable_stored_value_leaves_no_owner_or_name_in_the_error_or_the_log(
-    server: FakeServer, log_lines: LogLines, trailing: bytes
+    server: FakeServer, log_lines: LogLines, trailing: bytes, decoding: bool
 ) -> None:
     owner, name = "the-owner-sub", "the-recognisable-name"
     stored = f'{{"owner": "{owner}", "name": "{name}", "extra": 1}}'.encode() + trailing
 
     async def scenario() -> None:
         await put_in_the_facts_key(server, stored)
-        await a_pod(server).facts([_ALICE])
+        await a_pod(server, decoding=decoding).facts([_ALICE])
 
     with pytest.raises(PlaceStoreError) as refusal:
         asyncio.run(scenario())

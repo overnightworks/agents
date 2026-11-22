@@ -464,11 +464,18 @@ class RedisPlaceStore:
         if not batch:
             return {}
         keys = [self._facts_prefix + _principal_text(principal) for principal in batch]
-        with _store_errors():
-            reply = await self._facts_read.run(keys, [])
-        found: dict[Principal, MemberFacts] = {}
         unreadable = False
-        for principal, stored in zip(batch, cast(list[bytes | str | None], reply), strict=True):
+        replies: list[bytes | str | None] = []
+        try:
+            with _store_errors():
+                replies = cast(list[bytes | str | None], await self._facts_read.run(keys, []))
+        except UnicodeDecodeError:
+            # A decoding client fails on the stored bytes; its error holds the whole value.
+            unreadable = True
+        if unreadable:
+            raise PlaceStoreError(_FACTS_UNREADABLE)
+        found: dict[Principal, MemberFacts] = {}
+        for principal, stored in zip(batch, replies, strict=True):
             if stored is None:
                 continue
             try:
