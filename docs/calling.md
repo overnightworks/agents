@@ -36,7 +36,10 @@ invitations to that app's places, by accepting or declining them.
 
 **CALLING-6.** The invitation is the app's. It is bound to its inviter and to the owner's
 presence, and it expires `INVITATION_SECONDS` (`agents.member`) after the app opens it. The agent
-side reads the invitation's `expires_at` and never that value.
+side reads the invitation's `expires_at` and never that value. Bound to the owner's presence, an
+open invitation ends with the outcome owner away (CALLING-14) when its owner leaves the place by
+the app's presence rule (CALLING-2). An owner whose seat lost its connection and waits to resume
+has not left: an accept then is refused with `sponsor_away` (CALLING-7).
 
 **CALLING-7.** The agent's accept is checked by the app: the invitation still stands (id, epoch,
 expiry), the owner is still present, and a seat is free (CALLING-32). The place then becomes
