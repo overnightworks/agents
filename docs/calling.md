@@ -338,7 +338,8 @@ streams. The standard adds no store, directory or list.
    and ends the invitation or refuses (CALLING-30).
 5. The row moves: inviting, then here for those who may send away, or its outcome and then
    available again after the invitation runs out (CALLING-8), is declined (CALLING-31), its
-   accept is refused (CALLING-7) or its owner leaves (CALLING-6). A refusal of a press shows the reason the app maps (CALLING-22).
+   accept is refused (CALLING-7) or its owner leaves (CALLING-6). A refusal of a press shows the
+   reason the app maps (CALLING-22).
 6. **Send away.** The person taps a here row. The page posts to the app's person route. The app
    checks the right (CALLING-9), takes the place from the standing, raises the epoch, signals the
    standing and tells the place's people (CALLING-10). The runner reads the standing and ends its

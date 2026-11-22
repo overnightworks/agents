@@ -808,12 +808,12 @@ How a person calls an agent to a place and sends it away is the same in every ap
 
 `agents.calling` decides how an agent is called to a place and sent away, by the rules of
 [calling.md](calling.md), on facts the app supplies. It is pure: it holds no state, reads no clock,
-store, token or realm and performs no I/O, and it imports `agents.member` and pydantic only, which
-`.importlinter` holds, so an app's core may import it. The app passes `now` and the invitation's id,
-keeps one `BookEntry(epoch, invitation)` per agent and place in its own store, and writes the entry
-a decision returns in the same step as its seats. Every binding is an opaque, non-empty text the
-app chooses, compared by equality only; an invitation is open while `now < expires_at`. A missing
-row counts as epoch 0.
+store, token or realm and performs no I/O, and it imports pydantic and agents' pure modules
+(`member`, `turn`) only, which `.importlinter` holds, so an app's core may import it. The app
+passes `now` and the invitation's id, keeps one `BookEntry(epoch, invitation)` per agent and place
+in its own store, and writes the entry a decision returns in the same step as its seats. Every
+binding is an opaque, non-empty text the app chooses, compared by equality only; an invitation is
+open while `now < expires_at`. A missing row counts as epoch 0.
 
 | Decision | Answers | Order and rule |
 | --- | --- | --- |
