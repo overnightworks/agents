@@ -306,7 +306,9 @@ streams. The standard adds no store, directory or list.
 
 - its place (the `PlaceRef` kind and id) and its presence rule;
 - what accepting and pausing mean at the place, and its seats (CALLING-32);
-- the invitation book, the accept and decline checks, the send-away check and the leases;
+- the store of its invitation book, written in one step with its seats, and the facts agents.calling
+  decides on (who is present, where the owner is, a free seat, a right the place's own rules give);
+  and acting on a lease's lapse;
 - the person routes for calling and sending away, which are never an MCP tool, so no agent can
   call or send away an agent;
 - the shared control and the AI mark, with a stable, opaque key of its own minting for each row,
@@ -335,8 +337,9 @@ streams. The standard adds no store, directory or list.
    `decline_invitation(place, invitation, epoch, reason)` instead (CALLING-29); the app checks it
    and ends the invitation or refuses (CALLING-30).
 5. The row moves: inviting, then here for those who may send away, or its outcome and then
-   available again after the invitation runs out (CALLING-8), is declined (CALLING-31) or its
-   accept is refused (CALLING-7). A refusal of a press shows the reason the app maps (CALLING-22).
+   available again after the invitation runs out (CALLING-8), is declined (CALLING-31), its
+   accept is refused (CALLING-7) or its owner leaves (CALLING-6). A refusal of a press shows the
+   reason the app maps (CALLING-22).
 6. **Send away.** The person taps a here row. The page posts to the app's person route. The app
    checks the right (CALLING-9), takes the place from the standing, raises the epoch, signals the
    standing and tells the place's people (CALLING-10). The runner reads the standing and ends its

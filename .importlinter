@@ -52,6 +52,7 @@ source_modules =
     agents.backend.gateway_request
     agents.backend.streamed_round
     agents.backend.tool_result
+    agents.calling
     agents.config
     agents.errors
     agents.figure_vocabulary
@@ -86,6 +87,7 @@ source_modules =
     agents.backend.gateway_request
     agents.backend.streamed_round
     agents.backend.tool_result
+    agents.calling
     agents.config
     agents.errors
     agents.figure_vocabulary
@@ -111,6 +113,7 @@ source_modules =
     agents
     agents.agent_file
     agents.backend
+    agents.calling
     agents.config
     agents.errors
     agents.figure_vocabulary
@@ -140,6 +143,7 @@ source_modules =
     agents
     agents.agent_file
     agents.backend
+    agents.calling
     agents.config
     agents.errors
     agents.figure_vocabulary
@@ -157,6 +161,43 @@ source_modules =
     agents.voice.sentences
     agents.voice.wake
 forbidden_modules =
+    logline
+    structlog
+    opentelemetry
+
+# An app's core admits agents.calling and agents.member, so what they import stays pure: no module
+# that reaches a library an app has not chosen, and none of the libraries those modules would bring.
+# member_place and member_presentation are sources because member imports them.
+[importlinter:contract:calling-and-member-stay-pure]
+name = agents.calling and agents.member import no impure agents module and no library
+type = forbidden
+as_packages = False
+source_modules =
+    agents.calling
+    agents.member
+    agents.member_place
+    agents.member_presentation
+forbidden_modules =
+    agents.agent_file
+    agents.backend
+    agents.backend.**
+    agents.config
+    agents.errors
+    agents.mcp_wire
+    agents.turn_events
+    agents.mcp_server
+    agents.mcp_server.**
+    agents.voice
+    agents.voice.**
+    ruamel
+    httpx2
+    httpx
+    anyio
+    mcp
+    mcp_types
+    tandem
+    redis
+    syntok
     logline
     structlog
     opentelemetry

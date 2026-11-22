@@ -23,9 +23,10 @@ agent). `AgentDefinition.request(messages, *, model=None, appended_system=None,
 one_call_per_reply=False)` builds it; `model` overrides the file's model for that run, with a
 model of the agent's kind, and `appended_system` follows the file's prompt in the system text,
 after a blank line. `one_call_per_reply` (`TurnRequest.one_call_per_reply`, default `False`)
-asks for one tool call per model reply; it has two effects, described under the gateway body and
-the tool loop, and none for an agent without tools. Every further act then takes one more model
-round.
+asks for one tool call per model reply; the backend serves the first call of a reply and answers
+the rest as not run, as the tool loop describes, and the setting does nothing for an agent
+without tools. Every further act then takes one more model round. The request's body is the same
+with or without it.
 Proved by `tests/test_agent_file.py`: `test_request_carries_the_files_prompt_model_roles_and_tools`,
 `test_request_model_is_the_override_when_given`, `test_request_is_frozen`,
 `test_request_carries_one_call_per_reply_only_when_asked`; the appended text by
@@ -286,7 +287,7 @@ What the client sends for a text turn, and nothing else:
 | --- | --- |
 | Request | `POST <origin>/v1/chat/completions`, no redirect followed, no cookie stored or sent (the client's jar allows no domain), no proxy variable read; HTTPS trusts `ca_file` alone |
 | Headers | `Authorization: Bearer <key>`, `Content-Type: application/json`, and the transport's own defaults; no `x-litellm-*` or `anthropic-*` header |
-| Body | exactly `model` (the request's `text/<model>` name), `messages` (the system prompt, then the turn's messages, then the round's calls and results), `user`, `stream` (`true`), `stream_options` (`{"include_usage": true}`, on every round) and, when the agent has tools, `tools` (OpenAI function tools of each declaration's `name`, `description` and `parameters`) and, when the agent has tools and `one_call_per_reply` is on, `parallel_tool_calls` (`false`); no `max_tokens`, `metadata`, `tags`, `fallbacks`, `num_retries`, `mock_response`, `api_key` or cache marker |
+| Body | exactly `model` (the request's `text/<model>` name), `messages` (the system prompt, then the turn's messages, then the round's calls and results), `user`, `stream` (`true`), `stream_options` (`{"include_usage": true}`, on every round) and, when the agent has tools, `tools` (OpenAI function tools of each declaration's `name`, `description` and `parameters`); it does not depend on `one_call_per_reply`; no `parallel_tool_calls`, `max_tokens`, `metadata`, `tags`, `fallbacks`, `num_retries`, `mock_response`, `api_key` or cache marker |
 | `user` | `"fp-" + sha256(json.dumps([iss, sub], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()`, 67 characters |
 
 Proved by `tests/test_backend_gateway.py`: `test_the_request_is_one_post_with_the_system_prompt_and_the_messages`,
@@ -346,7 +347,8 @@ gateway cuts and closes with a finish reason of its own reads as complete. A per
 The loop runs in the client, in process, over streamed rounds, each read whole before it is
 judged. A round is judged whole before anything runs; its text shows as it streams. Only the
 request's tool names are offered and accepted, so a call to any other name, arguments that are
-not a JSON object, an empty round or a call id used twice in the turn refuses the round
+not a JSON object, an empty round, a reply that names one call id twice or a call id used in an
+earlier round refuses the round
 (`failed: provider_error`) with no handler run. A round that would take the turn past
 `max_tool_calls` ends `failed: limit_exceeded` the same way. Proved by
 `tests/test_backend_gateway_tools.py`: `test_a_round_that_is_not_whole_runs_nothing_and_shows_nothing`,
@@ -354,11 +356,13 @@ not a JSON object, an empty round or a call id used twice in the turn refuses th
 `test_a_call_id_reused_in_a_later_round_refuses_that_round_after_the_first_call_ran` and
 `test_crossing_max_tool_calls_fails_with_limit_exceeded`.
 
-With `one_call_per_reply` on, a reply that still carries several calls keeps all of them in its
-message (ids are checked for doubles across all of them) and serves only the first. Each other
-call gets an error result, `not run: one call per reply`, in the model's messages only, after
-the served call's result and in reply order; the host sees no event for it and it does not count
-against `max_tool_calls`. The model decides again and the turn goes on. Proved by
+With `one_call_per_reply` on, a reply that carries several calls keeps all of them in its
+message (ids are checked for doubles across all of them, in the round's judgement) and serves
+only the first. Each other call gets an error result, `not run: one call per reply`, in the
+model's messages only, after the served call's result and in reply order; the host sees no event
+for it and it does not count against `max_tool_calls`. The model decides again and the turn goes
+on. The backend alone holds the rule: the body never asks the provider for it, and the round's
+`model_request.ended` line carries `calls_not_run`. Proved by
 `tests/test_backend_gateway_one_call.py`.
 
 For each call, in order: `ToolCallEvent`; `await handler(principal, arguments)`; `ToolResultEvent`.
@@ -496,7 +500,9 @@ turn and `picture_request.ended`. A line carries `duration_ms`,
 connection (TCP connect, and the TLS handshake where there is one), only on a request that opened
 one, whether or not a response came, never on a reused connection or a failed connect; a round's line also carries `first_output_ms`
 at its first text piece and `input_tokens`, `output_tokens`, `cached_input_tokens`,
-`cache_write_tokens` and `cache_write_1h_tokens` when the gateway sent a usage. The `reason` is the stop's detail, or its code
+`cache_write_tokens` and `cache_write_1h_tokens` when the gateway sent a usage; a round that asked
+for calls under `one_call_per_reply` also carries `calls_not_run`, the number of its calls left
+unserved (0 or more). The `reason` is the stop's detail, or its code
 when it has none; a failed line is a WARNING, because the turn reports the stop itself
 (`tests/test_backend_gateway_request_lines.py`):
 
@@ -507,7 +513,7 @@ when it has none; a failed line is a WARNING, because the turn reports the stop 
 | 422 with the `budget_exceeded` error type | `refused`, `budget_spent`, INFO |
 | another 4xx | `failed`, `gateway_refused`, with the `status` |
 | 5xx, or an error event in a 200 stream | `failed`, `gateway_failed` |
-| a reply that is no round or picture | `failed`, `malformed_reply` |
+| a reply that is no round or picture, or a round that is not whole (a name not offered, an empty call id, a call id named twice) | `failed`, `malformed_reply` |
 | a connection refused or lost | `failed`, `connection_failed`, with no `status` unless one came before |
 | the turn's deadline | `failed`, `limit_exceeded` |
 | the host's close | `cancelled` |
@@ -828,6 +834,36 @@ Proved by `tests/test_mcp_server_member_arguments.py`.
 How a person calls an agent to a place and sends it away is the same in every app:
 [calling.md](calling.md).
 
+## The calling module
+
+`agents.calling` decides how an agent is called to a place and sent away, by the rules of
+[calling.md](calling.md), on facts the app supplies. It is pure: it holds no state, reads no clock,
+store, token or realm and performs no I/O, and it imports pydantic and agents' pure modules
+(`member`, `turn`) only, which `.importlinter` holds, so an app's core may import it. The app
+passes `now` and the invitation's id, keeps one `BookEntry(epoch, invitation)` per agent and place
+in its own store, and writes the entry a decision returns in the same step as its seats. Every
+binding is an opaque, non-empty text the app chooses, compared by equality only; an invitation is
+open while `now < expires_at`. A missing row counts as epoch 0.
+
+| Decision | Answers | Order and rule |
+| --- | --- | --- |
+| `invite(entry, CallFacts, invitation_id, now)` | `Invited(entry, invitation)` or an `InviteRefusal` | `not_present`, `not_a_member`, `already_there`, `not_listening`, `invited_by_another`; then an open invitation by the same inviter is returned unchanged; then `owner_absent`, `owner_away`, `owner_elsewhere`, `no_free_seat` (CALLING-1 to 6). The first that holds wins |
+| `check_accept(entry, AcceptInvitationArguments, AcceptFacts, now)` | `Accepted(entry)` or `AcceptRefused(refusal, ended)` | `stale_invitation` (no open invitation, another id, epoch or owner, already seated, no lease) changes nothing; then `two_seats`, `sponsor_away`, `busy`, each ending the call (CALLING-7) |
+| `check_decline(entry, DeclineInvitationArguments, now)` | `Ended` or `DeclineInvitationRefusal` | `stale_invitation` when no invitation is open or its id or epoch differs; otherwise the call ends busy (CALLING-30, 31) |
+| `expired(entry, now)` | `Ended` or `None` | an invitation no longer open ends with `no_answer` at its `expires_at` (CALLING-8) |
+| `owner_left(entry, now)` | `Ended` or `None` | an open invitation ends with `owner_away` at `now` (CALLING-6) |
+| `send_away_allowed(...)` | `bool` | present, and a fresh member of the agent-adders group, the owner or holding a right the place's own rules give (CALLING-9) |
+| `after_send_away(entry)` | `BookEntry` | the epoch raised by one and no invitation (CALLING-10) |
+| `standing(entry, place, held, serves_view, parent, now)` | `Standing` or `None` | a held place is its state with no invitation, otherwise an open invitation is `invited`, otherwise none; `serves_view` and `parent` pass through (CALLING-27) |
+
+`OwnerAt` is the app's reading of its presence rule: `AT_BINDING`, `ABSENT`, `AWAY` (its seat lost
+its connection and waits to resume) or `ELSEWHERE` (present, but not on exactly that binding).
+`Ended(entry, inviter, outcome, at)` tells the inviter, and only the inviter, how a call ended
+without a seat (`CallOutcome`: `no_answer`, `busy`, `owner_away`); its entry keeps the epoch and
+holds no invitation. `InviteRefusal` and `CallOutcome` are this module's own words: an app maps
+them onto its own refusal tokens. How long an app keeps an `Ended` for its page is the app's.
+Proved by `tests/test_calling.py`.
+
 ## The standard path
 
 An agent learns what changes through the standard's resources and subscriptions, never by
@@ -1086,10 +1122,8 @@ cells of `tests/integration/real_redis`: a lease renewed on one pod still holds,
 generation, on another after the first was killed, and its lapse reaches `lease_ended` once with that
 generation.
 
-**What each app owns:** its places and who stands where, the invitation, its expiry (it lasts
-`INVITATION_SECONDS`) and the epoch check at accept, the participation and permission
-decisions, and acting on a lapse fenced by its generation, and reconciling after a Redis restart
-where `holds` is false.
+**What each app owns:** its places and who stands where, and acting on a lapse fenced by its
+generation, and reconciling after a Redis restart where `holds` is false.
 
 ## Hearing and speaking
 
@@ -1361,9 +1395,12 @@ await run_voice_loop(
   app's pinned part.
   `REPLY_RULES` is the one text of what a spoken reply is: heard once, plain sentences without
   markup, lists, headings or emoji, only the words said aloud and never what the agent does or
-  why, `[silent]` alone to say nothing. It names no channel to answer in; a runner whose reply
-  is read by `ReplyReader` outside the loop appends it too, and a written line's own tool
-  description says what that line does.
+  why, `[silent]` alone to say nothing. It names no channel to answer in. A runner whose reply
+  is read by `ReplyReader` outside the loop keeps it in the system text of every turn, so that
+  the front stays fixed across spoken and written turns. A runner with both kinds of turn states
+  in its own words which turns the rules hold for and marks each spoken turn in that turn's
+  message, as `HOLD_RULES` does for a paused reply. It never adds the rules to the end of a
+  spoken turn's messages. A written line's own tool description says what that line does.
 - `backend` is the app's `AgentBackend`, and `person` the one `TurnPerson` the loop runs for,
   never a speaker: every decision is charged to that person's budget at the gateway.
 - `hearing` is an `AsyncIterator[HearingEvent]`: a finished line (`PlaceEntry`) in increasing
