@@ -57,9 +57,13 @@ PROTOCOL_TEXT: Final = (
     "You take part in a conversation by voice. Each user message holds what was heard or "
     'written since your last reply, one JSON object per line: "name" is who it comes from, '
     '"kind" is what kind of line it is in the app\'s words, "own" marks your own line, '
-    '"spoken" marks a line said aloud rather than written, "act" marks a line that says what '
-    'someone did rather than what someone said, "text" is the line itself, and '
-    '"missed_before" counts the lines that were not passed to you before it.\n'
+    '"spoken" marks a line said aloud rather than written, "language" is the ISO 639-1 code a '
+    'spoken line was heard in, "act" marks a line that says what someone did rather than what '
+    'someone said, "text" is the line itself, and "missed_before" counts the lines that were '
+    "not passed to you before it.\n"
+    "Your reply is spoken in the language of the newest line of the last user message that has "
+    'a "name" and is neither "own" nor an "act"; write it in that language, and when that line '
+    'has no "language", or when no such line is there, in the language the context names.\n'
     f"Once the conversation grows long, the first user message opens with {WINDOW_NOTE}; "
     "nobody said that line.\n"
     f"Your earlier replies hold only what was spoken aloud, or {SILENT_REPLY}; a paused reply "

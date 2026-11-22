@@ -92,7 +92,8 @@ class Trace:
     Voice events are recorded as reported; the support's own entries are tuples that start
     with their kind: ``render``, ``unrendered`` (a render cancelled), ``play``, ``played``,
     ``stopped`` (a play cancelled), ``pause``, ``resume``, ``asked``, ``tool``, ``written``,
-    ``closed``, ``cancelled`` and ``ended`` (the loop's run is over).
+    ``closed``, ``cancelled``, ``ended`` (the loop's run is over) and ``rendered_in`` (the
+    language a sentence was rendered in).
     """
 
     def __init__(self) -> None:
@@ -131,6 +132,10 @@ class Trace:
     def calls(self) -> list[tuple[str, str]]:
         kinds = {"render", "unrendered", "play", "played", "stopped", "pause", "resume"}
         return [entry for entry in self.entries if isinstance(entry, tuple) and entry[0] in kinds]
+
+    @property
+    def rendered_languages(self) -> list[tuple[str, str | None]]:
+        return [entry[1:] for entry in self.entries if _kind_of(entry) == "rendered_in"]
 
     @property
     def asked(self) -> list[tuple[str, bool]]:
@@ -211,9 +216,10 @@ class RecordingVoice:
     def release(self, sentence: str) -> None:
         self._held[sentence].set()
 
-    async def render(self, sentence: str) -> str:
+    async def render(self, sentence: str, *, language: str | None) -> str:
         try:
             self._trace.record(("render", sentence))
+            self._trace.record(("rendered_in", sentence, language))
             if self._render_seconds:
                 await asyncio.sleep(self._render_seconds)
             await self._as_arranged("render", sentence)
@@ -494,8 +500,8 @@ async def interjection_while_playing(trace):
     await trace.until(lambda: Held() in trace.entries)
 
 
-async def the_person_finishes(trace, *, text="Moment, wie meinst du das?", seq=2):
-    yield a_line(seq, text, name="Ben")
+async def the_person_finishes(trace, *, text="Moment, wie meinst du das?", seq=2, language=None):
+    yield a_line(seq, text, name="Ben", language=language)
     yield speaking()
 
 

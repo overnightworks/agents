@@ -15,8 +15,7 @@ from logline import unit_trace
 
 from agents.agent_file import AgentDefinition, TurnRequest
 from agents.backend import AgentBackend, TurnPerson, TurnStopped
-from agents.member import PartialSpeech, PlaceEntry
-from agents.turn import TurnMessage
+from agents.member import PartialSpeech, PlaceEntry, SpokenLanguage
 from agents.voice import (
     DecisionEnded,
     DecisionFailed,
@@ -94,7 +93,8 @@ async def run_voice_loop[Audio](
     read, one decision ends the hold with ``[continue]``, ``[finish]``, ``[silent]`` or new
     speech (``HoldEnded``); without a decision the rest is dropped. A host that yields no
     ``PartialsChanged`` is never held. Each decision a waking line started ends with one
-    ``DecisionEnded``, its holds included, once its sound and its turns have ended.
+    ``DecisionEnded``, its holds included, once its sound and its turns have ended. A sentence
+    renders in the language of the answered line, the newest one a person said or wrote.
 
     When hearing ends, the loop closes the turn, stops the sound and returns. Any other error
     of a port or the backend, and a ``seq`` not above the last, closes the turn, stops the
@@ -172,6 +172,7 @@ class _Stage:
     """One turn being read: its sentences, those written and not started, and its ending."""
 
     holding: bool
+    language: SpokenLanguage | None
     sentences: asyncio.Queue[str | None] = field(default_factory=asyncio.Queue[str | None])
     unsaid: list[str] = field(default_factory=list[str])
     ending: asyncio.Future[HoldEnding] = field(
@@ -300,7 +301,7 @@ class _VoiceLoop[Audio]:
         answer = self._answer = _Answer()
         self._stages = []
         try:
-            await self._speak(self._start_stage(self._conversation.open_decision()))
+            await self._speak(self._start_stage())
             self._finish_answer()
             if not answer.sound_refused:  # a refused sound closes the turns, as a cancel does
                 await asyncio.wait(self._readings())
@@ -325,9 +326,10 @@ class _VoiceLoop[Audio]:
         self._go.set()
         self._talk.answer_ends()
 
-    def _start_stage(self, messages: list[TurnMessage], *, holding: bool = False) -> _Stage:
+    def _start_stage(self, *, holding: bool = False) -> _Stage:
+        messages = self._conversation.open_decision()
         request = self._agent.request(messages, appended_system=self._appended_system)
-        stage = _Stage(holding)
+        stage = _Stage(holding, self._conversation.answered_language())
         stage.reading = self._group.create_task(self._read(request, stage))
         self._stages.append(stage)
         return stage
@@ -391,7 +393,7 @@ class _VoiceLoop[Audio]:
         answer.begin_hold_segment()
         self._conversation.note_pause(paused_at, stage.unsaid)
         self._woken.clear()
-        return self._start_stage(self._conversation.open_decision(), holding=True)
+        return self._start_stage(holding=True)
 
     async def _end_hold(
         self,
@@ -499,7 +501,7 @@ class _VoiceLoop[Audio]:
         if (sentence := await stage.sentences.get()) is None:
             return None
         try:
-            return sentence, await self._voice.render(sentence)
+            return sentence, await self._voice.render(sentence, language=stage.language)
         except VoiceRefused:
             return SentenceRefused(sentence)
 
