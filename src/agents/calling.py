@@ -9,14 +9,15 @@ in the same step as its seats. A binding is an opaque, non-empty text the app ch
 equality only. An invitation is open while ``now < expires_at``.
 
 The refusals and outcomes here are this module's own vocabulary; an app maps them onto its own.
-The module imports ``agents.member`` and pydantic only, so an app's core may import it.
+The module imports pydantic and agents' pure modules (``member``, ``turn``) only, so an app's core
+may import it.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Final
+from typing import Final, Literal
 
 from pydantic import AwareDatetime, Field
 
@@ -354,7 +355,7 @@ def standing(
     entry: BookEntry | None,
     place: PlaceRef,
     *,
-    held: StandingState | None,
+    held: Literal[StandingState.ACTIVE, StandingState.PAUSED] | None,
     serves_view: bool,
     parent: ParentPlace | None,
     now: datetime,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from itertools import product
+from typing import Literal
 
 import pytest
 
@@ -98,7 +99,7 @@ def decline(invitation: str = "i-1", epoch: int = 3) -> DeclineInvitationArgumen
 
 
 def standing_call(
-    held: StandingState | None,
+    held: Literal[StandingState.ACTIVE, StandingState.PAUSED] | None,
     book: BookEntry | None,
     *,
     serves_view: bool = False,
