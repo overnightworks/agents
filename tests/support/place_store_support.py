@@ -169,6 +169,8 @@ class LeaseRecordFake:
         return LeaseStanding(holds=True, generation=held[1])
 
     async def facts(self, principals: Collection[Principal]) -> Mapping[Principal, MemberFacts]:
+        if not principals:
+            return {}
         self._reads()
         now = asyncio.get_running_loop().time()
         return {
