@@ -43,14 +43,19 @@ from agents.member import (
     StandingState,
 )
 
-NOW = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
-PLACE = PlaceRef(kind="room", id="r-1")
+
+def now() -> datetime:
+    return datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
+
+
+def place() -> PlaceRef:
+    return PlaceRef(kind="room", id="r-1")
 
 
 def open_invitation(**changes: object) -> OpenInvitation:
     fields: dict[str, object] = {
         "id": "i-1",
-        "expires_at": NOW + timedelta(seconds=30),
+        "expires_at": now() + timedelta(seconds=30),
         "owner": "owner-1",
         "bound_to": "seat-1",
         "inviter": "person-1",
@@ -89,12 +94,12 @@ def accept_facts(**changes: object) -> AcceptFacts:
 
 
 def acceptance(invitation: str = "i-1", epoch: int = 3) -> AcceptInvitationArguments:
-    return AcceptInvitationArguments(place=PLACE, invitation=invitation, epoch=epoch)
+    return AcceptInvitationArguments(place=place(), invitation=invitation, epoch=epoch)
 
 
 def decline(invitation: str = "i-1", epoch: int = 3) -> DeclineInvitationArguments:
     return DeclineInvitationArguments(
-        place=PLACE, invitation=invitation, epoch=epoch, reason=DeclineInvitationReason.BUSY
+        place=place(), invitation=invitation, epoch=epoch, reason=DeclineInvitationReason.BUSY
     )
 
 
@@ -105,31 +110,32 @@ def standing_call(
     serves_view: bool = False,
     parent: ParentPlace | None = None,
 ) -> Standing | None:
-    return standing(book, PLACE, held=held, serves_view=serves_view, parent=parent, now=NOW)
+    return standing(book, place(), held=held, serves_view=serves_view, parent=parent, now=now())
 
 
-FAILING_FACT = {
-    InviteRefusal.NOT_PRESENT: {"inviter_present": False},
-    InviteRefusal.NOT_A_MEMBER: {"inviter_is_member": False},
-    InviteRefusal.ALREADY_THERE: {"agent_seated": True},
-    InviteRefusal.NOT_LISTENING: {"agent_listens": False},
-    InviteRefusal.OWNER_ABSENT: {"owner_at": OwnerAt.ABSENT},
-    InviteRefusal.OWNER_AWAY: {"owner_at": OwnerAt.AWAY},
-    InviteRefusal.OWNER_ELSEWHERE: {"owner_at": OwnerAt.ELSEWHERE},
-    InviteRefusal.NO_FREE_SEAT: {"seat_free": False},
-}
+def failing_fact(refusal: InviteRefusal) -> dict[str, object]:
+    return {
+        InviteRefusal.NOT_PRESENT: {"inviter_present": False},
+        InviteRefusal.NOT_A_MEMBER: {"inviter_is_member": False},
+        InviteRefusal.ALREADY_THERE: {"agent_seated": True},
+        InviteRefusal.NOT_LISTENING: {"agent_listens": False},
+        InviteRefusal.OWNER_ABSENT: {"owner_at": OwnerAt.ABSENT},
+        InviteRefusal.OWNER_AWAY: {"owner_at": OwnerAt.AWAY},
+        InviteRefusal.OWNER_ELSEWHERE: {"owner_at": OwnerAt.ELSEWHERE},
+        InviteRefusal.NO_FREE_SEAT: {"seat_free": False},
+    }.get(refusal, {})
 
 
 def call_with_failing(*refusals: InviteRefusal) -> Invited | InviteRefusal:
     facts: dict[str, object] = {}
     for refusal in refusals:
-        facts |= FAILING_FACT.get(refusal, {})
+        facts |= failing_fact(refusal)
     book = (
         entry(invitation=open_invitation(inviter="person-2"))
         if InviteRefusal.INVITED_BY_ANOTHER in refusals
         else None
     )
-    return invite(book, call_facts(**facts), invitation_id="i-new", now=NOW)
+    return invite(book, call_facts(**facts), invitation_id="i-new", now=now())
 
 
 @pytest.mark.parametrize("refusal", list(InviteRefusal))
@@ -164,11 +170,11 @@ def test_the_first_refusal_in_the_ruled_order_wins_calling_1_to_6(
 def test_the_same_inviters_open_invitation_is_returned_unchanged_calling_5() -> None:
     book = entry(epoch=2, invitation=open_invitation())
 
-    result = invite(book, call_facts(), invitation_id="i-new", now=NOW)
+    result = invite(book, call_facts(), invitation_id="i-new", now=now())
 
     assert result == Invited(
         entry=book,
-        invitation=Invitation(id="i-1", epoch=2, expires_at=NOW + timedelta(seconds=30)),
+        invitation=Invitation(id="i-1", epoch=2, expires_at=now() + timedelta(seconds=30)),
     )
 
 
@@ -176,7 +182,7 @@ def test_the_same_inviters_open_invitation_stands_whatever_the_owner_and_the_sea
     book = entry(invitation=open_invitation())
     facts = call_facts(owner_at=OwnerAt.ABSENT, seat_free=False)
 
-    result = invite(book, facts, invitation_id="i-new", now=NOW)
+    result = invite(book, facts, invitation_id="i-new", now=now())
 
     assert isinstance(result, Invited)
     assert result.entry == book
@@ -187,7 +193,7 @@ def test_the_same_inviters_open_invitation_is_still_refused_when_the_agent_does_
 ):
     book = entry(invitation=open_invitation())
 
-    result = invite(book, call_facts(agent_listens=False), invitation_id="i-new", now=NOW)
+    result = invite(book, call_facts(agent_listens=False), invitation_id="i-new", now=now())
 
     assert result == InviteRefusal.NOT_LISTENING
 
@@ -197,9 +203,11 @@ def test_the_same_inviters_open_invitation_is_still_refused_when_the_agent_does_
 def test_an_invitation_that_is_no_longer_open_counts_as_none_calling_8(
     inviter: str, remaining_seconds: int
 ) -> None:
-    lapsed = open_invitation(inviter=inviter, expires_at=NOW + timedelta(seconds=remaining_seconds))
+    lapsed = open_invitation(
+        inviter=inviter, expires_at=now() + timedelta(seconds=remaining_seconds)
+    )
 
-    result = invite(entry(invitation=lapsed), call_facts(), invitation_id="i-new", now=NOW)
+    result = invite(entry(invitation=lapsed), call_facts(), invitation_id="i-new", now=now())
 
     assert isinstance(result, Invited)
     assert result.invitation.id == "i-new"
@@ -209,12 +217,12 @@ def test_an_invitation_that_is_no_longer_open_counts_as_none_calling_8(
 def test_a_new_invitation_lasts_invitation_seconds_and_keeps_the_epoch_calling_6(
     book: BookEntry | None, epoch: int
 ) -> None:
-    expires_at = NOW + timedelta(seconds=INVITATION_SECONDS)
+    expires_at = now() + timedelta(seconds=INVITATION_SECONDS)
     opened = OpenInvitation(
         id="i-new", expires_at=expires_at, owner="owner-1", bound_to="seat-1", inviter="person-1"
     )
 
-    result = invite(book, call_facts(), invitation_id="i-new", now=NOW)
+    result = invite(book, call_facts(), invitation_id="i-new", now=now())
 
     assert result == Invited(
         entry=BookEntry(epoch=epoch, invitation=opened),
@@ -255,7 +263,7 @@ def test_a_new_invitation_lasts_invitation_seconds_and_keeps_the_epoch_calling_6
             id="no lease",
         ),
         pytest.param(
-            entry(invitation=open_invitation(expires_at=NOW)),
+            entry(invitation=open_invitation(expires_at=now())),
             acceptance(),
             accept_facts(),
             id="expired",
@@ -271,7 +279,7 @@ def test_a_new_invitation_lasts_invitation_seconds_and_keeps_the_epoch_calling_6
 def test_a_stale_accept_changes_nothing_calling_7(
     book: BookEntry | None, arguments: AcceptInvitationArguments, facts: AcceptFacts
 ) -> None:
-    result = check_accept(book, arguments, facts, now=NOW)
+    result = check_accept(book, arguments, facts, now=now())
 
     assert result == AcceptRefused(refusal=AcceptInvitationRefusal.STALE_INVITATION, ended=None)
 
@@ -316,18 +324,18 @@ def test_a_refused_accept_ends_the_call_with_its_outcome_calling_7(
 ) -> None:
     book = entry(epoch=3, invitation=open_invitation())
 
-    result = check_accept(book, acceptance(), facts, now=NOW)
+    result = check_accept(book, acceptance(), facts, now=now())
 
     assert result == AcceptRefused(
         refusal=refusal,
-        ended=Ended(entry=entry(epoch=3), inviter="person-1", outcome=outcome, at=NOW),
+        ended=Ended(entry=entry(epoch=3), inviter="person-1", outcome=outcome, at=now()),
     )
 
 
 def test_an_accept_clears_the_invitation_and_keeps_the_epoch_calling_7() -> None:
     book = entry(epoch=3, invitation=open_invitation())
 
-    result = check_accept(book, acceptance(), accept_facts(), now=NOW)
+    result = check_accept(book, acceptance(), accept_facts(), now=now())
 
     assert result == Accepted(entry=entry(epoch=3))
 
@@ -339,22 +347,22 @@ def test_an_accept_clears_the_invitation_and_keeps_the_epoch_calling_7() -> None
         pytest.param(entry(), decline(), id="no invitation"),
         pytest.param(entry(invitation=open_invitation()), decline("i-0"), id="other id"),
         pytest.param(entry(invitation=open_invitation()), decline(epoch=2), id="other epoch"),
-        pytest.param(entry(invitation=open_invitation(expires_at=NOW)), decline(), id="expired"),
+        pytest.param(entry(invitation=open_invitation(expires_at=now())), decline(), id="expired"),
     ],
 )
 def test_a_stale_decline_is_refused_calling_31(
     book: BookEntry | None, arguments: DeclineInvitationArguments
 ) -> None:
-    assert check_decline(book, arguments, now=NOW) == DeclineInvitationRefusal.STALE_INVITATION
+    assert check_decline(book, arguments, now=now()) == DeclineInvitationRefusal.STALE_INVITATION
 
 
 def test_a_decline_ends_the_call_busy_and_keeps_the_epoch_calling_30() -> None:
     book = entry(epoch=3, invitation=open_invitation())
 
-    result = check_decline(book, decline(), now=NOW)
+    result = check_decline(book, decline(), now=now())
 
     assert result == Ended(
-        entry=entry(epoch=3), inviter="person-1", outcome=CallOutcome.BUSY, at=NOW
+        entry=entry(epoch=3), inviter="person-1", outcome=CallOutcome.BUSY, at=now()
     )
 
 
@@ -362,10 +370,10 @@ def test_a_decline_ends_the_call_busy_and_keeps_the_epoch_calling_30() -> None:
 def test_an_invitation_that_is_no_longer_open_ends_with_no_answer_at_its_expiry_calling_8(
     seconds_after_expiry: int,
 ) -> None:
-    lapsed = open_invitation(expires_at=NOW - timedelta(seconds=seconds_after_expiry))
+    lapsed = open_invitation(expires_at=now() - timedelta(seconds=seconds_after_expiry))
     book = entry(epoch=3, invitation=lapsed)
 
-    assert expired(book, now=NOW) == Ended(
+    assert expired(book, now=now()) == Ended(
         entry=entry(epoch=3),
         inviter="person-1",
         outcome=CallOutcome.NO_ANSWER,
@@ -377,26 +385,26 @@ def test_an_invitation_that_is_no_longer_open_ends_with_no_answer_at_its_expiry_
     "book", [None, entry(), entry(invitation=open_invitation())], ids=["no row", "none", "open"]
 )
 def test_an_open_invitation_or_none_does_not_expire_calling_8(book: BookEntry | None) -> None:
-    assert expired(book, now=NOW) is None
+    assert expired(book, now=now()) is None
 
 
 def test_an_open_invitation_ends_with_owner_away_when_its_owner_leaves_calling_6() -> None:
     book = entry(epoch=3, invitation=open_invitation())
 
-    assert owner_left(book, now=NOW) == Ended(
-        entry=entry(epoch=3), inviter="person-1", outcome=CallOutcome.OWNER_AWAY, at=NOW
+    assert owner_left(book, now=now()) == Ended(
+        entry=entry(epoch=3), inviter="person-1", outcome=CallOutcome.OWNER_AWAY, at=now()
     )
 
 
 @pytest.mark.parametrize(
     "book",
-    [None, entry(), entry(invitation=open_invitation(expires_at=NOW))],
+    [None, entry(), entry(invitation=open_invitation(expires_at=now()))],
     ids=["no row", "no invitation", "expired"],
 )
 def test_an_owner_leaving_ends_no_invitation_that_is_not_open_calling_6(
     book: BookEntry | None,
 ) -> None:
-    assert owner_left(book, now=NOW) is None
+    assert owner_left(book, now=now()) is None
 
 
 @pytest.mark.parametrize(
@@ -444,22 +452,22 @@ def test_a_send_away_raises_the_epoch_and_drops_the_invitation_calling_10(
 def test_a_held_place_stands_as_its_state_with_no_invitation_calling_27(
     held: StandingState, book: BookEntry | None
 ) -> None:
-    assert standing_call(held, book) == Standing(place=PLACE, state=held)
+    assert standing_call(held, book) == Standing(place=place(), state=held)
 
 
 def test_an_open_invitation_stands_as_invited_calling_27() -> None:
     book = entry(epoch=2, invitation=open_invitation())
 
     assert standing_call(None, book) == Standing(
-        place=PLACE,
+        place=place(),
         state=StandingState.INVITED,
-        invitation=Invitation(id="i-1", epoch=2, expires_at=NOW + timedelta(seconds=30)),
+        invitation=Invitation(id="i-1", epoch=2, expires_at=now() + timedelta(seconds=30)),
     )
 
 
 @pytest.mark.parametrize(
     "book",
-    [None, entry(), entry(invitation=open_invitation(expires_at=NOW))],
+    [None, entry(), entry(invitation=open_invitation(expires_at=now()))],
     ids=["no row", "no invitation", "expired"],
 )
 def test_a_place_neither_held_nor_invited_has_no_standing_calling_27(
