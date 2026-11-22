@@ -413,10 +413,9 @@ def test_a_lease_whose_renewal_lost_its_facts_step_reads_as_holding_without_fact
 ) -> None:
     async def scenario() -> tuple[LeaseStanding, Mapping[Principal, MemberFacts]]:
         pod = a_pod(server)
+        renewing_pod = _a_pod_that_loses_its_connection_after_the_lease_step(server)
         with pytest.raises(PlaceStoreError):
-            await _a_pod_that_loses_its_connection_after_the_lease_step(server).renew(
-                _ALICE, _FACTS
-            )
+            await renewing_pod.renew(_ALICE, _FACTS)
         return await pod.state(_ALICE), await pod.facts([_ALICE])
 
     standing, facts = asyncio.run(scenario())
@@ -468,8 +467,9 @@ def test_a_facts_key_holding_no_member_facts_fails_the_batch_read_with_place_sto
         await put_in_the_facts_key(server, held)
         await a_pod(server).facts([_ALICE, a_member("bob")])
 
+    reading = scenario()
     with pytest.raises(PlaceStoreError):
-        asyncio.run(scenario())
+        asyncio.run(reading)
 
 
 @pytest.mark.parametrize(
@@ -489,8 +489,9 @@ def test_an_unreadable_stored_value_leaves_no_owner_or_name_in_the_error_or_the_
         await put_in_the_facts_key(server, stored)
         await a_pod(server, decoding=decoding).facts([_ALICE])
 
+    reading = scenario()
     with pytest.raises(PlaceStoreError) as refusal:
-        asyncio.run(scenario())
+        asyncio.run(reading)
 
     remains = [
         str(refusal.value),
