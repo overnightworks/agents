@@ -12,7 +12,7 @@ in ``agents.mcp_server.redis_place_store``; a host's tests give ``ResourceChange
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable, Collection
+from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
@@ -20,6 +20,7 @@ from typing import NoReturn, Protocol
 
 from logline import StepTimer
 
+from agents.member import MemberFacts
 from agents.turn import Principal
 
 
@@ -198,12 +199,27 @@ class LeaseRoster:
 
 
 class LeaseRecord(Protocol):
-    """A member's lease: kept for a fixed span after its latest renewal, on the store's clock.
-    Every method raises ``PlaceStoreError`` when the store refuses or does not answer."""
+    """A member's lease and, beside it, the member's facts: both kept for a fixed span after the
+    latest renewal, on the store's clock. Every method raises ``PlaceStoreError`` when the store
+    refuses or does not answer."""
 
-    async def renew(self, principal: Principal) -> LeaseRenewal:
+    async def renew(self, principal: Principal, facts: MemberFacts) -> LeaseRenewal:
         """Keeps the principal's lease for another span, starting one under a new generation when
-        none runs."""
+        none runs, and keeps ``facts`` beside it for the same span, replacing earlier ones.
+
+        A renewal that raises may have kept the lease without its facts.
+        """
+        ...
+
+    async def facts(self, principals: Collection[Principal]) -> Mapping[Principal, MemberFacts]:
+        """The facts of each principal that has some; a principal is left out when it never
+        renewed, its lease lapsed, or the store lost its data, and an empty batch answers ``{}``
+        with no store call.
+
+        A stored value that is no ``MemberFacts`` raises ``PlaceStoreError`` with a text that
+        carries none of it, and fails every batch read that includes its principal until that
+        agent renews.
+        """
         ...
 
     async def state(self, principal: Principal) -> LeaseStanding:

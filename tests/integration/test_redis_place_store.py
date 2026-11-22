@@ -32,7 +32,7 @@ from agents.member import LISTEN_ALLOWANCE_SECONDS, LISTEN_BOUND_SECONDS, STANDI
 from agents.turn import Principal
 from tests.support import redis_listen_support
 from tests.support.faulty_redis import (
-    EvalshaStopsAfter,
+    FakeEvalshaStopsAfter,
     LostReplyRedis,
     retrying,
 )
@@ -247,14 +247,8 @@ def a_store_that_loses_a_reply(server: FakeServer, *, retries: int) -> RedisPlac
     return RedisPlaceStore(client, key_prefix=_PREFIX)
 
 
-class _FakeEvalshaStopsAfter(EvalshaStopsAfter, FakeAsyncRedis):
-    def __init__(self, server: FakeServer, *, evalshas_that_return: int) -> None:
-        FakeAsyncRedis.__init__(self, server=server)
-        self._evalshas_that_return = evalshas_that_return
-
-
 def a_pod_that_loses_its_connection_after(server: FakeServer, evalshas: int) -> RedisPlaceStore:
-    client = _FakeEvalshaStopsAfter(server, evalshas_that_return=evalshas)
+    client = FakeEvalshaStopsAfter(server, evalshas_that_return=evalshas)
     return RedisPlaceStore(client, key_prefix=_PREFIX)
 
 

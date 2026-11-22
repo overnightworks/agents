@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fakeredis import FakeAsyncRedis
+from fakeredis import FakeAsyncRedis, FakeServer
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
 from redis.asyncio.connection import ConnectionPool
@@ -51,6 +51,14 @@ class EvalshaStopsAfter(Redis):
         reply = await super().evalsha(*arguments, **options)
         self._evalshas_that_return -= 1
         return reply
+
+
+class FakeEvalshaStopsAfter(EvalshaStopsAfter, FakeAsyncRedis):
+    """``EvalshaStopsAfter`` on a fake server."""
+
+    def __init__(self, server: FakeServer, *, evalshas_that_return: int) -> None:
+        FakeAsyncRedis.__init__(self, server=server)
+        self._evalshas_that_return = evalshas_that_return
 
 
 class RefusedAfterConfirmationRedis(FakeAsyncRedis):

@@ -14,14 +14,24 @@ A member's lease is tandem's ``Leases`` of family ``member`` and lasts ``LEASE_S
 are tandem's, ``<key_prefix>-agents:tandem:v1:epoch`` and
 ``<key_prefix>-agents:tandem:v1:l:member:*``, and the holder is the principal text. A principal
 whose lease the store may have lost reads as holding, with no generation, for ``LEASE_SECONDS``
-after the epoch began.
+after the epoch began. Beside each lease a member's facts, ``MemberFacts``, are one string at
+``<key_prefix>-agents:v1:member-facts:<principal text>`` that expires on Redis ``TIME`` after
+``LEASE_SECONDS`` from the renewal that wrote it; it is written after the lease step and read
+for a batch of principals in one script that raises on a key holding no string.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Generator
+from collections.abc import (
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Collection,
+    Generator,
+    Mapping,
+)
 from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from datetime import timedelta
 from typing import Final, Literal, NoReturn, cast
@@ -56,13 +66,16 @@ from agents.mcp_server.place_store import (
     ToolsChange,
     failure_type,
 )
-from agents.member import LEASE_SECONDS
+from agents.member import LEASE_SECONDS, MemberFacts
 from agents.turn import Principal
 
 _LOG: Final = logging.getLogger(LOGGER_NAME)
 _NAMESPACE_SUFFIX: Final = "-agents"
 CLAIM_FOR: Final = timedelta(seconds=5)
 _LEASE_FAMILY: Final = "member"
+_LEASE_LASTS: Final = timedelta(seconds=LEASE_SECONDS)
+_FACTS_KEY_INFIX: Final = ":v1:member-facts:"
+_FACTS_UNREADABLE: Final = "a stored member's facts are unreadable"
 _LEASE_SWEEP_EVERY: Final = timedelta(seconds=1)
 _LAPSE_BATCH: Final = 20
 _MILLISECOND: Final = timedelta(milliseconds=1)
@@ -214,6 +227,30 @@ return redis.call('ZRANGEBYLEX', KEYS[4], '[' .. ARGV[1], '[' .. ARGV[1] .. '\25
   'LIMIT', 0, tonumber(ARGV[2]))
 """
 
+# KEYS: the facts key. ARGV: the facts as JSON and the span in ms. SET replaces a key of any type
+# and the key expires on the server's clock.
+_FACTS_KEPT: Final = r"""
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+return 1
+"""
+
+# KEYS: the facts keys of a batch; the reply holds each one's string, or false when it is absent.
+# A key holding no string raises before any reply, and the error names the key, never a value.
+_FACTS_READ: Final = r"""
+local facts = {}
+for index, key in ipairs(KEYS) do
+  local actual = redis.call('TYPE', key)['ok']
+  if actual == 'none' then
+    facts[index] = false
+  elseif actual == 'string' then
+    facts[index] = redis.call('GET', key)
+  else
+    error(key .. ' holds a ' .. actual .. ', not a string')
+  end
+end
+return facts
+"""
+
 type _Address = (
     tuple[Literal["v1"], Literal["resource"], str, str, str, str]
     | tuple[Literal["v1"], Literal["tools"], str, str, None, str]
@@ -221,6 +258,7 @@ type _Address = (
 )
 
 _ADDRESS: Final[TypeAdapter[_Address]] = TypeAdapter(_Address)
+_FACTS: Final[TypeAdapter[MemberFacts]] = TypeAdapter(MemberFacts)
 
 
 def _encoded(signal: PlaceSignal) -> str:
@@ -300,9 +338,10 @@ class RedisPlaceStore:
             redis,
             key_prefix=namespace,
             family=_LEASE_FAMILY,
-            lasts=timedelta(seconds=LEASE_SECONDS),
+            lasts=_LEASE_LASTS,
             claim_for=CLAIM_FOR,
         )
+        self._facts_prefix = namespace + _FACTS_KEY_INFIX
         deadline_keys = self._deadlines.keys
         self._keys = [
             deadline_keys.due,
@@ -315,6 +354,8 @@ class RedisPlaceStore:
         self._ended = Script(redis, _ENDED)
         self._lapse = Script(redis, _LAPSED)
         self._members = Script(redis, _MEMBERS)
+        self._facts_kept = Script(redis, _FACTS_KEPT)
+        self._facts_read = Script(redis, _FACTS_READ)
 
     async def publish(self, signal: PlaceSignal) -> None:
         with _store_errors():
@@ -408,10 +449,37 @@ class RedisPlaceStore:
             last_error_type=last_error_type,
         )
 
-    async def renew(self, principal: Principal) -> LeaseRenewal:
+    async def renew(self, principal: Principal, facts: MemberFacts) -> LeaseRenewal:
+        text = _principal_text(principal)
         with _store_errors():
-            renewal = await self._leases.renew(_principal_text(principal))
+            renewal = await self._leases.renew(text)
+            await self._facts_kept.run(
+                [self._facts_prefix + text],
+                [facts.model_dump_json(), _milliseconds(_LEASE_LASTS)],
+            )
         return LeaseRenewal(started=renewal.started, generation=renewal.generation)
+
+    async def facts(self, principals: Collection[Principal]) -> Mapping[Principal, MemberFacts]:
+        batch = list(dict.fromkeys(principals))
+        if not batch:
+            return {}
+        keys = [self._facts_prefix + _principal_text(principal) for principal in batch]
+        with _store_errors():
+            reply = await self._facts_read.run(keys, [])
+        encoder = self._redis.get_encoder()
+        found: dict[Principal, MemberFacts] = {}
+        unreadable = False
+        for principal, stored in zip(batch, cast(list[object], reply), strict=True):
+            if stored is None:
+                continue
+            try:
+                found[principal] = _FACTS.validate_json(encoder.decode(stored, force=True))
+            except ValidationError:
+                unreadable = True
+        # Raised outside the except block, so no owner or name rides the error's context.
+        if unreadable:
+            raise PlaceStoreError(_FACTS_UNREADABLE)
+        return found
 
     async def state(self, principal: Principal) -> LeaseStanding:
         holder = _principal_text(principal)

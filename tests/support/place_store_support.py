@@ -8,7 +8,7 @@ stream's or a lease's deadline.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Awaitable, Callable, Collection
+from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -24,7 +24,7 @@ from agents.mcp_server.place_store import (
     PlaceSignal,
     PlaceStoreError,
 )
-from agents.member import LEASE_SECONDS
+from agents.member import LEASE_SECONDS, MemberFacts
 from agents.turn import Principal
 
 
@@ -130,8 +130,8 @@ class LeaseRecordFake:
     ``serve_failures`` are raised by the next calls of ``serve_lapses``, one each; ``fail_running``
     is raised by the call that runs, at its next round. A ``handle`` that
     raises is recorded in ``handler_failures`` and its lapse stays due, as the store gives it again.
-    ``failure`` makes ``renew``, ``state`` and ``live`` raise. ``serving`` is true while a call of
-    ``serve_lapses`` runs, and ``serve_call_count`` counts them.
+    ``failure`` makes ``renew``, ``state``, ``facts`` and ``live`` raise. ``serving`` is true while
+    a call of ``serve_lapses`` runs, and ``serve_call_count`` counts them.
     """
 
     failure: PlaceStoreError | None = None
@@ -141,10 +141,11 @@ class LeaseRecordFake:
     serve_call_count: int = 0
     serving: bool = False
     _leases: dict[Principal, tuple[float, str]] = field(default_factory=dict)
+    _facts: dict[Principal, MemberFacts] = field(default_factory=dict)
     _lapses: list[tuple[Principal, str]] = field(default_factory=list)
     _starts: int = 0
 
-    async def renew(self, principal: Principal) -> LeaseRenewal:
+    async def renew(self, principal: Principal, facts: MemberFacts) -> LeaseRenewal:
         self._reads()
         now = asyncio.get_running_loop().time()
         held = self._leases.get(principal)
@@ -157,6 +158,7 @@ class LeaseRecordFake:
         else:
             generation = held[1]
         self._leases[principal] = (now + LEASE_SECONDS, generation)
+        self._facts[principal] = facts
         return LeaseRenewal(started=started, generation=generation)
 
     async def state(self, principal: Principal) -> LeaseStanding:
@@ -165,6 +167,15 @@ class LeaseRecordFake:
         if held is None or held[0] <= asyncio.get_running_loop().time():
             return LeaseStanding(holds=False, generation=None)
         return LeaseStanding(holds=True, generation=held[1])
+
+    async def facts(self, principals: Collection[Principal]) -> Mapping[Principal, MemberFacts]:
+        self._reads()
+        now = asyncio.get_running_loop().time()
+        return {
+            principal: self._facts[principal]
+            for principal in principals
+            if principal in self._leases and self._leases[principal][0] > now
+        }
 
     async def live(self) -> LeaseRoster:
         self._reads()
@@ -203,4 +214,5 @@ class LeaseRecordFake:
         for principal, (due, generation) in list(self._leases.items()):
             if due <= now:
                 del self._leases[principal]
+                del self._facts[principal]
                 self._lapses.append((principal, generation))

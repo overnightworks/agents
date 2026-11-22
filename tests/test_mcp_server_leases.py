@@ -4,7 +4,7 @@ service it runs in its lifespan."""
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 
 import pytest
 
@@ -16,10 +16,10 @@ from agents.mcp_server.place_store import (
     LeaseStanding,
     PlaceStoreError,
 )
-from agents.member import LEASE_SECONDS
+from agents.member import LEASE_SECONDS, MemberFacts
 from agents.turn import Principal
 from tests.support.log_lines import LogLines, log_lines
-from tests.support.mcp_server_support import a_member
+from tests.support.mcp_server_support import a_member, a_member_facts
 from tests.support.place_store_support import LeaseRecordFake
 from tests.support.virtual_time import in_virtual_time
 
@@ -65,8 +65,8 @@ def test_renew_state_and_live_answer_what_the_store_holds(
     leases: MemberLeases, alice: Principal
 ) -> None:
     async def scenario() -> tuple[LeaseRenewal, LeaseRenewal, LeaseStanding, LeaseRoster]:
-        first = await leases.renew(alice)
-        second = await leases.renew(alice)
+        first = await leases.renew(alice, a_member_facts())
+        second = await leases.renew(alice, a_member_facts())
         return first, second, await leases.state(alice), await leases.live()
 
     first, second, standing, roster = in_virtual_time(scenario())
@@ -77,10 +77,36 @@ def test_renew_state_and_live_answer_what_the_store_holds(
     assert roster == LeaseRoster(holders=frozenset({alice}), settled=True)
 
 
+def test_facts_answer_what_the_latest_renewal_kept_and_leave_out_a_principal_never_renewed(
+    leases: MemberLeases, alice: Principal
+) -> None:
+    bob = a_member("bob")
+    renamed = a_member_facts(name="Alicia")
+
+    async def scenario() -> Mapping[Principal, MemberFacts]:
+        await leases.renew(alice, a_member_facts())
+        await leases.renew(alice, renamed)
+        return await leases.facts([alice, bob])
+
+    assert in_virtual_time(scenario()) == {alice: renamed}
+
+
+def test_a_lapsed_lease_keeps_no_facts(leases: MemberLeases, alice: Principal) -> None:
+    async def scenario() -> Mapping[Principal, MemberFacts]:
+        await leases.renew(alice, a_member_facts())
+        await asyncio.sleep(_PAST_THE_LEASE)
+        return await leases.facts([alice])
+
+    assert in_virtual_time(scenario()) == {}
+
+
 @pytest.mark.parametrize(
     "read",
     [
-        pytest.param(lambda leases, principal: leases.renew(principal), id="renew"),
+        pytest.param(
+            lambda leases, principal: leases.renew(principal, a_member_facts()), id="renew"
+        ),
+        pytest.param(lambda leases, principal: leases.facts([principal]), id="facts"),
         pytest.param(lambda leases, principal: leases.state(principal), id="state"),
         pytest.param(lambda leases, _principal: leases.live(), id="live"),
     ],
@@ -106,7 +132,7 @@ def test_a_lapse_reaches_lease_ended_with_the_principal_and_the_generation_it_la
 ) -> None:
     async def scenario() -> str:
         async with leases.running():
-            renewal = await leases.renew(alice)
+            renewal = await leases.renew(alice, a_member_facts())
             await asyncio.sleep(_PAST_THE_LEASE)
             return renewal.generation
 
@@ -122,7 +148,7 @@ def test_a_lease_ended_that_raises_reaches_the_store_and_is_not_swallowed(
 
     async def scenario() -> None:
         async with leases.running():
-            await leases.renew(alice)
+            await leases.renew(alice, a_member_facts())
             await asyncio.sleep(_PAST_THE_LEASE)
 
     in_virtual_time(scenario())
@@ -219,8 +245,8 @@ def test_only_a_renewal_that_started_a_lease_writes_an_opened_line_with_the_sub(
     leases: MemberLeases, alice: Principal, log_lines: LogLines
 ) -> None:
     async def scenario() -> LeaseRenewal:
-        first = await leases.renew(alice)
-        await leases.renew(alice)
+        first = await leases.renew(alice, a_member_facts())
+        await leases.renew(alice, a_member_facts())
         return first
 
     first = in_virtual_time(scenario())
@@ -234,7 +260,7 @@ def test_a_lapse_writes_a_lapsed_line_with_the_sub_and_never_the_generation(
 ) -> None:
     async def scenario() -> str:
         async with leases.running():
-            renewal = await leases.renew(alice)
+            renewal = await leases.renew(alice, a_member_facts())
             await asyncio.sleep(_PAST_THE_LEASE)
             return renewal.generation
 
