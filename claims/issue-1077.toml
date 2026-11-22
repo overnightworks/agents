@@ -3,6 +3,6 @@ agent = "Claude 8c157831-3ad7-436a-9c17-26e3c63d9b92"
 role = "builder"
 base = "6c23c94f98dcf3e4f93bfe546b265ea3389fed97"
 branch = "claude/issue-1077-an-agent-s-owner-and-name-ride-its-membe"
-scope = ["docs/ARCHITECTURE.md", "docs/connector.md", "src/agents/mcp_server/leases.py", "src/agents/mcp_server/place_store.py", "src/agents/mcp_server/redis_place_store.py", "src/agents/member.py", "tests/integration/real_redis/test_member_leases.py", "tests/integration/test_redis_leases.py", "tests/support/place_store_support.py", "tests/support/real_redis_pod.py", "tests/support/real_redis_pods.py", "tests/test_mcp_server_leases.py"]
+scope = ["docs/ARCHITECTURE.md", "docs/connector.md", "src/agents/mcp_server/leases.py", "src/agents/mcp_server/place_store.py", "src/agents/mcp_server/redis_place_store.py", "src/agents/member.py", "tests/integration/real_redis/test_member_leases.py", "tests/integration/test_redis_leases.py", "tests/integration/test_redis_place_store.py", "tests/support/faulty_redis.py", "tests/support/mcp_server_support.py", "tests/support/place_store_support.py", "tests/support/real_redis_pod.py", "tests/support/real_redis_pods.py", "tests/test_mcp_server_leases.py"]
 opened_commit = "abdfef48aafea59866a8c7bc10fa51cede845b0e"
 whole_reason = "One contract change (MemberFacts beside the member lease) through its port, its Redis store, its test twin and its two-process proof; split, the port would change without its store or its proof."
