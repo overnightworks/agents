@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from agents.turn import JsonObject, RunFile, ToolImage, TurnUsage
+from agents.turn import JsonObject, RoundUsage, RunFile, ToolImage, TurnUsage
 
 
 class StreamEvent(BaseModel):
@@ -55,9 +55,14 @@ class FinalEvent(StreamEvent):
     ``usage`` is the sum of the usage of every round of a text turn. It is ``None`` when any
     round's usage is missing or unreadable, never a partial sum, and for a picture turn. A turn
     that stops ends with no final event and so reports none.
+
+    ``rounds`` holds each round of a text turn in order, with its start and its own usage, so a
+    host can read the last round's prompt tokens and start; ``usage`` is their sum. A picture
+    turn has no rounds.
     """
 
     type: Literal["final"] = "final"
     text: str
     files: tuple[RunFile, ...] = ()
     usage: TurnUsage | None = None
+    rounds: tuple[RoundUsage, ...] = ()

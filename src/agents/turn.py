@@ -12,17 +12,20 @@ import json
 import math
 import re
 from collections.abc import Iterator
+from datetime import UTC
 from enum import StrEnum
 from typing import Annotated, Final, Literal
 
 from pydantic import (
     AfterValidator,
+    AwareDatetime,
     BaseModel,
     BeforeValidator,
     ConfigDict,
     Field,
     JsonValue,
     PlainSerializer,
+    model_validator,
 )
 
 
@@ -314,7 +317,10 @@ class TurnUsage(StrictModel):
 
     ``input_tokens`` is everything the model read, cached tokens included; ``cached_input_tokens``
     is the part read from the provider's cache and ``cache_write_tokens`` the part written to it.
-    ``requests`` is how many model requests made up these counts: one per round.
+    ``cache_write_1h_tokens`` is the part of the writes that has the one-hour lifetime, never more
+    than the total; ``cache_write_5m_tokens`` is the rest, which has the provider's default
+    lifetime of five minutes. ``requests`` is how many model requests made up these counts: one
+    per round.
     """
 
     input_tokens: TokenCount
@@ -322,15 +328,38 @@ class TurnUsage(StrictModel):
     cache_write_tokens: TokenCount
     output_tokens: TokenCount
     requests: RequestCount
+    cache_write_1h_tokens: TokenCount = 0
+
+    @model_validator(mode="after")
+    def _refuse_one_hour_writes_above_the_total(self) -> TurnUsage:
+        if self.cache_write_1h_tokens > self.cache_write_tokens:
+            raise ValueError("cache_write_1h_tokens is above cache_write_tokens")
+        return self
+
+    @property
+    def cache_write_5m_tokens(self) -> int:
+        return self.cache_write_tokens - self.cache_write_1h_tokens
 
     def __add__(self, other: TurnUsage) -> TurnUsage:
         return TurnUsage(
             input_tokens=self.input_tokens + other.input_tokens,
             cached_input_tokens=self.cached_input_tokens + other.cached_input_tokens,
             cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
+            cache_write_1h_tokens=self.cache_write_1h_tokens + other.cache_write_1h_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
             requests=self.requests + other.requests,
         )
+
+
+class RoundUsage(StrictModel):
+    """One model round of a text turn: when its request started and what it used.
+
+    ``started_at`` is read from the backend's clock just before the request is opened and is
+    held in UTC. ``usage`` is ``None`` when the round sent none or sent one that cannot be read.
+    """
+
+    started_at: Annotated[AwareDatetime, AfterValidator(lambda moment: moment.astimezone(UTC))]
+    usage: TurnUsage | None
 
 
 class Principal(StrictModel):

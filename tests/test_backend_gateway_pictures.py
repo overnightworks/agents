@@ -35,6 +35,7 @@ from tests.support.gateway_turn_support import (
     a_person,
     a_picture_request,
     ending,
+    without_rounds,
 )
 from tests.support.virtual_time import VirtualTimeLoop
 
@@ -137,7 +138,7 @@ def test_one_picture_ends_the_turn_as_a_file_with_no_other_event(studio):
     assert events == [
         FinalEvent(text="", files=(RunFile(name="picture", content=b"\x89PNG bytes"),))
     ]
-    assert events[0].usage is None
+    assert (events[0].usage, events[0].rounds) == (None, ())
 
 
 def test_a_null_url_beside_the_picture_passes(studio):
@@ -333,4 +334,4 @@ def test_a_text_agents_request_is_unchanged(studio):
         "/v1/chat/completions",
         {"model", "messages", "user", "stream", "stream_options"},
     )
-    assert events[-1] == FinalEvent(text="ok")
+    assert without_rounds(events)[-1] == FinalEvent(text="ok")

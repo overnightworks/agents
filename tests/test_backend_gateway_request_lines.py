@@ -173,7 +173,14 @@ def test_a_round_line_carries_the_first_output_and_the_tokens_of_its_usage(scena
     usage = {
         "prompt_tokens": 120,
         "completion_tokens": 9,
-        "prompt_tokens_details": {"cached_tokens": 80, "cache_write_tokens": 25},
+        "prompt_tokens_details": {
+            "cached_tokens": 80,
+            "cache_write_tokens": 25,
+            "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 15,
+                "ephemeral_1h_input_tokens": 10,
+            },
+        },
     }
 
     _send_completion(scenario, FakeGateway(completion("Hel", "lo", usage=usage)))
@@ -184,7 +191,8 @@ def test_a_round_line_carries_the_first_output_and_the_tokens_of_its_usage(scena
         line["output_tokens"],
         line["cached_input_tokens"],
         line["cache_write_tokens"],
-    ) == (120, 9, 80, 25)
+        line["cache_write_1h_tokens"],
+    ) == (120, 9, 80, 25, 10)
     assert 0 <= float(str(line["first_output_ms"])) <= float(str(line["duration_ms"]))
 
 

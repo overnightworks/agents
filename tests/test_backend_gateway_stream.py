@@ -32,6 +32,7 @@ from tests.support.gateway_turn_support import (
     a_request,
     an_event_stream,
     ending,
+    without_rounds,
 )
 from tests.support.virtual_time import VirtualTimeLoop, in_virtual_time
 
@@ -91,7 +92,7 @@ def test_each_text_piece_comes_as_its_own_event_in_order_then_the_joined_answer(
     events, stopped = scenario.outcome(GatewayBackend(scenario.config(), transport=gateway))
 
     assert stopped is None
-    assert events == [
+    assert without_rounds(events) == [
         AssistantTextEvent(text="Hel"),
         AssistantTextEvent(text="lo ä"),
         AssistantTextEvent(text="!"),
@@ -249,7 +250,7 @@ def test_a_tool_rounds_pieces_come_before_its_calls_which_run_after_it_and_echo_
     events, stopped = drive(scenario, gateway, lookup)
 
     assert stopped is None
-    assert events == [
+    assert without_rounds(events) == [
         AssistantTextEvent(text="Looking"),
         ToolCallEvent(tool_use_id="c0", name="lookup", input={"q": "x"}),
         ToolResultEvent(tool_use_id="c0", content="noted", is_error=False),

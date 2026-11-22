@@ -25,6 +25,7 @@ from collections.abc import (
     Mapping,
 )
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from functools import partial
 from http import HTTPStatus
@@ -74,6 +75,7 @@ from agents.turn import (
     MAX_RUN_FILES_BYTES,
     FailureCode,
     RejectionCode,
+    RoundUsage,
     RunFile,
     TurnUsage,
     base64_length,
@@ -128,8 +130,10 @@ class GatewayBackend(AgentBackend):
         *,
         tools: Iterable[HandTool] = (),
         transport: httpx2.AsyncBaseTransport | None = None,
+        now: Callable[[], datetime] | None = None,
     ) -> None:
         self._config = config
+        self._now = _utc_now if now is None else now
         self._transport = transport
         self._pooled: httpx2.AsyncClient | None = None
         self._closed = False
@@ -204,18 +208,19 @@ class GatewayBackend(AgentBackend):
         offered = frozenset(tools)
         messages = opening_messages(request)
         user = person_fingerprint(person.principal)
-        usages: list[TurnUsage | None] = []
+        rounds: list[RoundUsage] = []
         while True:
             _refuse_after(deadline)
             body = bounded(request_body(request, messages, user), _limit_exceeded)
             opened = partial(self._post, _COMPLETIONS_PATH, body, key)
+            started_at = self._now()
             async with contextlib.aclosing(_streamed_round(opened, offered, deadline)) as parts:
                 while isinstance(part := await anext(parts), str):
                     yield AssistantTextEvent(text=part)
                 reply = part
-            usages.append(reply.usage)
+            rounds.append(RoundUsage(started_at=started_at, usage=reply.usage))
             if reply.message is None:
-                yield FinalEvent(text=reply.text, usage=_summed(usages))
+                yield FinalEvent(text=reply.text, usage=_summed(rounds), rounds=tuple(rounds))
                 return
             served = reply.calls[:1] if request.one_call_per_reply else reply.calls
             progress.admit(reply.calls, served)
@@ -415,14 +420,18 @@ def _not_run(call: RequestedCall) -> ToolResultEvent:
     return ToolResultEvent(tool_use_id=call.id, content=_NOT_RUN_CONTENT, is_error=True)
 
 
-def _summed(usages: list[TurnUsage | None]) -> TurnUsage | None:
+def _summed(rounds: list[RoundUsage]) -> TurnUsage | None:
     """The turn's usage: its rounds' summed, or ``None`` when any round has none."""
     total: TurnUsage | None = None
-    for usage in usages:
-        if usage is None:
+    for each in rounds:
+        if each.usage is None:
             return None
-        total = usage if total is None else total + usage
+        total = each.usage if total is None else total + each.usage
     return total
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _read_key(key_file: Path) -> str:
@@ -546,6 +555,7 @@ def _add_usage(step: StepTimer, usage: TurnUsage | None) -> None:
             output_tokens=usage.output_tokens,
             cached_input_tokens=usage.cached_input_tokens,
             cache_write_tokens=usage.cache_write_tokens,
+            cache_write_1h_tokens=usage.cache_write_1h_tokens,
         )
 
 
