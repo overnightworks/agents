@@ -207,6 +207,48 @@ def test_each_round_of_a_turn_writes_its_own_line(shop, log_lines):
     assert [line["outcome"] for line in lines] == ["ok", "ok"]
 
 
+@pytest.mark.parametrize(
+    ("calls", "expected_not_run"), [(3, 2), (1, 0)], ids=["three-calls", "one-call"]
+)
+def test_a_round_that_asked_for_calls_under_one_call_per_reply_counts_those_it_left_unserved(
+    shop, log_lines, calls, expected_not_run
+):
+    shop.add_tool("lookup")
+    asked = [tool_call(f"c{number}", "lookup", {}) for number in range(calls)]
+
+    shop.run(tool_round(*asked), completion("Done."), one_call_per_reply=True)
+
+    first, answer = log_lines.of(MODEL_REQUEST)
+    assert first["calls_not_run"] == expected_not_run
+    assert "calls_not_run" not in answer
+
+
+def test_a_round_without_one_call_per_reply_writes_no_calls_not_run(shop, log_lines):
+    shop.add_tool("lookup")
+
+    shop.run(
+        tool_round(tool_call("c1", "lookup", {}), tool_call("c2", "lookup", {})),
+        completion("Done."),
+    )
+
+    assert all("calls_not_run" not in line for line in log_lines.of(MODEL_REQUEST))
+
+
+def test_a_reply_that_names_one_call_id_twice_is_a_failed_line_without_calls_not_run(
+    shop, log_lines
+):
+    shop.add_tool("lookup")
+
+    shop.run(
+        tool_round(tool_call("c1", "lookup", {}), tool_call("c1", "lookup", {})),
+        one_call_per_reply=True,
+    )
+
+    line = log_lines.one(MODEL_REQUEST)
+    assert (line["outcome"], line["reason"]) == ("failed", "malformed_reply")
+    assert "calls_not_run" not in line
+
+
 def test_an_error_event_is_a_gateway_failed_line_that_carries_none_of_the_event(
     scenario, log_lines
 ):

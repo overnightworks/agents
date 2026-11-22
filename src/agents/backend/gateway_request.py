@@ -71,7 +71,6 @@ class _Body(TypedDict):
     stream: bool
     stream_options: _StreamOptions
     tools: NotRequired[list[_FunctionTool]]
-    parallel_tool_calls: NotRequired[bool]
 
 
 def opening_messages(request: TurnRequest) -> list[Message]:
@@ -115,8 +114,6 @@ def request_body(request: TurnRequest, messages: list[Message], user: str) -> st
             }
             for tool in request.tools
         ]
-        if request.one_call_per_reply:
-            body["parallel_tool_calls"] = False
     return json.dumps(body)
 
 
