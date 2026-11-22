@@ -18,6 +18,7 @@ from tests.support.gateway_turn_support import (
     a_person,
     a_request,
     a_tool_request,
+    without_rounds,
 )
 from tests.support.keep_alive_gateway import serving_keep_alive
 
@@ -58,7 +59,7 @@ def test_a_connection_the_gateway_closed_while_idle_still_serves_the_next_turn(s
                 await _turn(backend, a_request(), scenario.person()[0])
                 await gateway.close_idle()
                 events, stopped = await _turn(backend, a_request(), scenario.person()[0])
-            return events[-1], stopped, gateway.accepted
+            return without_rounds(events)[-1], stopped, gateway.accepted
 
     assert asyncio.run(drive()) == (FinalEvent(text="hi"), None, 2)
 
@@ -87,7 +88,7 @@ def test_a_tail_after_done_that_runs_past_its_bound_does_not_hold_the_answer(
             async with GatewayBackend(scenario.config(origin=gateway.origin)) as backend:
                 started = time.monotonic()
                 events, stopped = await _turn(backend, a_request(), scenario.person()[0])
-                return events[-1], stopped, time.monotonic() - started
+                return without_rounds(events)[-1], stopped, time.monotonic() - started
 
     final, stopped, seconds = asyncio.run(drive())
 

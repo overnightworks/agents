@@ -34,6 +34,7 @@ from agents.turn import (
     TurnRole,
     TurnUsage,
 )
+from agents.turn_events import FinalEvent
 from tests.support.virtual_time import VirtualTimeLoop
 
 API_GROUP = "/apps/example"
@@ -153,15 +154,37 @@ def a_turn_usage(
     *,
     cached_input_tokens: int = 0,
     cache_write_tokens: int = 0,
+    cache_write_1h_tokens: int = 0,
     requests: int = 1,
 ) -> TurnUsage:
     return TurnUsage(
         input_tokens=input_tokens,
         cached_input_tokens=cached_input_tokens,
         cache_write_tokens=cache_write_tokens,
+        cache_write_1h_tokens=cache_write_1h_tokens,
         output_tokens=output_tokens,
         requests=requests,
     )
+
+
+def a_clock(start: datetime | None = None, *, step: timedelta = timedelta(seconds=7)):
+    """A backend clock that moves ``step`` on each read, first reading ``start``."""
+    moment = datetime(2026, 11, 22, 9, 0, tzinfo=UTC) if start is None else start
+
+    def now() -> datetime:
+        nonlocal moment
+        moment += step
+        return moment - step
+
+    return now
+
+
+def without_rounds(events: list) -> list:
+    """The events with the rounds of a final event left out, for tests of what is not about them."""
+    return [
+        event.model_copy(update={"rounds": ()}) if isinstance(event, FinalEvent) else event
+        for event in events
+    ]
 
 
 def ending(stopped: TurnStopped | None):
@@ -379,11 +402,15 @@ class Shop:
         selected: tuple[str, ...] | None = None,
         late_after: type | None = None,
         one_call_per_reply: bool = False,
+        now: Callable[[], datetime] | None = None,
+        clock_of: Callable[[FakeGateway], Callable[[], datetime]] | None = None,
     ) -> tuple[list, TurnStopped | None, FakeGateway]:
         gateway = FakeGateway(*replies)
+        if clock_of is not None:
+            now = clock_of(gateway)
         chosen = [t for t in self.tools if selected is None or t.declaration.name in selected]
         request = a_tool_request(chosen, max_tool_calls, one_call_per_reply=one_call_per_reply)
-        backend = GatewayBackend(self.config(), tools=self.tools, transport=gateway)
+        backend = GatewayBackend(self.config(), tools=self.tools, transport=gateway, now=now)
         with asyncio.Runner(loop_factory=VirtualTimeLoop) as runner:
             events, stopped = runner.run(shop_turn(backend, request, late_after))
         return events, stopped, gateway

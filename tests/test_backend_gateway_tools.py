@@ -44,6 +44,7 @@ from tests.support.gateway_turn_support import (
     ending,
     sent,
     shop_turn,
+    without_rounds,
 )
 from tests.support.log_lines import log_lines
 from tests.support.tool_images import a_tool_image
@@ -81,7 +82,7 @@ def test_one_round_runs_the_call_then_the_answer_follows(shop):
     )
 
     assert stopped is None
-    assert events == [
+    assert without_rounds(events) == [
         ToolCallEvent(tool_use_id="c1", name="lookup", input={"topic": "x"}),
         ToolResultEvent(tool_use_id="c1", content="noted", is_error=False),
         AssistantTextEvent(text="Done."),
@@ -197,7 +198,7 @@ def test_an_error_outcome_reaches_the_model_and_the_turn_goes_on(shop):
     assert stopped is None
     assert events[1] == ToolResultEvent(tool_use_id="c1", content="no such note", is_error=True)
     assert "no such note" in sent(gateway, 1)["messages"][-1]["content"]
-    assert events[-1] == FinalEvent(text="Sorry.")
+    assert without_rounds(events)[-1] == FinalEvent(text="Sorry.")
 
 
 def test_the_model_reads_an_error_outcome_differently_from_a_success_of_the_same_text(shop):

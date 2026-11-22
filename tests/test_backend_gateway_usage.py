@@ -3,17 +3,28 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
+from pydantic import ValidationError
 
 from agents.backend import TurnStopKind
 from agents.backend.fake_gateway import Reply, completion, tool_call, tool_round
-from agents.turn import FailureCode
+from agents.turn import FailureCode, RoundUsage
 from agents.turn_events import AssistantTextEvent, FinalEvent, ToolCallEvent, ToolResultEvent
 from tests.support import gateway_turn_support
-from tests.support.gateway_turn_support import a_chunk, a_turn_usage, an_event_stream, ending
+from tests.support.gateway_turn_support import (
+    a_chunk,
+    a_clock,
+    a_turn_usage,
+    an_event_stream,
+    ending,
+    without_rounds,
+)
 
 shop = gateway_turn_support.shop
+START = datetime(2026, 11, 22, 9, 0, tzinfo=UTC)
+STEP = timedelta(seconds=7)
 
 
 def usage_sent(prompt_tokens: int, completion_tokens: int, **details: int) -> dict:
@@ -24,11 +35,16 @@ def usage_sent(prompt_tokens: int, completion_tokens: int, **details: int) -> di
     return usage
 
 
-def run(shop, *replies: Reply, max_tool_calls: int = 5):
-    """A turn of an agent with the tools ``lookup`` and ``note`` against the scripted gateway."""
+def run(shop, *replies: Reply, max_tool_calls: int = 5, now=None, clock_of=None):
+    """A turn of an agent with the tools ``lookup`` and ``note`` against the scripted gateway.
+
+    The backend's clock starts at ``START`` and moves ``STEP`` a round unless ``now`` or
+    ``clock_of``, which makes a clock of the gateway, is given.
+    """
     shop.add_tool("lookup")
     shop.add_tool("note")
-    return shop.run(*replies, max_tool_calls=max_tool_calls)
+    clock = a_clock(START, step=STEP) if now is None else now
+    return shop.run(*replies, max_tool_calls=max_tool_calls, now=clock, clock_of=clock_of)
 
 
 def test_the_final_event_carries_the_usage_the_gateway_sent(shop):
@@ -37,7 +53,7 @@ def test_the_final_event_carries_the_usage_the_gateway_sent(shop):
     events, stopped, _ = run(shop, completion("The answer.", usage=sent))
 
     assert stopped is None
-    assert events == [
+    assert without_rounds(events) == [
         AssistantTextEvent(text="The answer."),
         FinalEvent(
             text="The answer.",
@@ -62,7 +78,10 @@ def test_a_turn_whose_round_has_no_readable_usage_ends_with_no_usage_and_the_sam
     events, stopped, _ = run(shop, completion("The answer.", usage=usage))
 
     assert stopped is None
-    assert events == [AssistantTextEvent(text="The answer."), FinalEvent(text="The answer.")]
+    assert without_rounds(events) == [
+        AssistantTextEvent(text="The answer."),
+        FinalEvent(text="The answer."),
+    ]
 
 
 def an_answer_closed_by(last_chunk: dict) -> Reply:
@@ -75,7 +94,7 @@ def test_a_usage_chunk_without_choices_gives_the_turn_its_usage(shop):
     events, stopped, _ = run(shop, an_answer_closed_by({"usage": usage_sent(120, 9)}))
 
     assert stopped is None
-    assert events[-1] == FinalEvent(
+    assert without_rounds(events)[-1] == FinalEvent(
         text="ab",
         usage=a_turn_usage(120, 9),
     )
@@ -169,7 +188,7 @@ def test_a_turn_with_a_round_that_has_no_usage_ends_with_no_usage(shop, first, l
     )
 
     assert stopped is None
-    assert events[-1] == FinalEvent(text="Done.")
+    assert without_rounds(events)[-1] == FinalEvent(text="Done.")
 
 
 def test_a_turn_that_stops_after_a_paid_round_yields_what_it_yields_without_usage(shop):
@@ -182,3 +201,80 @@ def test_a_turn_that_stops_after_a_paid_round_yields_what_it_yields_without_usag
 
     assert ending(stopped) == (TurnStopKind.FAILED, FailureCode.LIMIT_EXCEEDED)
     assert [type(event) for event in events] == [ToolCallEvent, ToolResultEvent]
+
+
+def test_each_round_is_reported_with_the_start_its_request_was_opened_at_and_its_own_usage(shop):
+    first_round = usage_sent(100, 5, cached_tokens=0, cache_write_tokens=100)
+    last_round = usage_sent(10, 8, cached_tokens=0, cache_write_tokens=10)
+    last_round["prompt_tokens_details"]["cache_creation_token_details"] = {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 10,
+    }
+
+    events, stopped, _ = run(
+        shop,
+        tool_round(tool_call("c1", "lookup", {}), usage=first_round),
+        completion("Done.", usage=last_round),
+    )
+
+    final = events[-1]
+    assert stopped is None
+    assert final.rounds == (
+        RoundUsage(
+            started_at=START,
+            usage=a_turn_usage(100, 5, cache_write_tokens=100),
+        ),
+        RoundUsage(
+            started_at=START + STEP,
+            usage=a_turn_usage(10, 8, cache_write_tokens=10, cache_write_1h_tokens=10),
+        ),
+    )
+    assert final.usage == a_turn_usage(
+        110, 13, cache_write_tokens=110, cache_write_1h_tokens=10, requests=2
+    )
+    assert final.rounds[-1].usage.input_tokens == 10
+
+
+def test_each_round_starts_before_its_request_is_sent(shop):
+    def hours_by_requests_sent(gateway):
+        return lambda: START + timedelta(hours=len(gateway.requests))
+
+    events, stopped, _ = run(
+        shop,
+        tool_round(tool_call("c1", "lookup", {})),
+        completion("Done."),
+        clock_of=hours_by_requests_sent,
+    )
+
+    assert stopped is None
+    assert [each.started_at for each in events[-1].rounds] == [
+        START,
+        START + timedelta(hours=1),
+    ]
+
+
+def test_a_round_without_usage_is_reported_as_such_and_leaves_the_turns_usage_unset(shop):
+    events, stopped, _ = run(
+        shop,
+        tool_round(tool_call("c1", "lookup", {}), usage=usage_sent(100, 5)),
+        completion("Done."),
+    )
+
+    final = events[-1]
+    assert stopped is None
+    assert final.usage is None
+    assert [each.usage for each in final.rounds] == [a_turn_usage(100, 5), None]
+
+
+def test_a_clock_that_reads_a_naive_time_fails_the_turn_with_no_naive_start(shop):
+    with pytest.raises(ValidationError):
+        run(shop, completion("Hi"), now=lambda: datetime(2026, 11, 22, 9))
+
+
+def test_a_clock_in_another_zone_gives_the_start_in_utc(shop):
+    zone = timezone(timedelta(hours=2))
+
+    events, _, _ = run(shop, completion("Hi"), now=lambda: START.astimezone(zone))
+
+    assert events[-1].rounds[0].started_at.utcoffset() == timedelta(0)
+    assert events[-1].rounds[0].started_at == START

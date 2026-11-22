@@ -381,6 +381,95 @@ def test_a_usage_chunk_with_no_choice_gives_the_rounds_usage(usage, counted):
     assert read(_answer_with(_usage_chunk(usage))).usage == counted
 
 
+def _with_split(total: int | None, split: dict | None) -> dict:
+    details: dict = {} if split is None else {"cache_creation_token_details": split}
+    if total is not None:
+        details["cache_write_tokens"] = total
+    return {"prompt_tokens": 400, "completion_tokens": 7, "prompt_tokens_details": details}
+
+
+@pytest.mark.parametrize(
+    ("total", "split", "one_hour", "five_minutes"),
+    [
+        (25, None, 0, 25),
+        (25, {"ephemeral_5m_input_tokens": 25, "ephemeral_1h_input_tokens": 0}, 0, 25),
+        (248, {"ephemeral_5m_input_tokens": 148, "ephemeral_1h_input_tokens": 100}, 100, 148),
+        (25, {"ephemeral_5m_input_tokens": None, "ephemeral_1h_input_tokens": None}, 0, 25),
+        (30, {"ephemeral_5m_input_tokens": 10, "ephemeral_1h_input_tokens": 10}, 10, 20),
+        (30, {"ephemeral_1h_input_tokens": 10}, 10, 20),
+        (20, {"ephemeral_5m_input_tokens": 15, "ephemeral_1h_input_tokens": 10}, 10, 10),
+        (20, {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 20}, 20, 0),
+    ],
+    ids=[
+        "no-split-is-five-minutes",
+        "split-all-five-minutes",
+        "split-adds-up-to-the-total",
+        "null-lifetimes-are-not-sent",
+        "split-short-of-the-total-counts-the-rest-as-five-minutes",
+        "five-minute-part-absent",
+        "split-above-the-total-keeps-the-total",
+        "every-write-one-hour",
+    ],
+)
+def test_the_split_of_the_cache_writes_is_read_beside_their_total(
+    total, split, one_hour, five_minutes
+):
+    usage = read(_answer_with(_usage_chunk(_with_split(total, split)))).usage
+
+    assert usage is not None
+    assert (usage.cache_write_tokens, usage.cache_write_1h_tokens, usage.cache_write_5m_tokens) == (
+        total,
+        one_hour,
+        five_minutes,
+    )
+
+
+@pytest.mark.parametrize(
+    ("total", "split"),
+    [
+        (None, {"ephemeral_1h_input_tokens": 10}),
+        (5, {"ephemeral_1h_input_tokens": 6}),
+        (30, {"ephemeral_1h_input_tokens": -1}),
+        (30, {"ephemeral_1h_input_tokens": 1.5}),
+        (30, {"ephemeral_1h_input_tokens": True}),
+        (30, "all"),
+    ],
+    ids=[
+        "split-with-no-total",
+        "one-hour-part-above-the-total",
+        "negative-one-hour-part",
+        "fractional-one-hour-part",
+        "boolean-one-hour-part",
+        "split-not-an-object",
+    ],
+)
+def test_a_split_the_record_cannot_hold_gives_a_round_with_no_usage(total, split):
+    streamed = read(_answer_with(_usage_chunk(_with_split(total, split))))
+
+    assert streamed == ANSWER_AB
+    assert streamed.usage is None
+
+
+def test_a_turns_usage_built_without_the_one_hour_part_has_every_write_at_five_minutes():
+    usage = a_turn_usage(100, 7, cache_write_tokens=25)
+
+    assert (usage.cache_write_1h_tokens, usage.cache_write_5m_tokens) == (0, 25)
+
+
+def test_a_turns_usage_refuses_a_one_hour_part_above_its_total_of_writes():
+    with pytest.raises(ValidationError):
+        a_turn_usage(100, 7, cache_write_tokens=5, cache_write_1h_tokens=6)
+
+
+def test_two_usages_add_up_in_their_total_and_in_their_one_hour_part():
+    first = a_turn_usage(100, 5, cache_write_tokens=30, cache_write_1h_tokens=10)
+    second = a_turn_usage(40, 3, cache_write_tokens=5, cache_write_1h_tokens=5)
+
+    assert first + second == a_turn_usage(
+        140, 8, cache_write_tokens=35, cache_write_1h_tokens=15, requests=2
+    )
+
+
 def test_usage_on_a_chunk_that_carries_a_choice_gives_the_rounds_usage():
     usage = {"prompt_tokens": 9, "completion_tokens": 2}
     finish = a_chunk(finish_reason="stop") | {"usage": usage}

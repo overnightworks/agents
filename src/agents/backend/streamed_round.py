@@ -262,12 +262,27 @@ def _usage_of(usage: JsonValue) -> TurnUsage | None:
                 "cache_write_tokens": _first_sent(
                     details.get("cache_write_tokens"), usage.get("cache_creation_input_tokens")
                 ),
+                "cache_write_1h_tokens": _one_hour_writes_of(details),
                 "output_tokens": usage.get("completion_tokens"),
                 "requests": 1,
             }
         )
     except ValidationError:
         return None
+
+
+def _one_hour_writes_of(details: JsonObject) -> JsonValue:
+    """The writes of the one-hour lifetime the split sent; none sent counts as the default.
+
+    A split that is not an object gives ``None``, which no count accepts, as a missing count does.
+
+    The split's five-minute part is not read: the total decides what is left of it, which
+    is also how LiteLLM folds writes without a lifetime into five minutes.
+    """
+    split = details.get("cache_creation_token_details")
+    if split is None:
+        return 0
+    return _first_sent(split.get("ephemeral_1h_input_tokens")) if isinstance(split, dict) else None
 
 
 def _first_sent(*counts: JsonValue) -> JsonValue:

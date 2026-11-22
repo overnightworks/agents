@@ -92,22 +92,36 @@ them. An app that shows only judged text reads `FinalEvent`. Proved by
 `test_a_tool_rounds_pieces_come_before_its_calls_which_run_after_it_and_echo_whole` and
 `test_a_round_that_streams_text_then_fails_leaves_the_text_shown_and_runs_nothing`.
 
-`FinalEvent.usage` is a `TurnUsage` (`agents.turn`): four non-negative token counts and
+`FinalEvent.usage` is a `TurnUsage` (`agents.turn`): its non-negative token counts and
 `requests`, all summed over every round of the turn. `requests` is a required positive count of the
 model requests the turn made: each round counts 1, so a turn with no tool round counts 1 and one
 with two tool rounds counts 3. `input_tokens` is everything the model read, cached tokens included;
 `cached_input_tokens` is the part read from the provider's cache, `cache_write_tokens` the part
-written to it, `output_tokens` what the model wrote. A round's usage is the gateway's last usage
+written to it, `output_tokens` what the model wrote. `cache_write_1h_tokens` is the part of the
+writes with the one-hour lifetime (default 0, never above `cache_write_tokens`; a `TurnUsage` built
+with more is refused) and `cache_write_5m_tokens` the rest, which has the provider's default
+lifetime of five minutes. A round's usage is the gateway's last usage
 chunk: `prompt_tokens`, `prompt_tokens_details.cached_tokens` (absent: 0),
 `prompt_tokens_details.cache_write_tokens` else `cache_creation_input_tokens` else 0, and
-`completion_tokens`. The usage is read from a chunk with `choices: []`, with `choices` absent or
+`completion_tokens`. The one-hour part is
+`prompt_tokens_details.cache_creation_token_details.ephemeral_1h_input_tokens`; no split, or a null
+lifetime, counts as none sent, and the total decides the rest: a split short of the total counts
+the rest as five minutes, and a split above it keeps the total and the one-hour part as sent. A
+one-hour part above the total (a split with no total included), negative or not an integer leaves
+the round with no usage, as any other unreadable count does. The usage is read from a chunk with `choices: []`, with `choices` absent or
 null, or alongside a choice; a chunk with neither `choices` nor a non-null `usage` fails the round as
 a malformed reply. A chunk whose `usage` is null carries no usage: the round's usage is the last
 non-null one, and a round with none has no usage. `usage` is `None`, never a partial sum, when
 any round sent none or one with a missing, negative or non-integer count, and for a picture turn;
 reading usage changes nothing else the turn yields. The library passes the gateway's counts through
-unchecked: it does not verify that `cached_input_tokens` is no larger than `input_tokens`. A turn
-that ends with `TurnStopped` reports none, though its rounds were paid. Proved by
+unchecked: it does not verify that `cached_input_tokens` is no larger than `input_tokens`.
+
+`FinalEvent.rounds` holds one `RoundUsage` (`agents.turn`) per round of a text turn, in order:
+`started_at`, the backend's `now` read as an aware time just before the round's request opened,
+held in UTC, and the round's own `usage` (`None` as above). `usage` is their sum, so a host reads the
+last round's `input_tokens` and start from `rounds[-1]`. A naive time from `now` fails the turn
+with a validation error, and a picture turn has no rounds. A turn that ends with `TurnStopped`
+reports none, though its rounds were paid. Proved by
 `tests/test_backend_streamed_round.py`:
 `test_a_usage_chunk_with_no_choice_gives_the_rounds_usage`,
 `test_usage_on_a_chunk_that_carries_a_choice_gives_the_rounds_usage`,
@@ -115,14 +129,23 @@ that ends with `TurnStopped` reports none, though its rounds were paid. Proved b
 `test_a_later_chunk_with_null_usage_keeps_the_usage_already_read`,
 `test_an_event_that_is_no_chunk_is_malformed_with_no_context` and
 `test_unreadable_usage_gives_a_round_with_no_usage_and_the_same_message` and
-`test_a_turns_usage_refuses_a_missing_or_non_positive_request_count`; and by
+`test_a_turns_usage_refuses_a_missing_or_non_positive_request_count`,
+`test_the_split_of_the_cache_writes_is_read_beside_their_total`,
+`test_a_split_the_record_cannot_hold_gives_a_round_with_no_usage`,
+`test_a_turns_usage_built_without_the_one_hour_part_has_every_write_at_five_minutes`,
+`test_a_turns_usage_refuses_a_one_hour_part_above_its_total_of_writes` and
+`test_two_usages_add_up_in_their_total_and_in_their_one_hour_part`; and by
 `tests/test_backend_gateway_usage.py`: `test_the_final_event_carries_the_usage_the_gateway_sent`,
 `test_a_usage_chunk_without_choices_gives_the_turn_its_usage`,
 `test_the_final_events_usage_sums_the_usage_of_every_round`,
 `test_the_final_events_usage_counts_one_request_per_round`,
 `test_a_turn_whose_round_has_no_readable_usage_ends_with_no_usage_and_the_same_text`,
 `test_a_turn_with_a_round_that_has_no_usage_ends_with_no_usage` and
-`test_a_turn_that_stops_after_a_paid_round_yields_what_it_yields_without_usage`.
+`test_a_turn_that_stops_after_a_paid_round_yields_what_it_yields_without_usage`,
+`test_each_round_is_reported_with_the_start_its_request_was_opened_at_and_its_own_usage`,
+`test_a_round_without_usage_is_reported_as_such_and_leaves_the_turns_usage_unset`,
+`test_a_clock_that_reads_a_naive_time_fails_the_turn_with_no_naive_start` and
+`test_a_clock_in_another_zone_gives_the_start_in_utc`.
 
 The app's configuration embeds `agents.config.AgentConfig` as the `agent` section:
 `gateway` and `api_group`, none with a default; any other key, a `backend` one included, is refused.
@@ -206,8 +229,9 @@ imports neither `mcp_wire` nor anything of the MCP extra (`.importlinter` proves
 
 ## The gateway backend
 
-`GatewayBackend(config, *, tools=(), transport=None)` runs a text turn, with the app's
-`HandTool`s when the agent selects any, or a picture agent's turn. A tool name given twice
+`GatewayBackend(config, *, tools=(), transport=None, now=None)` runs a text turn, with the app's
+`HandTool`s when the agent selects any, or a picture agent's turn. `now` is the clock that dates
+each round's start: it returns an aware time, and the default is the system's UTC time. A tool name given twice
 raises `ValueError` at construction; a selected tool with no handler, or whose request
 declaration differs from its `HandTool`'s, raises `ValueError` at `run`, before any request.
 Proved by `tests/test_backend_gateway_tools.py`: `test_two_tools_with_one_name_are_refused_at_construction`,
@@ -475,10 +499,10 @@ turn and `picture_request.ended`. A line carries `duration_ms`,
 `outcome` and the response's `status` once one came; `connect_ms`, the time to open a new
 connection (TCP connect, and the TLS handshake where there is one), only on a request that opened
 one, whether or not a response came, never on a reused connection or a failed connect; a round's line also carries `first_output_ms`
-at its first text piece and `input_tokens`, `output_tokens`, `cached_input_tokens` and
-`cache_write_tokens` when the gateway sent a usage; a round that asked for calls under
-`one_call_per_reply` also carries `calls_not_run`, the number of its calls left unserved (0 or
-more). The `reason` is the stop's detail, or its code
+at its first text piece and `input_tokens`, `output_tokens`, `cached_input_tokens`,
+`cache_write_tokens` and `cache_write_1h_tokens` when the gateway sent a usage; a round that asked
+for calls under `one_call_per_reply` also carries `calls_not_run`, the number of its calls left
+unserved (0 or more). The `reason` is the stop's detail, or its code
 when it has none; a failed line is a WARNING, because the turn reports the stop itself
 (`tests/test_backend_gateway_request_lines.py`):
 

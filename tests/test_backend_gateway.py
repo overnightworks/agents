@@ -43,6 +43,7 @@ from tests.support.gateway_turn_support import (
     ending,
     self_signed_authority,
     server_context,
+    without_rounds,
 )
 
 scenario = gateway_turn_support.scenario
@@ -91,7 +92,10 @@ def test_a_text_turn_ends_with_the_answer(scenario):
     events, stopped = scenario.outcome(GatewayBackend(scenario.config(), transport=gateway))
 
     assert stopped is None
-    assert events == [AssistantTextEvent(text="The answer."), FinalEvent(text="The answer.")]
+    assert without_rounds(events) == [
+        AssistantTextEvent(text="The answer."),
+        FinalEvent(text="The answer."),
+    ]
 
 
 def test_the_request_is_one_post_with_the_system_prompt_and_the_messages(scenario):
@@ -422,7 +426,7 @@ def test_a_reply_of_the_event_bound_is_answered(scenario, unit):
     )
 
     assert stopped is None
-    assert events[-1] == FinalEvent(text="a" * MAX_EVENT_BYTES)
+    assert without_rounds(events)[-1] == FinalEvent(text="a" * MAX_EVENT_BYTES)
 
 
 def test_a_line_that_never_ends_is_cut_at_the_bound_as_provider_error(scenario):
@@ -563,7 +567,7 @@ def test_the_proxy_environment_is_ignored(scenario, monkeypatch):
     events, stopped = _loopback_turn(scenario)
 
     assert stopped is None
-    assert events[-1] == FinalEvent(text="hi")
+    assert without_rounds(events)[-1] == FinalEvent(text="hi")
 
 
 def test_a_turn_advanced_from_a_new_task_per_event_reads_its_stream_over_a_socket(scenario):
@@ -604,7 +608,7 @@ def test_a_turn_advanced_from_a_new_task_per_event_reads_its_stream_over_a_socke
                 first_shown.set()
         return events
 
-    assert asyncio.run(drive()) == [
+    assert without_rounds(asyncio.run(drive())) == [
         AssistantTextEvent(text="Hel"),
         AssistantTextEvent(text="lo"),
         FinalEvent(text="Hello"),
@@ -619,7 +623,7 @@ def test_https_is_trusted_through_the_configured_ca_file_alone(scenario):
     trusted, trusted_stop = _loopback_turn(scenario, server_context=context, ca_file=served[0])
     distrusted, distrusted_stop = _loopback_turn(scenario, server_context=context, ca_file=other[0])
 
-    assert (trusted_stop, trusted[-1]) == (None, FinalEvent(text="hi"))
+    assert (trusted_stop, without_rounds(trusted)[-1]) == (None, FinalEvent(text="hi"))
     assert (distrusted, ending(distrusted_stop)) == ([], UNAVAILABLE)
 
 
@@ -641,7 +645,7 @@ def test_debug_logging_writes_the_key_into_no_record(scenario, caplog):
     events, stopped = _loopback_turn(scenario)
 
     assert stopped is None
-    assert events[-1] == FinalEvent(text="hi")
+    assert without_rounds(events)[-1] == FinalEvent(text="hi")
     assert any(record.name.startswith("httpcore2") for record in caplog.records)
     assert scenario.key not in caplog.text
     assert scenario.key not in "".join(str(record.__dict__) for record in caplog.records)
