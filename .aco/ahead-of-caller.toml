@@ -27,3 +27,13 @@ reason = "MemberLeases; hopin#828 F5 and skat#592 S6 build their lease supervisi
 path = "src/agents/member.py"
 item = "overnightworks/skat#581"
 reason = "The set_turn_state tool and its records; Skat shows each agent's stated turn state."
+
+[[code]]
+path = "src/agents/calling.py"
+item = "overnightworks/skat#832"
+reason = "The calling core; skat#832 moves skat's calling and send-away decisions onto it and deletes its copy."
+
+[[code]]
+path = "src/agents/calling.py"
+item = "overnightworks/hopin#1115"
+reason = "The calling core; hopin#1115 moves hopin's calling and send-away decisions onto it and deletes its copy."

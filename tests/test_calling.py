@@ -450,7 +450,7 @@ def test_a_send_away_raises_the_epoch_and_drops_the_invitation_calling_10(
 @pytest.mark.parametrize("held", [StandingState.ACTIVE, StandingState.PAUSED])
 @pytest.mark.parametrize("book", [None, entry(invitation=open_invitation())])
 def test_a_held_place_stands_as_its_state_with_no_invitation_calling_27(
-    held: StandingState, book: BookEntry | None
+    held: Literal[StandingState.ACTIVE, StandingState.PAUSED], book: BookEntry | None
 ) -> None:
     assert standing_call(held, book) == Standing(place=place(), state=held)
 
@@ -478,7 +478,7 @@ def test_a_place_neither_held_nor_invited_has_no_standing_calling_27(
 
 @pytest.mark.parametrize("held", [None, StandingState.ACTIVE])
 def test_a_standing_carries_serves_view_and_parent_calling_27(
-    held: StandingState | None,
+    held: Literal[StandingState.ACTIVE, StandingState.PAUSED] | None,
 ) -> None:
     parent = ParentPlace(app="https://parent.example/mcp", place=PlaceRef(kind="hall", id="h-1"))
 
