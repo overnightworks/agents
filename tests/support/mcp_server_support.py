@@ -24,6 +24,7 @@ from agents.mcp_server import McpPersonFront, PersonRequest, PersonTool
 from agents.mcp_wire import MCP_ENDPOINT_PATH, PROTOCOL_VERSION
 from agents.member import (
     Invitation,
+    MemberFacts,
     MemberStanding,
     PlaceRef,
     PlaceView,
@@ -82,6 +83,10 @@ def now() -> float:
 
 def a_member(sub: str = "alice", iss: str = ISSUER) -> Principal:
     return Principal(iss=iss, sub=sub)
+
+
+def a_member_facts(owner: str = "owner", name: str = "Alice") -> MemberFacts:
+    return MemberFacts(owner=owner, name=name)
 
 
 def resolve_member(scope: dict[str, Any]) -> Principal:

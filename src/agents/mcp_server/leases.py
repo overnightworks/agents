@@ -1,16 +1,17 @@
 """A member's lease, kept in the place store so that it survives the pod that renewed it.
 
-``MemberLeases`` is what a host calls: ``renew`` on every admitted call of a member, ``state`` and
-``live`` to read, and ``running()`` once in the host's lifespan to hand each lapse to the host's
-``lease_ended``. The lease and its lapse queue live in the ``LeaseRecord`` the host passes in; with
-more than one pod that is ``agents.mcp_server.redis_place_store.RedisPlaceStore``.
+``MemberLeases`` is what a host calls: ``renew`` on every admitted call of a member, with the
+facts its verified token states, ``state``, ``live`` and ``facts`` to read, and ``running()`` once
+in the host's lifespan to hand each lapse to the host's ``lease_ended``. The lease and its lapse
+queue live in the ``LeaseRecord`` the host passes in; with more than one pod that is
+``agents.mcp_server.redis_place_store.RedisPlaceStore``.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Mapping
 from contextlib import asynccontextmanager
 from typing import Final
 
@@ -23,6 +24,7 @@ from agents.mcp_server.place_store import (
     PlaceStoreError,
     failure_type,
 )
+from agents.member import MemberFacts
 from agents.turn import Principal
 
 _LOG: Final = logging.getLogger(LOGGER_NAME)
@@ -50,14 +52,17 @@ class MemberLeases:
         self._lease_ended = lease_ended
         self._failed_run_count = 0
 
-    async def renew(self, principal: Principal) -> LeaseRenewal:
-        """Keeps the principal's lease for another ``LEASE_SECONDS``. Async, so a host calls it
-        from an async site, never from the synchronous ``resolve_person``.
+    async def renew(self, principal: Principal, facts: MemberFacts) -> LeaseRenewal:
+        """Keeps the principal's lease and ``facts`` for another ``LEASE_SECONDS``. Async, so a
+        host calls it from an async site, never from the synchronous ``resolve_person``.
 
         ``started`` is true when a new lease began; a host treats a generation other than the one
-        it stored as a start, because the store may replay a renewal as ``started=False``.
+        it stored as a start, because the store may replay a renewal as ``started=False``. An
+        owner change replaces the facts and keeps the lease. Two pods renewing one member at once
+        may store their facts out of order, as the last write wins; the next renewal corrects it.
+        A renewal that raises may have kept the lease without its facts.
         """
-        renewal = await self._store.renew(principal)
+        renewal = await self._store.renew(principal, facts)
         if renewal.started:
             _LOG.info("member_lease.opened", extra={"sub": principal.sub})
         return renewal
@@ -70,6 +75,18 @@ class MemberLeases:
         reconcile.
         """
         return await self._store.state(principal)
+
+    async def facts(self, principals: Collection[Principal]) -> Mapping[Principal, MemberFacts]:
+        """The facts of each principal that has some, in one read whatever the count. A principal
+        is left out when it never renewed, its lease lapsed, the store lost its data, or its
+        latest renewal raised after the lease step. An empty batch answers ``{}`` with no store
+        call.
+
+        A stored value that cannot be read raises ``PlaceStoreError`` with a text that carries
+        none of it, and fails every batch read that includes its principal until that agent
+        renews. A host never logs the facts.
+        """
+        return await self._store.facts(principals)
 
     async def live(self) -> LeaseRoster:
         """The principals whose lease runs; while the roster is not ``settled`` a principal that

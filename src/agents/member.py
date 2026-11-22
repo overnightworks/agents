@@ -7,7 +7,8 @@ stopping and continuing in a place and of setting the framing, what accepting, d
 setting the framing answer when they refuse, what speaking and stopping answer (a sentence voiced,
 or written as a line when the voice failed), and what the window says when people talk over the
 member (``TalkedOver``), when the member is held by it (``Interrupted``) and whether the member's
-voice at the place has failed (``VoiceState``). A runner reads a standing, window or view with
+voice at the place has failed (``VoiceState``). ``MemberFacts`` states who a member is, owner and
+name, as a lease keeps them. A runner reads a standing, window or view with
 ``member_resource_from_json``, which ignores a key its release does not know. The
 URIs name the resources that serve them; a URI is no credential, so a guessed one yields nothing.
 This module is base, so a runner parses all of it without the ``mcp-server`` extra.
@@ -96,6 +97,7 @@ __all__ = [
     "Look",
     "LookName",
     "Looks",
+    "MemberFacts",
     "MemberResourceRecord",
     "MemberStanding",
     "OptionalTraceparent",
@@ -144,6 +146,17 @@ __all__ = [
 
 LEASE_SECONDS: Final = 120
 """How long a member's lease lasts; each admitted call renews it."""
+
+
+class MemberFacts(StrictModel):
+    """Who a member is, as its verified token states it at its latest admitted call: its owner's
+    subject and its own name. A lease keeps them for ``LEASE_SECONDS`` from the renewal that
+    carried them."""
+
+    owner: NonEmptyUnicodeText
+    name: UnicodeText
+
+
 INVITATION_SECONDS: Final = 120
 """How long an invitation stands before it expires; the app opens it with this length."""
 LISTEN_BOUND_SECONDS: Final = 50

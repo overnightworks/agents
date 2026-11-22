@@ -5,10 +5,11 @@ serves the standing of one member; ``POST /write`` counts a write in Redis and a
 through ``ResourceChanges``, the way a host's own handler does. ``GET /listeners`` answers who
 listens to the standing and ``GET /listening-changes`` every call of ``listening_changed`` the pod
 received, in order, and ``GET /listening-traces`` the trace id each of those calls ran in; the pod
-runs each request in its trace as a host does, with logline's ``request_trace``. ``POST /renew``
-renews the written member's lease and answers its renewal, ``GET /lease`` its standing,
-``GET /leases`` the members whose lease runs and ``GET /lapses`` every call of ``lease_ended`` the
-pod received, in order.
+runs each request in its trace as a host does, with logline's ``request_trace``.
+``POST /renew`` renews the written member's lease with the written facts and answers its renewal,
+``GET /lease`` its standing, ``GET /facts`` the facts the lease keeps for it, ``GET /leases`` the
+members whose lease runs and ``GET /lapses`` every call of ``lease_ended`` the pod received, in
+order.
 """
 
 from __future__ import annotations
@@ -35,7 +36,13 @@ from agents.mcp_server.redis_place_store import RedisPlaceStore
 from agents.mcp_wire import MCP_ENDPOINT_PATH
 from agents.member import STANDING_URI
 from agents.turn import Principal
-from tests.support.mcp_server_support import MemberApp, a_member, readable_uris, resolve_member
+from tests.support.mcp_server_support import (
+    MemberApp,
+    a_member,
+    a_member_facts,
+    readable_uris,
+    resolve_member,
+)
 
 WRITE_PATH = "/write"
 LISTENERS_PATH = "/listeners"
@@ -43,10 +50,12 @@ LISTENING_CHANGES_PATH = "/listening-changes"
 LISTENING_TRACES_PATH = "/listening-traces"
 RENEW_PATH = "/renew"
 LEASE_PATH = "/lease"
+FACTS_PATH = "/facts"
 LEASES_PATH = "/leases"
 LAPSES_PATH = "/lapses"
 WRITES_KEY = "writes"
 WRITTEN_MEMBER = a_member("alice")
+WRITTEN_FACTS = a_member_facts()
 
 
 class _RequestTrace:
@@ -74,12 +83,16 @@ def _lease_routes(store: RedisPlaceStore) -> tuple[MemberLeases, list[Route]]:
     leases = MemberLeases(store, lease_ended=lease_ended)
 
     async def renew(_request: Request) -> JSONResponse:
-        renewal = await leases.renew(WRITTEN_MEMBER)
+        renewal = await leases.renew(WRITTEN_MEMBER, WRITTEN_FACTS)
         return JSONResponse({"started": renewal.started, "generation": renewal.generation})
 
     async def lease(_request: Request) -> JSONResponse:
         standing = await leases.state(WRITTEN_MEMBER)
         return JSONResponse({"holds": standing.holds, "generation": standing.generation})
+
+    async def facts(_request: Request) -> JSONResponse:
+        kept = await leases.facts([WRITTEN_MEMBER])
+        return JSONResponse({principal.sub: held.model_dump() for principal, held in kept.items()})
 
     async def live_leases(_request: Request) -> JSONResponse:
         roster = await leases.live()
@@ -91,6 +104,7 @@ def _lease_routes(store: RedisPlaceStore) -> tuple[MemberLeases, list[Route]]:
     routes = [
         Route(RENEW_PATH, renew, methods=["POST"]),
         Route(LEASE_PATH, lease),
+        Route(FACTS_PATH, facts),
         Route(LEASES_PATH, live_leases),
         Route(LAPSES_PATH, lapses_received),
     ]
