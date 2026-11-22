@@ -1,8 +1,0 @@
-claim_id = "eb880e98bb3a4f58abd9f9762b3db600"
-agent = "Claude 8efd9444-79aa-4140-bdee-51202585646f"
-role = "builder"
-base = "df11a8cd1c7ce51db4abc8ccfb458a6ca6a3a76f"
-branch = "claude/issue-1080-one-request-front"
-scope = ["docs/connector.md", "src/agents/backend/gateway.py", "src/agents/backend/gateway_request.py", "src/agents/voice/reply.py", "tests/test_backend_gateway_one_call.py", "tests/test_backend_gateway_request_lines.py"]
-opened_commit = "9c09a1588e0f1a776ca8f6f65c59998a24ac7ef0"
-whole_reason = "The reply rules' placement, the body flag and the rule that pins the body are one request front."
