@@ -810,6 +810,36 @@ Proved by `tests/test_mcp_server_member_arguments.py`.
 How a person calls an agent to a place and sends it away is the same in every app:
 [calling.md](calling.md).
 
+## The calling module
+
+`agents.calling` decides how an agent is called to a place and sent away, by the rules of
+[calling.md](calling.md), on facts the app supplies. It is pure: it holds no state, reads no clock,
+store, token or realm and performs no I/O, and it imports pydantic and agents' pure modules
+(`member`, `turn`) only, which `.importlinter` holds, so an app's core may import it. The app
+passes `now` and the invitation's id, keeps one `BookEntry(epoch, invitation)` per agent and place
+in its own store, and writes the entry a decision returns in the same step as its seats. Every
+binding is an opaque, non-empty text the app chooses, compared by equality only; an invitation is
+open while `now < expires_at`. A missing row counts as epoch 0.
+
+| Decision | Answers | Order and rule |
+| --- | --- | --- |
+| `invite(entry, CallFacts, invitation_id, now)` | `Invited(entry, invitation)` or an `InviteRefusal` | `not_present`, `not_a_member`, `already_there`, `not_listening`, `invited_by_another`; then an open invitation by the same inviter is returned unchanged; then `owner_absent`, `owner_away`, `owner_elsewhere`, `no_free_seat` (CALLING-1 to 6). The first that holds wins |
+| `check_accept(entry, AcceptInvitationArguments, AcceptFacts, now)` | `Accepted(entry)` or `AcceptRefused(refusal, ended)` | `stale_invitation` (no open invitation, another id, epoch or owner, already seated, no lease) changes nothing; then `two_seats`, `sponsor_away`, `busy`, each ending the call (CALLING-7) |
+| `check_decline(entry, DeclineInvitationArguments, now)` | `Ended` or `DeclineInvitationRefusal` | `stale_invitation` when no invitation is open or its id or epoch differs; otherwise the call ends busy (CALLING-30, 31) |
+| `expired(entry, now)` | `Ended` or `None` | an invitation no longer open ends with `no_answer` at its `expires_at` (CALLING-8) |
+| `owner_left(entry, now)` | `Ended` or `None` | an open invitation ends with `owner_away` at `now` (CALLING-6) |
+| `send_away_allowed(...)` | `bool` | present, and a fresh member of the agent-adders group, the owner or holding a right the place's own rules give (CALLING-9) |
+| `after_send_away(entry)` | `BookEntry` | the epoch raised by one and no invitation (CALLING-10) |
+| `standing(entry, place, held, serves_view, parent, now)` | `Standing` or `None` | a held place is its state with no invitation, otherwise an open invitation is `invited`, otherwise none; `serves_view` and `parent` pass through (CALLING-27) |
+
+`OwnerAt` is the app's reading of its presence rule: `AT_BINDING`, `ABSENT`, `AWAY` (its seat lost
+its connection and waits to resume) or `ELSEWHERE` (present, but not on exactly that binding).
+`Ended(entry, inviter, outcome, at)` tells the inviter, and only the inviter, how a call ended
+without a seat (`CallOutcome`: `no_answer`, `busy`, `owner_away`); its entry keeps the epoch and
+holds no invitation. `InviteRefusal` and `CallOutcome` are this module's own words: an app maps
+them onto its own refusal tokens. How long an app keeps an `Ended` for its page is the app's.
+Proved by `tests/test_calling.py`.
+
 ## The standard path
 
 An agent learns what changes through the standard's resources and subscriptions, never by
@@ -1068,10 +1098,8 @@ cells of `tests/integration/real_redis`: a lease renewed on one pod still holds,
 generation, on another after the first was killed, and its lapse reaches `lease_ended` once with that
 generation.
 
-**What each app owns:** its places and who stands where, the invitation, its expiry (it lasts
-`INVITATION_SECONDS`) and the epoch check at accept, the participation and permission
-decisions, and acting on a lapse fenced by its generation, and reconciling after a Redis restart
-where `holds` is false.
+**What each app owns:** its places and who stands where, and acting on a lapse fenced by its
+generation, and reconciling after a Redis restart where `holds` is false.
 
 ## Hearing and speaking
 
