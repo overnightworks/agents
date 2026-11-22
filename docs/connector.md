@@ -495,7 +495,7 @@ turn and `picture_request.ended`. A line carries `duration_ms`,
 `outcome` and the response's `status` once one came; `connect_ms`, the time to open a new
 connection (TCP connect, and the TLS handshake where there is one), only on a request that opened
 one, whether or not a response came, never on a reused connection or a failed connect; a round's line also carries `first_output_ms`
-at its first text piece and `input_tokens`, `output_tokens`, `cached_input_tokens` and
+at its first text piece and `input_tokens`, `output_tokens`, `cached_input_tokens`,
 `cache_write_tokens` and `cache_write_1h_tokens` when the gateway sent a usage. The `reason` is the stop's detail, or its code
 when it has none; a failed line is a WARNING, because the turn reports the stop itself
 (`tests/test_backend_gateway_request_lines.py`):

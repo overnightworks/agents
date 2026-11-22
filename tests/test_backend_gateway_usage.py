@@ -35,15 +35,16 @@ def usage_sent(prompt_tokens: int, completion_tokens: int, **details: int) -> di
     return usage
 
 
-def run(shop, *replies: Reply, max_tool_calls: int = 5, now=None):
+def run(shop, *replies: Reply, max_tool_calls: int = 5, now=None, clock_of=None):
     """A turn of an agent with the tools ``lookup`` and ``note`` against the scripted gateway.
 
-    The backend's clock starts at ``START`` and moves ``STEP`` a round unless ``now`` is given.
+    The backend's clock starts at ``START`` and moves ``STEP`` a round unless ``now`` or
+    ``clock_of``, which makes a clock of the gateway, is given.
     """
     shop.add_tool("lookup")
     shop.add_tool("note")
     clock = a_clock(START, step=STEP) if now is None else now
-    return shop.run(*replies, max_tool_calls=max_tool_calls, now=clock)
+    return shop.run(*replies, max_tool_calls=max_tool_calls, now=clock, clock_of=clock_of)
 
 
 def test_the_final_event_carries_the_usage_the_gateway_sent(shop):
@@ -232,6 +233,24 @@ def test_each_round_is_reported_with_the_start_its_request_was_opened_at_and_its
         110, 13, cache_write_tokens=110, cache_write_1h_tokens=10, requests=2
     )
     assert final.rounds[-1].usage.input_tokens == 10
+
+
+def test_each_round_starts_before_its_request_is_sent(shop):
+    def hours_by_requests_sent(gateway):
+        return lambda: START + timedelta(hours=len(gateway.requests))
+
+    events, stopped, _ = run(
+        shop,
+        tool_round(tool_call("c1", "lookup", {})),
+        completion("Done."),
+        clock_of=hours_by_requests_sent,
+    )
+
+    assert stopped is None
+    assert [each.started_at for each in events[-1].rounds] == [
+        START,
+        START + timedelta(hours=1),
+    ]
 
 
 def test_a_round_without_usage_is_reported_as_such_and_leaves_the_turns_usage_unset(shop):

@@ -403,8 +403,11 @@ class Shop:
         late_after: type | None = None,
         one_call_per_reply: bool = False,
         now: Callable[[], datetime] | None = None,
+        clock_of: Callable[[FakeGateway], Callable[[], datetime]] | None = None,
     ) -> tuple[list, TurnStopped | None, FakeGateway]:
         gateway = FakeGateway(*replies)
+        if clock_of is not None:
+            now = clock_of(gateway)
         chosen = [t for t in self.tools if selected is None or t.declaration.name in selected]
         request = a_tool_request(chosen, max_tool_calls, one_call_per_reply=one_call_per_reply)
         backend = GatewayBackend(self.config(), tools=self.tools, transport=gateway, now=now)
