@@ -453,6 +453,7 @@ async def put_in_the_facts_key(server: FakeServer, held: object) -> None:
     "held",
     [
         pytest.param("not json", id="text that is no JSON"),
+        pytest.param(b'\xff{"owner": "o", "name": "n"}', id="bytes that are no UTF-8"),
         pytest.param('{"owner": "", "name": "x"}', id="an empty owner"),
         pytest.param('{"owner": "o", "name": "n", "extra": 1}', id="an unknown field"),
         pytest.param({"field": "value"}, id="a hash"),
@@ -469,11 +470,14 @@ def test_a_facts_key_holding_no_member_facts_fails_the_batch_read_with_place_sto
         asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    "trailing", [pytest.param(b"", id="valid UTF-8"), pytest.param(b"\xff", id="no UTF-8")]
+)
 def test_an_unreadable_stored_value_leaves_no_owner_or_name_in_the_error_or_the_log(
-    server: FakeServer, log_lines: LogLines
+    server: FakeServer, log_lines: LogLines, trailing: bytes
 ) -> None:
     owner, name = "the-owner-sub", "the-recognisable-name"
-    stored = f'{{"owner": "{owner}", "name": "{name}", "extra": 1}}'
+    stored = f'{{"owner": "{owner}", "name": "{name}", "extra": 1}}'.encode() + trailing
 
     async def scenario() -> None:
         await put_in_the_facts_key(server, stored)

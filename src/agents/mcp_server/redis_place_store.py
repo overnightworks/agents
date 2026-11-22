@@ -466,14 +466,13 @@ class RedisPlaceStore:
         keys = [self._facts_prefix + _principal_text(principal) for principal in batch]
         with _store_errors():
             reply = await self._facts_read.run(keys, [])
-        encoder = self._redis.get_encoder()
         found: dict[Principal, MemberFacts] = {}
         unreadable = False
-        for principal, stored in zip(batch, cast(list[object], reply), strict=True):
+        for principal, stored in zip(batch, cast(list[bytes | str | None], reply), strict=True):
             if stored is None:
                 continue
             try:
-                found[principal] = _FACTS.validate_json(encoder.decode(stored, force=True))
+                found[principal] = _FACTS.validate_json(stored)
             except ValidationError:
                 unreadable = True
         # Raised outside the except block, so no owner or name rides the error's context.
