@@ -1,0 +1,8 @@
+claim_id = "58847f7faae64345b9d7e7b35da6fbe5"
+agent = "Claude 8efd9444-79aa-4140-bdee-51202585646f"
+role = "builder"
+base = "df11a8cd1c7ce51db4abc8ccfb458a6ca6a3a76f"
+branch = "claude/issue-1081-round-usage-per-lifetime"
+scope = ["docs/connector.md", "src/agents/backend/gateway.py", "src/agents/backend/streamed_round.py", "src/agents/turn.py", "src/agents/turn_events.py", "tests/support/gateway_turn_support.py", "tests/test_backend_gateway.py", "tests/test_backend_gateway_pictures.py", "tests/test_backend_gateway_pooling.py", "tests/test_backend_gateway_request_lines.py", "tests/test_backend_gateway_stream.py", "tests/test_backend_gateway_tools.py", "tests/test_backend_gateway_usage.py", "tests/test_backend_streamed_round.py"]
+opened_commit = "e8c70bd61c447ebb03cd591cd6a2b3c0e7160de2"
+whole_reason = "The usage a round reports, its lifetime split and its start are one round's cost record."
