@@ -16,7 +16,8 @@ It gives every app the same answers to the hard questions of running an agent:
 
 - when a turn may be retried, and why one that cannot finish stopped;
 - what a tool may change, and which tools only read;
-- how one person keeps one budget across text and pictures.
+- how one person keeps one budget across text and pictures;
+- who may call an agent to a place and send it away.
 
 ## Why
 
@@ -35,5 +36,5 @@ gateway is, which key it uses, which tools it offers and who the signed-in perso
 - Not a service. Nothing runs between an app and its gateway, and no run outlives the app's turn.
 - Not a provider layer. It talks to the app's gateway and knows no model provider behind it.
 - Not a framework. An app keeps its own web stack and hands in what the interface needs.
-- Not an authority on rights. The app decides who may run what; the gateway holds the budget.
+- Not an authority on rights. The app says who a person is, which groups they hold and what its place allows; the library applies only the calling standard's rule to those facts, and the gateway holds the budget.
 - Not a place for one app's words. What belongs to one app stays in that app.

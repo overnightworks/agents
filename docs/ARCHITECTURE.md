@@ -22,6 +22,7 @@ flowchart TB
     turn["turn, turn_events<br/>the turn vocabulary"]
     mcp["mcp_server, mcp_wire<br/>the MCP person front"]
     member["member<br/>member records, place window, URIs"]
+    calling["calling<br/>the calling and send-away decisions"]
     voice["voice<br/>the voice loop, reply markers, sentences"]
     place_store["redis_place_store<br/>the place store, the leases"]
     gateway["LiteLLM gateway<br/>(external)"]
@@ -33,6 +34,7 @@ flowchart TB
     app --> backend
     app --> mcp
     app --> member
+    app --> calling
     app --> voice
     agent_file --> tools
     backend --> tools
@@ -40,6 +42,7 @@ flowchart TB
     mcp --> tools
     mcp --> turn
     mcp --> member
+    calling --> member
     app -.->|"only with the redis extra"| place_store
     place_store -->|"implements the PlaceStore port"| mcp
     place_store --> member
@@ -62,7 +65,8 @@ flowchart TB
   the failure codes), `turn_events`, `config`, the `backend` port and `member` (the records an
   app and an agent say to each other about a member, the place window and the place view) with
   `member_presentation` (an agent's looks, figure and voices) and `member_place` (a place's
-  reference and the URIs of its window and view).
+  reference and the URIs of its window and view), and `calling` (the decisions of calling and
+  sending away an agent, pure, on facts the app supplies).
 - The **`backend` extra** adds `httpx2` for `backend.gateway.GatewayBackend`, the port's one
   implementation, and `backend.fake_gateway`, its test transport.
 - The **`mcp-server` extra** adds `anyio` and the official MCP SDK for `agents.mcp_server`, a thin
