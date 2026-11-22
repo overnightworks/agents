@@ -14,24 +14,14 @@ shop = gateway_turn_support.shop
 NOT_RUN = "not run: one call per reply"
 
 
-def test_the_body_forbids_parallel_calls_when_tools_and_the_setting_are_on(shop):
+def test_a_spoken_and_a_written_request_of_one_agent_send_the_same_first_body(shop):
     shop.add_tool("lookup")
 
-    _, _, gateway = shop.run(completion("ok"), one_call_per_reply=True)
+    _, _, written = shop.run(completion("ok"))
+    _, _, spoken = shop.run(completion("ok"), one_call_per_reply=True)
 
-    assert sent(gateway, 0)["parallel_tool_calls"] is False
-
-
-@pytest.mark.parametrize(
-    "with_tools", [True, False], ids=["tools-setting-off", "no-tools-setting-on"]
-)
-def test_the_body_carries_no_parallel_setting_without_tools_or_the_setting(shop, with_tools):
-    if with_tools:
-        shop.add_tool("lookup")
-
-    _, _, gateway = shop.run(completion("ok"), one_call_per_reply=not with_tools)
-
-    assert "parallel_tool_calls" not in sent(gateway, 0)
+    assert written.requests[0].content == spoken.requests[0].content
+    assert "parallel_tool_calls" not in sent(spoken, 0)
 
 
 @pytest.mark.parametrize("extra", [1, 2], ids=["two-calls", "three-calls"])
@@ -69,13 +59,14 @@ def test_the_unserved_calls_do_not_count_against_the_call_bound(shop):
     assert len(shop.seen) == 1
 
 
-def test_a_reply_with_the_same_id_twice_is_still_refused(shop):
+@pytest.mark.parametrize("spoken", [True, False], ids=["spoken", "written"])
+def test_a_reply_with_the_same_id_twice_is_refused_with_or_without_the_setting(shop, spoken):
     shop.add_tool("lookup")
 
     _, stopped, _ = shop.run(
         tool_round(tool_call("c1", "lookup", {}), tool_call("c1", "lookup", {})),
         completion("never"),
-        one_call_per_reply=True,
+        one_call_per_reply=spoken,
     )
 
     assert stopped is not None

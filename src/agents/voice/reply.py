@@ -41,7 +41,10 @@ REPLY_RULES: Final = (
     "Write only the words to say aloud, never what you are doing or why.\n"
     f"To say nothing, reply with {SILENT_REPLY} and nothing else."
 )
-"""What a runner appends when a ``ReplyReader`` reads its reply: the rules of a spoken reply."""
+"""The rules of a spoken reply, for the system text of every turn of a runner whose reply a
+``ReplyReader`` reads. A runner with spoken and written turns keeps them in all of its turns, so
+its front stays fixed, says which turns they hold for, and marks each spoken turn in that turn's
+message."""
 
 HOLD_RULES: Final = (
     "When someone talks over you, your reply is paused and you are asked again: the last user "

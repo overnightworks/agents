@@ -23,9 +23,10 @@ agent). `AgentDefinition.request(messages, *, model=None, appended_system=None,
 one_call_per_reply=False)` builds it; `model` overrides the file's model for that run, with a
 model of the agent's kind, and `appended_system` follows the file's prompt in the system text,
 after a blank line. `one_call_per_reply` (`TurnRequest.one_call_per_reply`, default `False`)
-asks for one tool call per model reply; it has two effects, described under the gateway body and
-the tool loop, and none for an agent without tools. Every further act then takes one more model
-round.
+asks for one tool call per model reply; the backend serves the first call of a reply and answers
+the rest as not run, as the tool loop describes, and the setting does nothing for an agent
+without tools. Every further act then takes one more model round. The request's body is the same
+with or without it.
 Proved by `tests/test_agent_file.py`: `test_request_carries_the_files_prompt_model_roles_and_tools`,
 `test_request_model_is_the_override_when_given`, `test_request_is_frozen`,
 `test_request_carries_one_call_per_reply_only_when_asked`; the appended text by
@@ -262,7 +263,7 @@ What the client sends for a text turn, and nothing else:
 | --- | --- |
 | Request | `POST <origin>/v1/chat/completions`, no redirect followed, no cookie stored or sent (the client's jar allows no domain), no proxy variable read; HTTPS trusts `ca_file` alone |
 | Headers | `Authorization: Bearer <key>`, `Content-Type: application/json`, and the transport's own defaults; no `x-litellm-*` or `anthropic-*` header |
-| Body | exactly `model` (the request's `text/<model>` name), `messages` (the system prompt, then the turn's messages, then the round's calls and results), `user`, `stream` (`true`), `stream_options` (`{"include_usage": true}`, on every round) and, when the agent has tools, `tools` (OpenAI function tools of each declaration's `name`, `description` and `parameters`) and, when the agent has tools and `one_call_per_reply` is on, `parallel_tool_calls` (`false`); no `max_tokens`, `metadata`, `tags`, `fallbacks`, `num_retries`, `mock_response`, `api_key` or cache marker |
+| Body | exactly `model` (the request's `text/<model>` name), `messages` (the system prompt, then the turn's messages, then the round's calls and results), `user`, `stream` (`true`), `stream_options` (`{"include_usage": true}`, on every round) and, when the agent has tools, `tools` (OpenAI function tools of each declaration's `name`, `description` and `parameters`); it does not depend on `one_call_per_reply`; no `parallel_tool_calls`, `max_tokens`, `metadata`, `tags`, `fallbacks`, `num_retries`, `mock_response`, `api_key` or cache marker |
 | `user` | `"fp-" + sha256(json.dumps([iss, sub], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()`, 67 characters |
 
 Proved by `tests/test_backend_gateway.py`: `test_the_request_is_one_post_with_the_system_prompt_and_the_messages`,
@@ -322,7 +323,8 @@ gateway cuts and closes with a finish reason of its own reads as complete. A per
 The loop runs in the client, in process, over streamed rounds, each read whole before it is
 judged. A round is judged whole before anything runs; its text shows as it streams. Only the
 request's tool names are offered and accepted, so a call to any other name, arguments that are
-not a JSON object, an empty round or a call id used twice in the turn refuses the round
+not a JSON object, an empty round, a reply that names one call id twice or a call id used in an
+earlier round refuses the round
 (`failed: provider_error`) with no handler run. A round that would take the turn past
 `max_tool_calls` ends `failed: limit_exceeded` the same way. Proved by
 `tests/test_backend_gateway_tools.py`: `test_a_round_that_is_not_whole_runs_nothing_and_shows_nothing`,
@@ -330,11 +332,13 @@ not a JSON object, an empty round or a call id used twice in the turn refuses th
 `test_a_call_id_reused_in_a_later_round_refuses_that_round_after_the_first_call_ran` and
 `test_crossing_max_tool_calls_fails_with_limit_exceeded`.
 
-With `one_call_per_reply` on, a reply that still carries several calls keeps all of them in its
-message (ids are checked for doubles across all of them) and serves only the first. Each other
-call gets an error result, `not run: one call per reply`, in the model's messages only, after
-the served call's result and in reply order; the host sees no event for it and it does not count
-against `max_tool_calls`. The model decides again and the turn goes on. Proved by
+With `one_call_per_reply` on, a reply that carries several calls keeps all of them in its
+message (ids are checked for doubles across all of them, in the round's judgement) and serves
+only the first. Each other call gets an error result, `not run: one call per reply`, in the
+model's messages only, after the served call's result and in reply order; the host sees no event
+for it and it does not count against `max_tool_calls`. The model decides again and the turn goes
+on. The backend alone holds the rule: the body never asks the provider for it, and the round's
+`model_request.ended` line carries `calls_not_run`. Proved by
 `tests/test_backend_gateway_one_call.py`.
 
 For each call, in order: `ToolCallEvent`; `await handler(principal, arguments)`; `ToolResultEvent`.
@@ -472,7 +476,9 @@ turn and `picture_request.ended`. A line carries `duration_ms`,
 connection (TCP connect, and the TLS handshake where there is one), only on a request that opened
 one, whether or not a response came, never on a reused connection or a failed connect; a round's line also carries `first_output_ms`
 at its first text piece and `input_tokens`, `output_tokens`, `cached_input_tokens` and
-`cache_write_tokens` when the gateway sent a usage. The `reason` is the stop's detail, or its code
+`cache_write_tokens` when the gateway sent a usage; a round that asked for calls under
+`one_call_per_reply` also carries `calls_not_run`, the number of its calls left unserved (0 or
+more). The `reason` is the stop's detail, or its code
 when it has none; a failed line is a WARNING, because the turn reports the stop itself
 (`tests/test_backend_gateway_request_lines.py`):
 
@@ -483,7 +489,7 @@ when it has none; a failed line is a WARNING, because the turn reports the stop 
 | 422 with the `budget_exceeded` error type | `refused`, `budget_spent`, INFO |
 | another 4xx | `failed`, `gateway_refused`, with the `status` |
 | 5xx, or an error event in a 200 stream | `failed`, `gateway_failed` |
-| a reply that is no round or picture | `failed`, `malformed_reply` |
+| a reply that is no round or picture, or a round that is not whole (a name not offered, an empty call id, a call id named twice) | `failed`, `malformed_reply` |
 | a connection refused or lost | `failed`, `connection_failed`, with no `status` unless one came before |
 | the turn's deadline | `failed`, `limit_exceeded` |
 | the host's close | `cancelled` |
@@ -1337,9 +1343,12 @@ await run_voice_loop(
   app's pinned part.
   `REPLY_RULES` is the one text of what a spoken reply is: heard once, plain sentences without
   markup, lists, headings or emoji, only the words said aloud and never what the agent does or
-  why, `[silent]` alone to say nothing. It names no channel to answer in; a runner whose reply
-  is read by `ReplyReader` outside the loop appends it too, and a written line's own tool
-  description says what that line does.
+  why, `[silent]` alone to say nothing. It names no channel to answer in. A runner whose reply
+  is read by `ReplyReader` outside the loop keeps it in the system text of every turn, so that
+  the front stays fixed across spoken and written turns. A runner with both kinds of turn states
+  in its own words which turns the rules hold for and marks each spoken turn in that turn's
+  message, as `HOLD_RULES` does for a paused reply. It never adds the rules to the end of a
+  spoken turn's messages. A written line's own tool description says what that line does.
 - `backend` is the app's `AgentBackend`, and `person` the one `TurnPerson` the loop runs for,
   never a speaker: every decision is charged to that person's budget at the gateway.
 - `hearing` is an `AsyncIterator[HearingEvent]`: a finished line (`PlaceEntry`) in increasing
