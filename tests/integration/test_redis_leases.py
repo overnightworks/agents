@@ -429,11 +429,12 @@ def _a_pod_that_loses_its_connection_after_the_lease_step(server: FakeServer) ->
     return RedisPlaceStore(client, key_prefix=_PREFIX)
 
 
-def test_a_facts_read_the_store_refuses_raises_place_store_error(server: FakeServer) -> None:
+def test_an_empty_batch_answers_nothing_from_a_store_that_refuses_every_script(
+    server: FakeServer,
+) -> None:
     pod = RedisPlaceStore(FakeEvalshaStopsAfter(server, evalshas_that_return=0), key_prefix=_PREFIX)
 
-    with pytest.raises(PlaceStoreError):
-        asyncio.run(pod.facts([_ALICE]))
+    assert asyncio.run(pod.facts([])) == {}
 
 
 async def put_in_the_facts_key(server: FakeServer, held: object) -> None:
