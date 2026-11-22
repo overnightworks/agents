@@ -1,8 +1,0 @@
-claim_id = "e0caaefe366c488a8b4ba9aacb2e0465"
-agent = "Claude 8c157831-3ad7-436a-9c17-26e3c63d9b92"
-role = "builder"
-base = "d868884e27746ee7d18249d588115925941327a9"
-branch = "claude/issue-1063-the-voice-loop-knows-the-language-of-eac"
-scope = [".importlinter", "docs/ARCHITECTURE.md", "docs/connector.md", "scripts/member-tool-wire.json", "src/agents/member.py", "src/agents/member_place.py", "src/agents/voice/__init__.py", "src/agents/voice/conversation.py", "src/agents/voice/loop.py", "src/agents/voice/reply.py", "tests/support/voice_lines.py", "tests/support/voice_support.py", "tests/test_member_line_language.py", "tests/test_member_wire_evolution.py", "tests/test_voice_language.py", "tests/test_voice_reply.py"]
-opened_commit = "bc1cf68b1721f057fb3a73fe28e6488a08371e48"
-whole_reason = "A heard line's language reaches the voice loop's model and the app's render, on the member line record."
