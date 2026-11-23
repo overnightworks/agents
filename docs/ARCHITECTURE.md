@@ -82,10 +82,13 @@ flowchart TB
   `mcp_wire` holds what the SDK does not own (the strict JSON reader, the bearer-reflection check).
 - The **`mcp-client` extra** adds `anyio`, `httpx2`, logline and the official MCP SDK for
   `agents.mcp_client`, what a runner sends an app's endpoint: `open_member_session`, one SDK
-  session on `http_client`'s policy that reads the member's standing, place and view and folds
-  what goes wrong into the failures of `member_outcomes`, and the `skills/list` and `skills/get`
-  requests. The session writes no log line and decides nothing; the URL, the bearer source and the
-  transport come from the host. It and `agents.mcp_server` import each other nowhere.
+  session on `http_client`'s policy whose `MemberSession` reads the member's standing, places and
+  views, lists and invokes the app's tools, listens for the wakes of a resource or of the tools,
+  makes the member tool calls with their refusal parsers, reads the app's skills, and folds what
+  goes wrong into the failures of `member_outcomes`. It leaves out an optional argument the app's
+  tool does not declare and reports it through the host's callback. The session writes no log line
+  and decides nothing; the URL, the bearer source and the transport come from the host. It and
+  `agents.mcp_server` import each other nowhere.
 - The **`redis` extra** adds `overnightworks-tandem`, which brings `redis`, for
   `agents.mcp_server.redis_place_store`, the only module that imports tandem; no agents module
   imports `redis`. The place store is what the pods of one app share, through the `PlaceStore`
@@ -202,8 +205,7 @@ that layer, and `quality / verdict` holds the import contracts and size and clon
 ## Not chosen
 
 - The implicit skill in the person front: every pin would need it, and the reader still would for
-  older pins. An MCP client in the library: one caller, and a second copy of the runner's session
-  rules. `serverInfo.name` as the implicit skill's name: it is the same for every app of this
+  older pins. `serverInfo.name` as the implicit skill's name: it is the same for every app of this
   library, and SEP-2640 forbids it as a server's identity.
 - A service between app and gateway: a hop and a second place for keys. Reopens if several apps
   need a budget or policy the gateway cannot hold.
