@@ -1,11 +1,14 @@
-"""How a call to an app's member endpoint fails; the runner decides what each failure means.
+"""How a call to an app's member endpoint fails and ends; the runner decides what each outcome
+means.
 
-The failures and the codes a member client names them by are pure, so a runner's decisions read
-them without the client or its libraries.
+The failures, the outcomes and the codes a member client names them by are pure, so a runner's
+decisions read them without the client or its libraries.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from enum import Enum, StrEnum, auto
 from typing import Final
 
 INVALID_ANSWER_CODE: Final = "invalid_answer"
@@ -46,13 +49,49 @@ class Unreachable(CallFailure):
 
 
 class UnusableAnswer(CallFailure):
-    """The server answered, but with an error or a body the runner cannot use; ``code`` says why."""
+    """The server answered, but with an error or a body the runner cannot use; ``code`` says why.
 
-    def __init__(self, code: str, method: str | None = None, answer: str | None = None) -> None:
+    ``entry`` is the index of the entry of a skills listing that broke its rules, never any text of
+    it.
+    """
+
+    def __init__(
+        self,
+        code: str,
+        method: str | None = None,
+        answer: str | None = None,
+        entry: int | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.method = method
         self.answer = answer
+        self.entry = entry
+
+
+class UnrecognisedRefusal(StrEnum):
+    """A refusal outside the library's record: an app's own code, or an error text that is no such
+    JSON."""
+
+    UNRECOGNISED = "unrecognised"
+
+
+class DeclineOutcome(Enum):
+    """How a decline that was not refused ended: sent, or left to run out because the app lists no
+    tool to send it with."""
+
+    SENT = auto()
+    NOT_SERVED = auto()
+
+
+@dataclass(frozen=True)
+class ArgumentLeftOut:
+    """An optional argument the app's tool does not declare, which the session left out of a
+    call."""
+
+    tool: str
+    argument: str
+    """The argument's path: ``looks[].room`` is the ``room`` of each entry of ``looks``."""
 
 
 def status_code(status: int) -> str:

@@ -112,3 +112,28 @@ reason = "The member session: personas#426 (#1115 S4) opens it for the runner; t
 path = "src/agents/mcp_client/__init__.py"
 item = "overnightworks/personas#426"
 reason = "The member session's public names; personas#426 (#1115 S4) imports them."
+
+[[code]]
+path = "src/agents/mcp_client/exchange.py"
+item = "overnightworks/personas#426"
+reason = "The member session's HTTP exchange: the bearer and the last answer of each call. Part of the member session personas#426 (#1115 S4) opens for the runner."
+
+[[code]]
+path = "src/agents/mcp_client/fold.py"
+item = "overnightworks/personas#426"
+reason = "The member session's fold of a call's errors into failures. Part of the member session personas#426 (#1115 S4) opens for the runner."
+
+[[code]]
+path = "src/agents/mcp_client/results.py"
+item = "overnightworks/personas#426"
+reason = "The member session's readers of records, tools, pictures and refusals. Part of the member session personas#426 (#1115 S4) opens for the runner."
+
+[[code]]
+path = "src/agents/mcp_client/arguments.py"
+item = "overnightworks/personas#426"
+reason = "The optional arguments the member session leaves out of a call. Part of the member session personas#426 (#1115 S4) opens for the runner."
+
+[[code]]
+path = "src/agents/mcp_client/wakes.py"
+item = "overnightworks/personas#426"
+reason = "ResourceWake, ToolsWake and the member session's stream of wakes. Part of the member session personas#426 (#1115 S4) opens for the runner."

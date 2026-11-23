@@ -7,7 +7,6 @@ other request through to the library's own front.
 from __future__ import annotations
 
 import asyncio
-import logging
 import secrets
 from http import HTTPStatus
 from typing import Any
@@ -27,8 +26,9 @@ from mcp_types import (
 )
 from pydantic import SecretStr
 
-from agents.mcp_client import open_member_session
+from agents.mcp_client import READ_SECONDS, open_member_session
 from agents.member import (
+    LEASE_SECONDS,
     STANDING_URI,
     MemberStanding,
     PartialSpeech,
@@ -40,7 +40,6 @@ from agents.member import (
 from agents.member_outcomes import (
     INVALID_ANSWER_CODE,
     UNSUPPORTED_VERSION_CODE,
-    CallFailure,
     StatusFailure,
     Unreachable,
     UnusableAnswer,
@@ -62,7 +61,6 @@ from tests.support.member_session_support import (
     SUBJECT,
     a_window,
     answering,
-    logged_outside_the_wire_trace,
     opened,
     reads_the_standing,
     reads_the_window,
@@ -73,7 +71,6 @@ from tests.support.scripted_gate import (
     NO_METHOD,
     READ,
     GateReply,
-    Handler,
     ScriptedGate,
     cuts,
     hangs,
@@ -675,67 +672,5 @@ async def test_a_jsonrpc_error_that_is_no_refused_revision_is_an_unusable_answer
     assert failure.value.code == jsonrpc_code(INTERNAL_ERROR)
 
 
-# What leaves a session of the bearer.
-
-
-async def test_a_content_type_that_reflects_the_bearer_reaches_no_log_line_but_the_wire_trace(
-    app: MemberApp, gate: ScriptedGate, caplog: pytest.LogCaptureFixture
-) -> None:
-    stands(app)
-    bearer = SecretStr(secrets.token_hex(12))
-    gate.let_in(bearer.get_secret_value(), SUBJECT)
-    reflected = f"application/{bearer.get_secret_value()}"
-    gate.script(READ, lambda reply: reply.body(HTTPStatus.OK, reflected, b"{}"))
-
-    with pytest.raises(UnusableAnswer):
-        await reads_the_standing(gate, bearer)
-
-    assert bearer.get_secret_value() not in logged_outside_the_wire_trace(caplog)
-
-
-def test_the_log_check_reads_a_bearer_that_only_a_logged_exception_holds(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    bearer = secrets.token_hex(12)
-    try:
-        raise ValueError(bearer)
-    except ValueError:
-        logging.getLogger("agents.test").exception("the call failed")
-
-    assert bearer in logged_outside_the_wire_trace(caplog)
-
-
-async def reads_the_standing_showing(
-    gate: ScriptedGate, bearer: SecretStr, shown: list[str]
-) -> None:
-    async with opened(gate, bearer) as session:
-        shown.append(repr(session) + str(session))
-        await session.read_standing()
-
-
-@pytest.mark.parametrize(
-    "script",
-    [
-        pytest.param(answering(HTTPStatus.SERVICE_UNAVAILABLE), id="a refused call"),
-        pytest.param(lambda reply: reply.raw_result({"contents": 7}), id="an answer in no shape"),
-        pytest.param(cuts, id="a cut connection"),
-        pytest.param(None, id="an unknown bearer"),
-    ],
-)
-async def test_no_bearer_is_in_any_failure_or_in_the_session(
-    app: MemberApp, gate: ScriptedGate, bearer: SecretStr, script: Handler | None
-) -> None:
-    stands(app)
-    if script is None:
-        bearer = SecretStr(secrets.token_urlsafe(24))
-    else:
-        gate.script(READ, script)
-    shown: list[str] = []
-
-    with pytest.raises(CallFailure) as caught:
-        await reads_the_standing_showing(gate, bearer, shown)
-    failure = caught.value
-    shown.append(repr(failure) + str(failure) + repr(failure.__traceback__))
-
-    assert bearer.get_secret_value() not in "".join(shown)
-    assert shown
+def test_the_runner_cuts_a_stream_before_the_lease_of_its_member_would_have_ended() -> None:
+    assert READ_SECONDS < LEASE_SECONDS

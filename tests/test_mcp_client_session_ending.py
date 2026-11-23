@@ -9,8 +9,10 @@ from typing import Any
 
 import anyio
 import pytest
+from mcp_types import ReadResourceResult, TextResourceContents
 from pydantic import SecretStr, ValidationError
 
+from agents.member import STANDING_URI
 from agents.member_outcomes import (
     StatusFailure,
     Unreachable,
@@ -21,15 +23,18 @@ from tests.support.mcp_server_support import (
 )
 from tests.support.member_session_support import (
     LIMIT_SECONDS,
+    cancelled_once_entered,
     opened,
     reads_the_standing,
     stands,
 )
 from tests.support.scripted_gate import (
+    CALL,
     DISCOVER,
+    READ,
     GateReply,
     ScriptedGate,
-    hangs,
+    hangs_once_entered,
 )
 from tests.support.sdk_transport import (
     ClosingHold,
@@ -124,6 +129,92 @@ async def test_every_leaf_of_nested_groups_the_body_raises_reaches_the_caller(
         await raises_in_the_body(gate, bearer, nested)
 
     assert list(_leaves(caught.value)) == [failure, own, defect]
+
+
+@pytest.mark.parametrize("grouped", [False, True], ids=["alone", "in a group"])
+async def test_a_leaf_the_body_raises_keeps_the_cause_it_was_raised_from(
+    gate: ScriptedGate, bearer: SecretStr, grouped: bool
+) -> None:
+    cause = OSError("the file the caller read")
+    own = BodyError("the caller's own code failed")
+    own.__cause__ = cause
+    raised = ExceptionGroup("own", [own]) if grouped else own
+
+    with pytest.raises(BodyError) as caught:
+        await raises_in_the_body(gate, bearer, raised)
+
+    assert caught.value is own
+    assert caught.value.__cause__ is cause
+
+
+@pytest.mark.parametrize("grouped", [False, True], ids=["alone", "in a group"])
+async def test_a_leaf_the_body_raises_keeps_the_context_it_was_raised_in(
+    gate: ScriptedGate, bearer: SecretStr, grouped: bool
+) -> None:
+    context = KeyError("what the caller was handling")
+    own = BodyError("the caller's own code failed")
+    own.__context__ = context
+    raised = ExceptionGroup("own", [own]) if grouped else own
+
+    with pytest.raises(BodyError) as caught:
+        await raises_in_the_body(gate, bearer, raised)
+
+    assert caught.value.__context__ is context
+
+
+@pytest.mark.parametrize("method", [READ, CALL], ids=["a read", "a tool call"])
+async def test_a_request_whose_answer_names_no_request_ends_as_unreachable(
+    app: MemberApp, gate: ScriptedGate, bearer: SecretStr, method: str
+) -> None:
+    stands(app)
+    gate.script(method, lambda reply: reply.raw_result({}, answering="no-request"))
+
+    async def sends_the_request() -> None:
+        async with asyncio.timeout(LIMIT_SECONDS), opened(gate, bearer) as session:
+            if method == READ:
+                await session.read_standing()
+            else:
+                await session.invoke("a-tool", {})
+
+    with pytest.raises(Unreachable):
+        await sends_the_request()
+
+
+async def test_an_answer_echoing_the_id_as_text_still_answers_its_request(
+    gate: ScriptedGate, bearer: SecretStr
+) -> None:
+    async def echoes_the_id_as_text(reply: GateReply) -> None:
+        contents = TextResourceContents(
+            uri=STANDING_URI, text='{"standings": []}', mime_type="application/json"
+        )
+        await reply.result(
+            ReadResourceResult(contents=[contents], ttl_ms=0, cache_scope="private"),
+            answering=str(reply.rpc.id),
+        )
+
+    gate.script(READ, echoes_the_id_as_text)
+
+    async with asyncio.timeout(LIMIT_SECONDS), opened(gate, bearer) as session:
+        standing = await session.read_standing()
+
+    assert standing.standings == ()
+
+
+async def test_a_task_cancelled_during_a_member_call_ends_as_the_cancellation(
+    gate: ScriptedGate, bearer: SecretStr
+) -> None:
+    calling = asyncio.Event()
+
+    async def invokes() -> None:
+        async with opened(gate, bearer) as session:
+            await session.invoke("a-tool", {})
+
+    gate.script(CALL, hangs_once_entered(calling))
+    task = asyncio.create_task(invokes())
+
+    ended = await cancelled_once_entered(task, calling)
+
+    assert isinstance(ended, asyncio.CancelledError)
 
 
 def _leaves(error: BaseException) -> list[BaseException]:
@@ -250,19 +341,10 @@ async def test_a_task_cancelled_while_the_session_discovers_ends_as_the_cancella
     gate: ScriptedGate, bearer: SecretStr
 ) -> None:
     discovering = asyncio.Event()
-
-    async def hangs_in_discovery(reply: GateReply) -> None:
-        discovering.set()
-        await hangs(reply)
-
-    gate.script(DISCOVER, hangs_in_discovery)
+    gate.script(DISCOVER, hangs_once_entered(discovering))
     task = asyncio.create_task(reads_the_standing(gate, bearer))
-    async with asyncio.timeout(LIMIT_SECONDS):
-        await discovering.wait()
-    task.cancel()
 
-    async with asyncio.timeout(LIMIT_SECONDS):
-        (ended,) = await asyncio.gather(task, return_exceptions=True)
+    ended = await cancelled_once_entered(task, discovering)
 
     assert isinstance(ended, asyncio.CancelledError)
 
@@ -273,12 +355,8 @@ async def test_a_task_cancelled_while_the_session_closes_ends_as_the_cancellatio
     hold = ClosingHold()
     monkeypatch.setattr("agents.mcp_client.session.streamable_http_client", hold.transport())
     task = asyncio.create_task(reads_the_standing_without_reading(gate, bearer))
-    async with asyncio.timeout(LIMIT_SECONDS):
-        await hold.closing.wait()
-    task.cancel()
 
-    async with asyncio.timeout(LIMIT_SECONDS):
-        (ended,) = await asyncio.gather(task, return_exceptions=True)
+    ended = await cancelled_once_entered(task, hold.closing)
 
     assert isinstance(ended, asyncio.CancelledError)
     assert hold.cancelled.is_set()

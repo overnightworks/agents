@@ -705,6 +705,69 @@ The front sets no level on any logger: the SDK's server loggers follow the host'
 the tool and the exception's class
 (`test_no_credential_marker_reaches_any_log_under_debug_or_normal_logging`).
 
+## The member client
+
+`agents.mcp_client` (the `mcp-client` extra) is what a runner sends an app's member endpoint, the
+counterpart of [the person front](#the-person-front). `open_member_session(url, bearer, *,
+on_argument_left_out=None, transport=None, stream_seconds=READ_SECONDS)` opens one SDK session at
+the app's protocol revision and yields a `MemberSession`:
+
+- reads: `read_standing`, `read_place`, `read_view` (`None` for a place the app shows the member no
+  more) and `read_discovery` (the app's instructions and whether it declares skills; no request);
+- tools: `declared_tools`, `kept_tools`, `tools_notices` and `invoke(name, arguments)`, whose
+  `ToolOutcome` holds the one picture an app answers with, its representation free of any byte. A
+  name the app never declared is no outcome: `invoke` raises `StatusFailure` with status 400. A
+  declared tool outside the app's current offer returns an error `ToolOutcome`, so a runner that
+  keeps a tool list handles both;
+- `listen()`, an async context manager whose entry returns once the app acknowledged the stream with
+  `STANDING_URI` honored, else it raises `UnusableAnswer(listen_not_honored)`. It yields
+  `ResourceWake(uri)` and `ToolsWake()` in the order the app sent them. A tools notice moves the
+  list counter, drops the kept list and counts in `tools_notices()`; the stream, its
+  acknowledgement and the body share one deadline;
+- the member tool calls: `accept`, `decline`, `speak`, `continue_speaking`, `stop_speaking` and
+  `set_turn_state`. An error answer is a value: a refusal of the library's record. Only `accept`
+  and `decline` answer `UnrecognisedRefusal` for text that is none (`decline` also answers
+  `DeclineOutcome.NOT_SERVED` for an app that lists no tool to decline with); the other four raise
+  `UnusableAnswer` for an error answer that is no refusal of the library's record or no JSON, as
+  they do for any answer that is no record of the tool;
+- skills: `list_skills(cursor, listed=0)` and `get_skill(uri)`, over the requests of
+  [Reading an app's skills](#reading-an-apps-skills).
+
+The client writes no log line and decides nothing. An optional argument the app's tool does not
+declare (accept's `figure`, `voices`, `looks` and `looks[].room`, speak's `style` and `interrupted`,
+set_turn_state's `thinking`) is left out of the call, and `on_argument_left_out` is told once per
+session of each `ArgumentLeftOut(tool, argument)`; a required argument is never dropped.
+
+**What leaves a session.** A `CallFailure` (`StatusFailure`, `Unreachable` or `UnusableAnswer` of
+`agents.member_outcomes`), `asyncio.CancelledError`, a defect, and anyio's late-answer errors
+(`BrokenResourceError`, `ClosedResourceError`) after a cancellation nobody requested. Several
+leaves leave as one `ExceptionGroup`; what the caller's own body raised stays among them as it was,
+its cause kept. A task cancelled while the session discovers, runs a call or closes ends as the
+cancellation. A transport failure of a call, such as a request the app leaves unanswered for
+`stream_seconds`, reaches the call as a bare `CancelledError`; the `Unreachable` is raised when the
+session ends.
+
+**The HTTP policy** is the gateway's (`agents.http_client`): no proxy variable, no redirect and no
+cookie. `bearer` is read once for each call, so a renewed token reaches the next call; a bearer that
+is no header value (empty, or holding a control character such as a newline) fails the call before
+its request is sent with a `ValueError` that names no bearer. The trace headers of the caller's
+trace travel with every request. An app's member half must not rely on the sticky cookie of a router
+in front of several pods: the client keeps none, so each request may reach another pod.
+
+**Bounds.** `stream_seconds` is the read time of one HTTP answer: it bounds idle time, not a whole
+call, so a caller that wants a total bound wraps the call; `listen` is the exception, whose
+`stream_seconds` is a total deadline that cuts a stream even while it wakes. A request whose
+complete JSON answer names another request ends as `Unreachable`; the SDK would drop that answer and
+leave the request waiting. A 200 answer that is no JSON-RPC carries the SDK's local parse codes
+`jsonrpc_-32600` or `jsonrpc_-32700`. On a 3xx the SDK writes one ERROR line, `Unexpected content
+type: `, with no information of the app; the client leaves it, since silencing it would mean
+changing a host's logger levels, which a library never touches. No bearer is in any representation,
+message or log line of the client; the HTTP library's own trace of response headers shows what an
+app echoes, and an app that echoes the bearer into a 200 body that is no JSON-RPC finds it in the
+SDK's `mcp.client.streamable_http` ERROR record, which quotes a short body whole and cuts a long one
+in the middle, and in the answer's exception chain, in the suppressed `__context__` and not in the
+default traceback.
+
 ## Reading an app's skills
 
 `agents.skills` reads an app's skills as SEP-2640 (the MCP skills extension, Final) defines them,
@@ -713,10 +776,15 @@ so a runner needs no parser of its own. An app declares them with the
 `skills/list` and `skills/get` (`SKILLS_LIST_METHOD`, `SKILLS_GET_METHOD`). The module does no
 I/O and holds the params of both requests (`SkillsListParams` with an optional `cursor`,
 `SkillsGetParams` with a `uri`) beside the results. With the `mcp-client` extra the runner calls
-`agents.mcp_client.skills.list_skills(session, cursor)`, one page as a `SkillListing`, and
-`get_skill(session, uri)`, a `SkillAnswer`, over an SDK `ClientSession`, and writes no `Request`
-subclass of its own. The functions log nothing and catch nothing: an SDK error leaves as the SDK
-raises it and a result that breaks a rule fails as `pydantic.ValidationError`. Paging is the
+`MemberSession.list_skills(cursor, listed)`, one page as a `SkillListing`, and
+`get_skill(uri)`, the `Skill` whose file proves to be what the entry promised, and writes no
+`Request` subclass of its own ([The member client](#the-member-client)). A page that breaks a rule
+is an `UnusableAnswer` whose `entry` is the index of the entry, counting the `listed` entries of
+the pages before. The implicit skill of an app that declares no skills stays the runner's, built
+from `read_discovery()` and `declared_tools()`. The free functions
+`agents.mcp_client.skills.list_skills(session, cursor)` and `get_skill(session, uri)` over an SDK
+`ClientSession` log nothing and catch nothing: an SDK error leaves as the SDK raises it and a result
+that breaks a rule fails as `pydantic.ValidationError`. Paging is the
 runner's: it passes `next_cursor` back until it is absent
 (`test_following_the_next_cursor_yields_every_entry_once_and_stops_when_it_is_absent`).
 

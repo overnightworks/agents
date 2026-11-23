@@ -1,82 +1,136 @@
 """A runner's session against an app's member endpoint: one SDK session over the shared HTTP policy.
 
 The session writes no log line, decides nothing and holds no deployment fact: the URL, the bearer
-and the transport come from the host. Every call that fails raises a ``CallFailure`` of
-``agents.member_outcomes``.
+and the transport come from the host, and it reports an argument it leaves out through the host's
+callback. Every call that fails raises a ``CallFailure`` of ``agents.member_outcomes``.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextvars
-import re
-from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
-from http import HTTPStatus
-from typing import Final, Protocol, cast, override
+from typing import Final, Protocol, override
 
-import anyio
 import httpx2
-from logline import outgoing_headers
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from mcp.client.subscriptions import listen as subscribe
 from mcp.shared.exceptions import MCPError
 from mcp_types import (
-    CONNECTION_CLOSED,
     INVALID_PARAMS,
-    REQUEST_TIMEOUT,
-    UNSUPPORTED_PROTOCOL_VERSION,
+    CallToolResult,
     InputRequiredResult,
-    JSONRPCError,
     ReadResourceResult,
     TextResourceContents,
-    jsonrpc_message_adapter,
 )
 from pydantic import SecretStr, ValidationError
 
 from agents.http_client import policy_client
+from agents.mcp_client import skills as skill_requests
+from agents.mcp_client.arguments import (
+    ACCEPT_OPTIONAL,
+    SPEAK_OPTIONAL,
+    TURN_STATE_OPTIONAL,
+    split_undeclared,
+)
+from agents.mcp_client.exchange import CALL_ANSWER, BearerAuth, CallAnswer
+from agents.mcp_client.fold import (
+    CALL_ERRORS,
+    InvalidToolResult,
+    failure_of,
+    folded,
+    leaves_of,
+    task_is_being_cancelled,
+)
+from agents.mcp_client.results import (
+    accept_refusal_of,
+    declaration_of,
+    decline_refusal_of,
+    naming_hold,
+    picture_of,
+    record_of,
+    refusal_in,
+    speak_answer_of,
+    text_of,
+)
+from agents.mcp_client.wakes import MemberWake, wakes_of
 from agents.member import (
+    ACCEPT_INVITATION_TOOL,
+    CONTINUE_SPEAKING_TOOL,
+    DECLINE_INVITATION_TOOL,
     LISTEN_BOUND_SECONDS,
+    SET_TURN_STATE_TOOL,
+    SPEAK_TOOL,
     STANDING_URI,
+    STOP_SPEAKING_TOOL,
+    AcceptInvitationArguments,
+    AcceptInvitationRefusal,
+    ContinueSpeakingRefusal,
+    ContinueSpeakingRefused,
+    DeclineInvitationArguments,
+    DeclineInvitationRefusal,
     MemberResourceRecord,
     MemberStanding,
     PlaceRef,
     PlaceView,
     PlaceWindow,
-    member_resource_from_json,
+    SetTurnStateArguments,
+    SetTurnStateRefusal,
+    SetTurnStateRefused,
+    SpeakAnswer,
+    SpeakRefusal,
+    StopSpeakingRefusal,
+    StopSpeakingRefused,
     place_view_uri,
     place_window_uri,
 )
 from agents.member_outcomes import (
     INVALID_ANSWER_CODE,
+    LISTEN_NOT_HONORED_CODE,
     UNSUPPORTED_VERSION_CODE,
+    ArgumentLeftOut,
     CallFailure,
-    StatusFailure,
+    DeclineOutcome,
     Unreachable,
+    UnrecognisedRefusal,
     UnusableAnswer,
-    jsonrpc_code,
-    status_code,
 )
+from agents.skills import SKILLS_EXTENSION, Skill, SkillListing, read_skill
+from agents.tools import JsonObject, ToolDeclaration, ToolOutcome
 
 CONNECT_SECONDS: Final = 30.0
 READ_SECONDS: Final = 2 * LISTEN_BOUND_SECONDS
 """Twice the bound an app puts on a stream: the runner cuts a stream that outlasts it."""
-_MEDIA_TYPE: Final = re.compile(r"[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*")
-"""A media type as a log line may carry it: type and subtype of token characters, no parameters."""
-_SDK_MEDIA_TYPES: Final = frozenset({"application/json", "text/event-stream"})
-"""The media types of an answer the SDK reads a result from."""
-_TRANSPORT_ERROR_CODES: Final = frozenset({CONNECTION_CLOSED, REQUEST_TIMEOUT})
-"""What the SDK answers for a connection that broke or a request that timed out."""
-_LATE_ANSWER_ERRORS: Final = (anyio.BrokenResourceError, anyio.ClosedResourceError)
-"""What the transport's task raises when an answer lands after its session ended."""
-_CALL_ERRORS: Final = (MCPError, ValidationError, httpx2.HTTPError, OSError)
-"""The errors of the SDK and its transport that tell a call failed; any other error is a defect."""
+
+
+@dataclass(frozen=True)
+class AppDiscovery:
+    """What the app said of itself when the session found its protocol revision."""
+
+    instructions: str | None
+    declares_skills: bool
 
 
 class MemberSession(Protocol):
-    """What a runner reads of an app; each read raises a ``StatusFailure``, ``Unreachable`` or
-    ``UnusableAnswer``."""
+    """What a runner reads of an app and asks of it; each call fails with a ``StatusFailure``,
+    ``Unreachable`` or ``UnusableAnswer``, except a transport failure.
+
+    A transport failure of a call, such as a request the app leaves unanswered for
+    ``stream_seconds``, reaches the call as a bare ``asyncio.CancelledError``; the ``Unreachable``
+    is raised when the session ends.
+    """
+
+    def listen(self) -> AbstractAsyncContextManager[AsyncIterator[MemberWake]]:
+        """A stream of wakes; entering returns once the app acknowledged it with the standing
+        honored.
+
+        Iterating yields a wake for each change of a resource or of the app's tools, in the order
+        the app sent them, and ends when the app ends the stream. The stream, its acknowledgement
+        and everything the body does share one deadline.
+        """
+        ...
 
     async def read_standing(self) -> MemberStanding:
         """Every standing of the member."""
@@ -90,116 +144,179 @@ class MemberSession(Protocol):
         """The place's view, or ``None`` when the app shows it to this member no more."""
         ...
 
+    async def read_discovery(self) -> AppDiscovery:
+        """What the app said of itself; no request."""
+        ...
 
-@dataclass(frozen=True)
-class _HttpAnswer:
-    """What the app's last HTTP answer was: its status and, for an error status, the failed method
-    and the answer."""
+    async def declared_tools(self) -> tuple[ToolDeclaration, ...]:
+        """The first page of the app's tools."""
+        ...
 
-    status: int
-    method: str | None = None
-    answer: str | None = None
+    def kept_tools(self) -> tuple[ToolDeclaration, ...] | None:
+        """The list ``declared_tools`` kept, or ``None`` when there is none.
 
+        A list is kept while a stream that honoured the app's tools notice is open and no notice,
+        acknowledgement or stream end came after the listing started.
+        """
+        ...
 
-@dataclass
-class _CallAnswer:
-    """The last HTTP answer to one call, which only its own requests write, so no call beside it
-    on the session can."""
+    def tools_notices(self) -> int:
+        """How many tools notices this session received."""
+        ...
 
-    answer: _HttpAnswer | None = None
+    async def invoke(self, name: str, arguments: JsonObject) -> ToolOutcome:
+        """The tool's outcome, an error one included.
 
+        A name the app never declared is no outcome: the app answers 400, which raises
+        ``StatusFailure``. A declared tool outside the app's current offer returns an error
+        ``ToolOutcome``, so a runner that keeps a tool list handles both.
+        """
+        ...
 
-_CALL_ANSWER: Final = contextvars.ContextVar[_CallAnswer | None]("call_answer", default=None)
-"""The answer of the call whose request this is; the SDK sends each request in the context of the
-call that made it."""
+    async def accept(
+        self, arguments: AcceptInvitationArguments
+    ) -> AcceptInvitationRefusal | UnrecognisedRefusal | None:
+        """``None`` when joined, else the refusal."""
+        ...
 
+    async def decline(
+        self, arguments: DeclineInvitationArguments
+    ) -> DeclineOutcome | DeclineInvitationRefusal | UnrecognisedRefusal:
+        """Declines an invitation, unless the app lists no tool to decline with, which leaves the
+        invitation to run out; the refusal says the invitation is gone."""
+        ...
 
-class _BearerAuth(httpx2.Auth):
-    """Adds the current bearer and the current trace to each request and keeps the last HTTP answer
-    the app gave, to the session and to the call the request belongs to.
+    async def speak(
+        self,
+        place: PlaceRef,
+        sentence: str,
+        style: str | None = None,
+        interrupted: str | None = None,
+    ) -> SpeakAnswer | SpeakRefusal:
+        """That the sentence starts to play, that the app wrote it at the place instead, or why it
+        does not speak it.
 
-    The SDK turns an HTTP error into a bare protocol error, so this is where the status is seen.
-    """
+        ``style`` is how it sounds, passed on unchanged; ``interrupted`` names the hold the
+        sentence answers instead of the held rest. An answer that is none of these is an
+        ``UnusableAnswer``.
+        """
+        ...
 
-    def __init__(self, bearer: Callable[[], SecretStr]) -> None:
-        self._bearer = bearer
-        self.last_answer: _HttpAnswer | None = None
+    async def continue_speaking(
+        self, place: PlaceRef, interrupted: str
+    ) -> ContinueSpeakingRefusal | None:
+        """``None`` when the held sentence goes on, else the refusal."""
+        ...
 
-    @override
-    async def async_auth_flow(
-        self, request: httpx2.Request
-    ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
-        request.headers["Authorization"] = f"Bearer {self._bearer().get_secret_value()}"
-        request.headers.update(outgoing_headers())
-        response = yield request
-        if response.status_code < HTTPStatus.BAD_REQUEST:
-            self.last_answer = _HttpAnswer(response.status_code)
-        else:
-            self.last_answer = _HttpAnswer(
-                response.status_code, _method_of(request), await _answer_code_of(response)
-            )
-        if (call := _CALL_ANSWER.get()) is not None:
-            call.answer = self.last_answer
-        if response.status_code < HTTPStatus.BAD_REQUEST:
-            _withhold_diagnostics(response)
+    async def stop_speaking(self, place: PlaceRef, interrupted: str) -> StopSpeakingRefusal | None:
+        """``None`` when the hold ended with nothing more said, else the refusal."""
+        ...
 
+    async def set_turn_state(self, statement: SetTurnStateArguments) -> SetTurnStateRefusal | None:
+        """``None`` when the app took what the member's turns at the place do, else the refusal."""
+        ...
 
-def _withhold_diagnostics(response: httpx2.Response) -> None:
-    """Hands the SDK no redirect to follow and no media type it would write into a log line.
+    async def list_skills(self, cursor: str | None = None, *, listed: int = 0) -> SkillListing:
+        """One page of the app's skills, from the start or from ``cursor``.
 
-    The SDK follows a redirect that stays on the app's origin whatever the client's policy says, and
-    resends the request with its bearer; the policy is that none is followed. It also logs a
-    content type it does not know at error level, in full, and the app chose that text. Only a
-    media type it reads an answer from stays, so a redirect is no answer and an unknown media type
-    names itself in no log line.
-    """
-    response.next_request = None
-    media_type = response.headers.get("content-type", "").partition(";")[0].strip().lower()
-    if response.status_code >= HTTPStatus.MULTIPLE_CHOICES or media_type not in _SDK_MEDIA_TYPES:
-        response.headers.pop("content-type", None)
+        A page that breaks a rule is an ``UnusableAnswer`` whose ``entry`` is the index, counting
+        the ``listed`` entries of the pages before, of the entry that did.
+        """
+        ...
 
-
-def _method_of(request: httpx2.Request) -> str | None:
-    """The MCP method the request carried; none for a request that carries no JSON-RPC message, as
-    a reconnect does."""
-    try:
-        message = jsonrpc_message_adapter.validate_json(request.content, by_name=False)
-    except ValidationError:
-        return None
-    return getattr(message, "method", None)
-
-
-async def _answer_code_of(response: httpx2.Response) -> str | None:
-    """The code of the JSON-RPC error an error status carries, else the media type of the answer,
-    never its content.
-
-    The SDK takes an error body for a JSON-RPC error when the answer says it is JSON and the body
-    parses as one.
-    """
-    media_type = response.headers.get("content-type", "").partition(";")[0].strip().lower()
-    if media_type == "application/json":
-        try:
-            await response.aread()
-            message = jsonrpc_message_adapter.validate_json(response.content, by_name=False)
-        except httpx2.DecodingError, ValidationError:
-            pass
-        else:
-            if isinstance(message, JSONRPCError):
-                return jsonrpc_code(message.error.code)
-    return media_type if _MEDIA_TYPE.fullmatch(media_type) else None
+    async def get_skill(self, uri: str) -> Skill:
+        """The skill whose ``SKILL.md`` is at ``uri``, once the file proves to be what the app's
+        entry promised; raises ``SkillRefused`` for a file that is not."""
+        ...
 
 
 class _UnknownResource(Exception):  # noqa: N818
     """The app shows this member no such resource."""
 
 
+class _ValidatingSession(ClientSession):
+    """Names the SDK's validation failure, which it raises as a bare ``RuntimeError``."""
+
+    @override
+    async def validate_tool_result(self, name: str, result: CallToolResult) -> None:
+        try:
+            await super().validate_tool_result(name, result)
+        except RuntimeError:
+            raise InvalidToolResult from None
+
+
 @dataclass
 class _McpMemberSession:
     session: ClientSession
-    auth: _BearerAuth = field(repr=False)
+    auth: BearerAuth = field(repr=False)
+    url: str
+    stream_seconds: float
+    on_argument_left_out: Callable[[ArgumentLeftOut], None] | None
+    _honoured: bool = False
+    """Whether the open stream was acknowledged with the tools notice honoured."""
+    _list_counter: int = 0
+    """Moves at each acknowledgement, each tools notice and each stream end; a listing that started
+    before it moved is not kept."""
+    _notices: int = 0
+    _kept: tuple[ToolDeclaration, ...] | None = None
+    _declared_arguments: dict[str, JsonObject] | None = None
+    """The input schema of each tool of the app's latest list; a list moves it with the tools
+    notice."""
+    _left_out: set[ArgumentLeftOut] = field(default_factory=set[ArgumentLeftOut])
+    """The left-out arguments already reported in this session."""
+
+    @asynccontextmanager
+    async def listen(self) -> AsyncGenerator[AsyncIterator[MemberWake]]:
+        self.auth.last_answer = None
+        deadline = asyncio.timeout(self.stream_seconds)
+        raised_in_body: Exception | None = None
+        try:
+            async with deadline, AsyncExitStack() as opened:
+                with self.auth.pinned_bearer():
+                    subscription = await opened.enter_async_context(
+                        subscribe(
+                            self.session,
+                            resource_subscriptions=[STANDING_URI],
+                            tools_list_changed=True,
+                        )
+                    )
+                if STANDING_URI not in (subscription.honored.resource_subscriptions or ()):
+                    raise UnusableAnswer(LISTEN_NOT_HONORED_CODE)
+                self._move_list_counter(honoured=bool(subscription.honored.tools_list_changed))
+                try:
+                    yield wakes_of(subscription, self.auth, self._tools_notice)
+                except Exception as error:
+                    raised_in_body = error
+                    raise
+        except CallFailure:
+            raise
+        except CALL_ERRORS as error:
+            if error is raised_in_body:
+                raise
+            if isinstance(error, TimeoutError) and deadline.expired():
+                raise Unreachable("the stream outlasted its deadline") from None
+            raise failure_of(error, self.auth.last_answer) from None
+        finally:
+            self._move_list_counter(honoured=False)
+
+    def _move_list_counter(self, *, honoured: bool) -> None:
+        self._honoured = honoured
+        self._list_counter += 1
+        self._kept = None
+        self._declared_arguments = None
+
+    def _tools_notice(self) -> None:
+        self._notices += 1
+        self._move_list_counter(honoured=self._honoured)
+
+    def kept_tools(self) -> tuple[ToolDeclaration, ...] | None:
+        return self._kept
+
+    def tools_notices(self) -> int:
+        return self._notices
 
     async def read_standing(self) -> MemberStanding:
-        return _record_of(MemberStanding, await self._asked(self._read(STANDING_URI)))
+        return record_of(MemberStanding, await self._asked(self._read(STANDING_URI)))
 
     async def read_place(self, place: PlaceRef) -> PlaceWindow | None:
         return await self._read_record(PlaceWindow, place_window_uri(place))
@@ -207,15 +324,151 @@ class _McpMemberSession:
     async def read_view(self, place: PlaceRef) -> PlaceView | None:
         return await self._read_record(PlaceView, place_view_uri(place))
 
+    async def read_discovery(self) -> AppDiscovery:
+        discovered = await self.session.discover()
+        extensions = discovered.capabilities.extensions or {}
+        return AppDiscovery(discovered.instructions, SKILLS_EXTENSION in extensions)
+
     async def _read_record[Record: MemberResourceRecord](
         self, record: type[Record], uri: str
     ) -> Record | None:
         """The record at the resource, or ``None`` when the app shows this member no such one."""
         read = self._read(uri, unknown_is_absent=True)
         try:
-            return _record_of(record, await self._asked(read))
+            return record_of(record, await self._asked(read))
         except _UnknownResource:
             return None
+
+    async def declared_tools(self) -> tuple[ToolDeclaration, ...]:
+        started = self._list_counter
+        listing = await self._asked(self.session.list_tools())
+        try:
+            declared = tuple(declaration_of(tool) for tool in listing.tools)
+        except ValidationError:
+            raise UnusableAnswer(INVALID_ANSWER_CODE) from None
+        if self._list_counter == started:
+            self._declared_arguments = {tool.name: tool.parameters for tool in declared}
+            if self._honoured:
+                self._kept = declared
+        return declared
+
+    async def invoke(self, name: str, arguments: JsonObject) -> ToolOutcome:
+        result = await self._called(name, arguments)
+        return ToolOutcome(text_of(result), result.is_error, picture_of(result))
+
+    async def accept(
+        self, arguments: AcceptInvitationArguments
+    ) -> AcceptInvitationRefusal | UnrecognisedRefusal | None:
+        result = await self._called_declared(
+            ACCEPT_INVITATION_TOOL,
+            arguments.model_dump(mode="json"),
+            optional=ACCEPT_OPTIONAL,
+            lists=True,
+        )
+        return accept_refusal_of(text_of(result)) if result.is_error else None
+
+    async def decline(
+        self, arguments: DeclineInvitationArguments
+    ) -> DeclineOutcome | DeclineInvitationRefusal | UnrecognisedRefusal:
+        listed = (
+            self._declared_arguments.keys()
+            if self._declared_arguments is not None
+            else {tool.name for tool in await self.declared_tools()}
+        )
+        if DECLINE_INVITATION_TOOL not in listed:
+            return DeclineOutcome.NOT_SERVED
+        result = await self._called(DECLINE_INVITATION_TOOL, arguments.model_dump(mode="json"))
+        if result.is_error:
+            return decline_refusal_of(text_of(result))
+        return DeclineOutcome.SENT
+
+    async def speak(
+        self,
+        place: PlaceRef,
+        sentence: str,
+        style: str | None = None,
+        interrupted: str | None = None,
+    ) -> SpeakAnswer | SpeakRefusal:
+        # The arguments are the wire shape of ``SpeakArguments``, built unvalidated: a refusal of a
+        # sentence is the app's, and a validation error would carry the sentence.
+        arguments: JsonObject = {"place": place.model_dump(mode="json"), "text": sentence}
+        if style is not None:
+            arguments["style"] = style
+        if interrupted is not None:
+            arguments["interrupted"] = interrupted
+        result = await self._called_declared(SPEAK_TOOL, arguments, optional=SPEAK_OPTIONAL)
+        return speak_answer_of(result)
+
+    async def continue_speaking(
+        self, place: PlaceRef, interrupted: str
+    ) -> ContinueSpeakingRefusal | None:
+        result = await self._called(CONTINUE_SPEAKING_TOOL, naming_hold(place, interrupted))
+        return refusal_in(ContinueSpeakingRefused, result).refused if result.is_error else None
+
+    async def stop_speaking(self, place: PlaceRef, interrupted: str) -> StopSpeakingRefusal | None:
+        result = await self._called(STOP_SPEAKING_TOOL, naming_hold(place, interrupted))
+        return refusal_in(StopSpeakingRefused, result).refused if result.is_error else None
+
+    async def set_turn_state(self, statement: SetTurnStateArguments) -> SetTurnStateRefusal | None:
+        result = await self._called_declared(
+            SET_TURN_STATE_TOOL, statement.model_dump(mode="json"), optional=TURN_STATE_OPTIONAL
+        )
+        return refusal_in(SetTurnStateRefused, result).refused if result.is_error else None
+
+    async def list_skills(self, cursor: str | None = None, *, listed: int = 0) -> SkillListing:
+        return await self._asked(self._skills_page(cursor, listed))
+
+    async def _skills_page(self, cursor: str | None, listed: int) -> SkillListing:
+        try:
+            return await skill_requests.list_skills(self.session, cursor)
+        except ValidationError as error:
+            raise UnusableAnswer(INVALID_ANSWER_CODE, entry=_listed_index(error, listed)) from None
+
+    async def get_skill(self, uri: str) -> Skill:
+        entry = (await self._asked(skill_requests.get_skill(self.session, uri))).skill
+        if entry.uri != uri:
+            raise UnusableAnswer(INVALID_ANSWER_CODE)
+        result = await self._asked(self._read(entry.uri))
+        content = "".join(
+            block.text for block in result.contents if isinstance(block, TextResourceContents)
+        )
+        return read_skill(self.url, entry, content.encode())
+
+    async def _called(self, name: str, arguments: JsonObject) -> CallToolResult:
+        result = await self._asked(
+            self.session.call_tool(name, arguments, allow_input_required=True)
+        )
+        if not isinstance(result, CallToolResult):
+            raise UnusableAnswer(INVALID_ANSWER_CODE)
+        return result
+
+    async def _called_declared(
+        self, name: str, arguments: JsonObject, *, optional: frozenset[str], lists: bool = False
+    ) -> CallToolResult:
+        """``_called`` without the ``optional`` arguments its tool's declared schema does not name.
+
+        The schema is the app's latest list as ``declared_tools`` read it. A call that carries an
+        optional argument and has none yet asks for the list only when it ``lists``; a turn's own
+        statements do not, since the turn lists beside them. An argument left out is reported once
+        per session.
+        """
+        if optional.isdisjoint(arguments):
+            return await self._called(name, arguments)
+        if self._declared_arguments is None and lists:
+            await self.declared_tools()
+        schema = (self._declared_arguments or {}).get(name)
+        if schema is None:
+            return await self._called(name, arguments)
+        sent, left_out = split_undeclared(arguments, schema, optional)
+        for argument in left_out:
+            self._report_left_out(ArgumentLeftOut(name, argument))
+        return await self._called(name, sent)
+
+    def _report_left_out(self, left_out: ArgumentLeftOut) -> None:
+        if left_out not in self._left_out:
+            self._left_out.add(left_out)
+            if self.on_argument_left_out is not None:
+                self.on_argument_left_out(left_out)
 
     async def _read(self, uri: str, *, unknown_is_absent: bool = False) -> ReadResourceResult:
         """The resource; an app that shows this member no such one answers an invalid-params
@@ -230,126 +483,36 @@ class _McpMemberSession:
             raise UnusableAnswer(INVALID_ANSWER_CODE)
         return result
 
-    async def _asked[Answer](self, request: Awaitable[Answer]) -> Answer:
+    async def _asked[Answer](self, request: Coroutine[object, object, Answer]) -> Answer:
         """The call's answer; a failure is told by the call's own last HTTP answer, never by one to
-        a call beside it."""
-        self.auth.last_answer = None
-        call = _CallAnswer()
-        reset = _CALL_ANSWER.set(call)
+        a call beside it. A bearer that is no header value fails the call before its request."""
         try:
-            return await request
-        except _CALL_ERRORS as error:
-            raise _failure_of(error, call.answer) from None
+            with self.auth.pinned_bearer():
+                return await self._answered(request)
         finally:
-            _CALL_ANSWER.reset(reset)
+            request.close()
+
+    async def _answered[Answer](self, request: Coroutine[object, object, Answer]) -> Answer:
+        self.auth.last_answer = None
+        call = CallAnswer()
+        reset = CALL_ANSWER.set(call)
+        try:
+            async with asyncio.timeout(None) as call.stranding:
+                return await request
+        except CALL_ERRORS as error:
+            raise failure_of(error, call.answer) from None
+        finally:
+            CALL_ANSWER.reset(reset)
 
 
-def _record_of[Record: MemberResourceRecord](
-    record: type[Record], result: ReadResourceResult
-) -> Record:
-    text = "".join(
-        block.text for block in result.contents if isinstance(block, TextResourceContents)
-    )
-    try:
-        return member_resource_from_json(record, text)
-    except ValidationError:
-        raise UnusableAnswer(INVALID_ANSWER_CODE) from None
-
-
-def _failure_of(error: BaseException, answered: _HttpAnswer | None) -> CallFailure:
-    """A call that gave no usable answer: told by the last HTTP answer it was given, else by the
-    error.
-
-    A protocol error or a result the SDK cannot validate is an unusable answer; only a broken or
-    silent connection is unreachable. The error is one of ``_CALL_ERRORS``: the status is read only
-    for those, never for a late answer's error, which no call raised.
-    """
-    if (
-        isinstance(error, MCPError)
-        and error.code == UNSUPPORTED_PROTOCOL_VERSION
-        and answered is not None
-        and answered.status >= HTTPStatus.BAD_REQUEST
-    ):
-        code = jsonrpc_code(error.code)
-        return UnusableAnswer(code, answered.method, code)
-    if answered is not None and answered.status >= HTTPStatus.BAD_REQUEST:
-        return StatusFailure(answered.status, answered.method, answered.answer)
-    if answered is not None and answered.status >= HTTPStatus.MULTIPLE_CHOICES:
-        return UnusableAnswer(status_code(answered.status))
-    if isinstance(error, MCPError):
-        if error.code in _TRANSPORT_ERROR_CODES:
-            return Unreachable("the app did not answer")
-        return UnusableAnswer(jsonrpc_code(error.code))
-    if isinstance(error, ValidationError):
-        return UnusableAnswer(INVALID_ANSWER_CODE)
-    return Unreachable("the app did not answer")
-
-
-def _settled(
-    leaf: Exception, from_body: set[int], auth: _BearerAuth, *, beside_no_echo: bool
-) -> Exception:
-    """A failure or a leaf the caller's body raised stays as it was; an error of a call becomes its
-    failure.
-
-    The transport's task finds its read stream closed when an answer lands after the session ended:
-    beside a leaf that is no such error that is a lost answer, unreachable whatever status it
-    carried. Alone it is how a cancelled session unwinds, and it stays as it was so that no
-    cancellation turns into a failure the runner backs off from; the session itself turns it into
-    the cancellation where its task was cancelled.
-    """
-    if isinstance(leaf, CallFailure) or id(leaf) in from_body:
-        return leaf
-    if isinstance(leaf, _CALL_ERRORS):
-        return _failure_of(leaf, auth.last_answer)
-    if beside_no_echo and isinstance(leaf, _LATE_ANSWER_ERRORS):
-        return Unreachable("an answer landed after the session closed")
-    return leaf
-
-
-def _leaves_of(error: Exception) -> Iterator[Exception]:
-    """The errors an exception group holds, however deep; any other error is its own leaf."""
-    if isinstance(error, ExceptionGroup):
-        for inner in cast("ExceptionGroup[Exception]", error).exceptions:
-            yield from _leaves_of(inner)
-    else:
-        yield error
-
-
-def _task_is_being_cancelled() -> bool:
-    """Whether the running task has a cancellation requested that it has not yet taken."""
-    task = asyncio.current_task()
-    return task is not None and task.cancelling() > 0
-
-
-def _folded(
-    error: Exception,
-    raised_in_body: Exception | None,
-    auth: _BearerAuth,
-    *,
-    cancelled_in_body: bool,
-) -> Exception | asyncio.CancelledError:
-    """What a session that ended in ``error`` raises.
-
-    The SDK's task groups wrap what is raised inside them, so every leaf is looked at: a failure of
-    the call and what the caller's own code raised stay as they were, an error of the connection
-    becomes its failure and a defect stays a defect. The runner picks what decides. A close that
-    failed or was cut can replace what the body raised; the body's leaves stay, ahead of what the
-    close met, so that of equal ranks a call's own failure tells how the session failed, not an
-    answer it cut.
-    """
-    from_body = list(_leaves_of(raised_in_body)) if raised_in_body else []
-    found = [
-        *from_body,
-        *(leaf for leaf in _leaves_of(error) if all(leaf is not own for own in from_body)),
-    ]
-    if cancelled_in_body and all(isinstance(leaf, _LATE_ANSWER_ERRORS) for leaf in found):
-        return asyncio.CancelledError()
-    beside_no_echo = any(not isinstance(leaf, _LATE_ANSWER_ERRORS) for leaf in found)
-    from_body_ids = {id(own) for own in from_body}
-    leaves = [_settled(leaf, from_body_ids, auth, beside_no_echo=beside_no_echo) for leaf in found]
-    if len(leaves) == 1:
-        return leaves[0]
-    return ExceptionGroup("the session failed", leaves)
+def _listed_index(error: ValidationError, listed: int) -> int | None:
+    """The index, among all entries listed so far and on this page, of the first entry the error
+    names."""
+    for detail in error.errors():
+        location = detail["loc"]
+        if len(location) > 1 and location[0] == "skills" and isinstance(location[1], int):
+            return listed + location[1]
+    return None
 
 
 @asynccontextmanager
@@ -357,52 +520,78 @@ async def open_member_session(
     url: str,
     bearer: Callable[[], SecretStr],
     *,
+    on_argument_left_out: Callable[[ArgumentLeftOut], None] | None = None,
     transport: httpx2.AsyncBaseTransport | None = None,
     stream_seconds: float = READ_SECONDS,
 ) -> AsyncGenerator[MemberSession]:
     """A session at the app's revision; the failures a call raises are the ones ``MemberSession``
     names.
 
-    ``bearer`` is read for every request, so a renewed token reaches the next one. A bare
-    ``ClientSession`` discovers the revision: the SDK's own client would fall back to ``initialize``
-    on any error, so a 401 on the probe would enter a path this runner does not have. Several
-    leaves, failures or defects, leave as one ``ExceptionGroup`` holding each of them. A session
-    whose task was being cancelled while it discovered the revision or when the body left, and that
-    closes with late answers alone, raises the cancellation: the SDK's task groups lower the task's
-    cancellation count and turn it into those answers.
+    ``bearer`` is read once for each call, so a renewed token reaches the next call; a token that is
+    no header value fails the call before its request is sent. ``on_argument_left_out`` is told once
+    per session of each optional argument the app's tool does not declare. A bare ``ClientSession``
+    discovers the revision: the SDK's own client would fall back to ``initialize`` on any error, so
+    a 401 on the probe would enter a path this runner does not have. Several leaves, failures or
+    defects, leave as one ``ExceptionGroup`` holding each of them. A session whose task was being
+    cancelled while it discovered the revision or when the body left, and that closes with late
+    answers alone, raises the cancellation: the SDK's task groups lower the task's cancellation
+    count and turn it into those answers.
     """
-    auth = _BearerAuth(bearer)
+    auth = BearerAuth(bearer)
     timeout = httpx2.Timeout(CONNECT_SECONDS, read=stream_seconds)
     raised_in_body: Exception | None = None
     cancelled_in_body = False
+    outcome: Exception | asyncio.CancelledError | None = None
     try:
         async with (
             policy_client(timeout=timeout, transport=transport, auth=auth) as client,
             streamable_http_client(url, http_client=client) as (read_stream, write_stream),
-            ClientSession(read_stream, write_stream) as session,
+            _ValidatingSession(read_stream, write_stream) as session,
         ):
             try:
                 await _discover(session, auth)
             except asyncio.CancelledError:
-                cancelled_in_body = _task_is_being_cancelled()
+                cancelled_in_body = task_is_being_cancelled()
                 raise
             try:
-                yield _McpMemberSession(session, auth)
+                yield _McpMemberSession(session, auth, url, stream_seconds, on_argument_left_out)
             except Exception as error:
                 raised_in_body = error
                 raise
             except asyncio.CancelledError:
-                cancelled_in_body = _task_is_being_cancelled()
+                cancelled_in_body = task_is_being_cancelled()
                 raise
     except Exception as error:
-        raise _folded(error, raised_in_body, auth, cancelled_in_body=cancelled_in_body) from None
+        folded_error = folded(error, raised_in_body, auth, cancelled_in_body=cancelled_in_body)
+        if not _is_leaf_of(folded_error, error, raised_in_body):
+            raise folded_error from None
+        outcome = folded_error
+    finally:
+        if outcome is not None:
+            # Raised outside the handler, a leaf the body raised keeps its cause and its context;
+            # the group of the caller's exit that is being handled would otherwise replace it.
+            context = outcome.__context__
+            try:
+                raise outcome
+            finally:
+                outcome.__context__ = context
 
 
-async def _discover(session: ClientSession, auth: _BearerAuth) -> None:
+def _is_leaf_of(
+    folded_error: Exception | asyncio.CancelledError,
+    error: Exception,
+    raised_in_body: Exception | None,
+) -> bool:
+    """Whether the folded error is one of the leaves the session's exit or its body raised."""
+    raised = () if raised_in_body is None else leaves_of(raised_in_body)
+    return any(folded_error is leaf for leaf in (*leaves_of(error), *raised))
+
+
+async def _discover(session: ClientSession, auth: BearerAuth) -> None:
     auth.last_answer = None
     try:
         await session.discover()
     except RuntimeError:
         raise UnusableAnswer(UNSUPPORTED_VERSION_CODE) from None
-    except _CALL_ERRORS as error:
-        raise _failure_of(error, auth.last_answer) from None
+    except CALL_ERRORS as error:
+        raise failure_of(error, auth.last_answer) from None
