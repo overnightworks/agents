@@ -737,9 +737,8 @@ and the voices it would speak with, `voices` as a list of voice names, the perso
 preference with the first choice first; all are optional, and an accept without them dumps without
 their keys. The record checks only their form: `url` is an absolute `https` address with a host, no
 user part, query or fragment, no whitespace, backslash or other non-printable character, and none of
-`%`, `"`, `<`, `>`, `^`, `` ` ``, `{`, `|` or `}` in the host, which is a name or a bracketed IPv6
-address; a port is a number from 0 to 65535 or empty; `sha256` is 64 lowercase hexadecimal
-characters; `voices` is the
+`%`, `"`, `<`, `>`, `^`, `` ` ``, `{`, `|` or `}` in the host; a port is a number from 0 to 65535 or
+empty; `sha256` is 64 lowercase hexadecimal characters; `voices` is the
 `Voices` type, 1 to 8 names, none twice (a host types its own voice list with it), each 1 to 64
 ASCII letters of either case, digits, `.`, `_` or `-`, and `looks` is the `Looks` type (a host types
 its own look list with it): at least one `Look`, told by `kind`, at most one `FigureLook` and no
