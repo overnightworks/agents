@@ -717,7 +717,9 @@ the app's protocol revision and yields a `MemberSession`:
 - reads: `read_standing`, `read_place`, `read_view` (`None` for a place the app shows the member no
   more) and `read_discovery` (the app's instructions and whether it declares skills; no request);
 - tools: `declared_tools`, `kept_tools`, `tools_notices` and `invoke(name, arguments)`, whose
-  `ToolOutcome` holds the one picture an app answers with, its representation free of any byte;
+  `ToolOutcome` holds the one picture an app answers with, its representation free of any byte. A
+  tool the app does not offer is no outcome: `invoke` raises `StatusFailure` with status 400, which
+  a runner that keeps a tool list reads as the tool not being offered now;
 - `listen()`, an async context manager whose entry returns once the app acknowledged the stream with
   `STANDING_URI` honored, else it raises `UnusableAnswer(listen_not_honored)`. It yields
   `ResourceWake(uri)` and `ToolsWake()` in the order the app sent them. A tools notice moves the
@@ -742,7 +744,9 @@ session of each `ArgumentLeftOut(tool, argument)`; a required argument is never 
 (`BrokenResourceError`, `ClosedResourceError`) after a cancellation nobody requested. Several
 leaves leave as one `ExceptionGroup`; what the caller's own body raised stays among them as it was,
 its cause kept. A task cancelled while the session discovers, runs a call or closes ends as the
-cancellation.
+cancellation. A transport failure of a call, such as a request the app leaves unanswered for
+`stream_seconds`, reaches the call as a bare `CancelledError`; the `Unreachable` is raised when the
+session ends.
 
 **The HTTP policy** is the gateway's (`agents.http_client`): no proxy variable, no redirect and no
 cookie. `bearer` is read once for each call, so a renewed token reaches the next call; a bearer that
@@ -760,7 +764,8 @@ leave the request waiting. A 200 answer that is no JSON-RPC carries the SDK's lo
 type: `, with no information of the app; the client leaves it, since silencing it would mean
 changing a host's logger levels, which a library never touches. No bearer is in any representation,
 message or log line of the client; the HTTP library's own trace of response headers shows what an
-app echoes.
+app echoes, and an app that echoes the bearer into a 200 body that is no JSON-RPC finds it in the
+SDK's `mcp.client.streamable_http` ERROR record and in the answer's exception chain.
 
 ## Reading an app's skills
 

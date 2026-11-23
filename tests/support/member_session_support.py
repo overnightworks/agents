@@ -181,6 +181,9 @@ class BearerRenewedAfterOneRead:
         self.armed = True
         self._reads_left = 1
 
+    def disarm(self) -> None:
+        self.armed = False
+
     def __call__(self) -> SecretStr:
         if not self.armed:
             return self.valid

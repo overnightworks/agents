@@ -97,6 +97,11 @@ REQUESTS = [
 CALLS = [*REQUESTS, pytest.param(lambda session: session.listen().__aenter__(), id="a listen")]
 
 
+async def enters_and_leaves_a_listen(session: MemberSession) -> None:
+    async with session.listen():
+        pass
+
+
 @pytest.mark.parametrize("call", CALLS)
 async def test_a_bearer_renewed_into_a_malformed_value_fails_the_next_call_alone(
     app: MemberApp,
@@ -120,7 +125,13 @@ async def test_a_bearer_renewed_into_a_malformed_value_fails_the_next_call_alone
     assert task.cancelling() == 0
 
 
-@pytest.mark.parametrize("call", REQUESTS)
+@pytest.mark.parametrize(
+    "call",
+    [
+        *REQUESTS,
+        pytest.param(enters_and_leaves_a_listen, id="a listen"),
+    ],
+)
 async def test_a_call_reads_its_bearer_once_so_a_renewal_after_the_check_cannot_end_the_session(
     app: MemberApp,
     gate: ScriptedGate,
@@ -135,8 +146,7 @@ async def test_a_call_reads_its_bearer_once_so_a_renewal_after_the_check_cannot_
     async with open_member_session(gate.url, renewing) as session:
         renewing.arm()
         await call(session)
-        renewing.valid = bearer
-        renewing.armed = False
+        renewing.disarm()
         standing = await session.read_standing()
 
     assert standing.standings

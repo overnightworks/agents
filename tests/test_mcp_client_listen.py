@@ -20,7 +20,6 @@ from agents.mcp_client import (
     MemberWake,
     ResourceWake,
     ToolsWake,
-    open_member_session,
 )
 from agents.mcp_server import InMemoryPlaceStore, ResourceChanges
 from agents.member import STANDING_URI
@@ -31,7 +30,6 @@ from tests.support.member_session_support import (
     LIMIT_SECONDS,
     ROOM,
     SUBJECT,
-    BearerRenewedAfterOneRead,
     cancelled_once_entered,
     opened,
     served,
@@ -108,26 +106,6 @@ async def test_a_stream_is_open_once_acknowledged_and_a_change_is_one_wake(
 
     assert wake == ResourceWake(STANDING_URI)
     assert [each.place.id for each in standing.standings] == [ROOM]
-
-
-async def test_a_stream_reads_its_bearer_once_so_a_renewal_after_the_check_cannot_end_the_session(
-    app: MemberApp, gate: ScriptedGate, bearer: SecretStr
-) -> None:
-    stands(app)
-    renewing = BearerRenewedAfterOneRead(bearer)
-    task = asyncio.current_task()
-    assert task is not None
-
-    async with open_member_session(gate.url, renewing) as session:
-        renewing.arm()
-        async with session.listen():
-            pass
-        renewing.valid = bearer
-        renewing.armed = False
-        standing = await session.read_standing()
-
-    assert standing.standings
-    assert task.cancelling() == 0
 
 
 async def test_an_app_that_does_not_list_the_standing_does_not_honor_the_stream(

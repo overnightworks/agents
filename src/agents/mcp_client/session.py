@@ -115,7 +115,12 @@ class AppDiscovery:
 
 class MemberSession(Protocol):
     """What a runner reads of an app and asks of it; each call raises a ``StatusFailure``,
-    ``Unreachable`` or ``UnusableAnswer``."""
+    ``Unreachable`` or ``UnusableAnswer``.
+
+    A transport failure of a call, such as a request the app leaves unanswered for
+    ``stream_seconds``, reaches the call as a bare ``asyncio.CancelledError``; the ``Unreachable``
+    is raised when the session ends.
+    """
 
     def listen(self) -> AbstractAsyncContextManager[AsyncIterator[MemberWake]]:
         """A stream of wakes; entering returns once the app acknowledged it with the standing
@@ -160,7 +165,12 @@ class MemberSession(Protocol):
         ...
 
     async def invoke(self, name: str, arguments: JsonObject) -> ToolOutcome:
-        """The tool's outcome, an error one included."""
+        """The tool's outcome, an error one included.
+
+        A tool the app does not offer is no outcome: the app answers 400, which raises
+        ``StatusFailure``, so a runner that keeps a tool list treats that status as the tool not
+        being offered now.
+        """
         ...
 
     async def accept(
