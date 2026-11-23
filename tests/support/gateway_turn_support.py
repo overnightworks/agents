@@ -24,10 +24,13 @@ from agents.agent_file import TurnRequest
 from agents.backend import TurnPerson, TurnStopKind, TurnStopped
 from agents.backend.fake_gateway import FakeGateway, Reply, completion
 from agents.backend.gateway import GatewayBackend
+from agents.backend.model_prices import ModelPricesError
 from agents.config import AgentConfig
 from agents.tools import HandTool, JsonObject, ToolDeclaration, ToolEffect, ToolOutcome
 from agents.turn import (
     FailureCode,
+    ModelPrices,
+    PriceStep,
     Principal,
     RoundCall,
     ToolRound,
@@ -287,6 +290,10 @@ class Scenario:
         principal = Principal(iss=iss or self.issuer, sub=sub or self.subject)
         return TurnPerson(principal=principal, role=role, groups=member_of), calls
 
+    def prices_outcome(self, backend, model="text/sonnet-medium"):
+        """The prices ``model_prices`` returns, or the error it raises, as ``(prices, error)``."""
+        return in_virtual_time(read_prices(backend, model))
+
     def fingerprint(self, iss=None, sub=None) -> str:
         gateway = FakeGateway(completion("ok"))
         person, _ = self.person(iss=iss, sub=sub)
@@ -296,6 +303,40 @@ class Scenario:
     def outcome(self, backend, request=None, person=None, *, leaves_after=None, virtual_time=False):
         turn = _turn(backend, request or a_request(), person or self.person()[0], leaves_after)
         return in_virtual_time(turn) if virtual_time else asyncio.run(turn)
+
+
+async def read_prices(backend: GatewayBackend, model: str):
+    try:
+        return await backend.model_prices(model), None
+    except (TurnStopped, ModelPricesError) as error:
+        return None, error
+
+
+def a_model_prices(**changes) -> ModelPrices:
+    """The prices of a model with a one-hour cache write and no step, with ``changes`` applied."""
+    prices = {
+        "context_window_tokens": 1_000_000,
+        "input_per_token": 2e-06,
+        "output_per_token": 1e-05,
+        "cache_read_per_token": 1e-07,
+        "cache_write_5m_per_token": 2.5e-06,
+        "cache_write_1h_per_token": 4e-06,
+    }
+    return ModelPrices.model_validate(prices | changes)
+
+
+def a_price_step(above_prompt_tokens: int = 100_000, **changes) -> PriceStep:
+    """A step above ``above_prompt_tokens`` that prices everything at twice the base."""
+    prices = {
+        "input_per_token": 4e-06,
+        "output_per_token": 2e-05,
+        "cache_read_per_token": 2e-07,
+        "cache_write_5m_per_token": 5e-06,
+        "cache_write_1h_per_token": 8e-06,
+    }
+    return PriceStep.model_validate(
+        {"above_prompt_tokens": above_prompt_tokens, **prices, **changes}
+    )
 
 
 @pytest.fixture
