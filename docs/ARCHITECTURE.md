@@ -99,7 +99,11 @@ flowchart TB
 A turn runs inside the app's process. `GatewayBackend.run` admits the person, reads the key
 file and streams one chat completion per round: the text reaches the app as the model writes it,
 and when a round asks for tools the app's handlers run in order once it is judged whole, before the
-next request. One deadline bounds the turn. The client holds no state between turns, except the
+next request. A turn names tools it sends deferred and records every tool round whole on
+`FinalEvent.tool_rounds`; a host replays them as `Turn.messages`, and one renderer writes a round
+the same way for the turn and for the replay, so the next turn's request begins with the last
+request of the one before and the provider's cache keeps the prefix. One deadline bounds the
+turn. The client holds no state between turns, except the
 gateway backend's pooled connections, which the host closes, and the voice loop's conversation,
 held in memory while it runs. With the `redis` extra, leases and listen records live in Redis, the
 one state outside a process.
@@ -209,6 +213,11 @@ that layer, and `quality / verdict` holds the import contracts and size and clon
 - A stated version of the member wire: a second version axis beside MCP's, with a down-converter
   per version whose old branches lose their caller. Reopens if a removal or a new variant must
   reach a reader that cannot move first.
+- A one-call record of a tool round, or a host assembling rounds from events: a split round's
+  not-run answers are never events, so the host would rebuild the backend's rendering as a second
+  owner. The turn records the round whole. Reopens if a host needs a round it did not finish.
+- The Messages route for inline tool changes: the chat route carries deferral and references the
+  gateway's models honour. Reopens when a capability only `/v1/messages` gives is named.
 - A cap in the loop: the person's budget and the app's off switches bound an agent.
 - Dropping one line per call at the window's bound: it would rewrite the prompt on every call, so
   the window drops whole pairs until a quarter is free.

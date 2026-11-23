@@ -18,8 +18,9 @@ library; the one implementation, `backend.gateway.GatewayBackend`, needs the `ba
 
 `request` is a `TurnRequest` (`agents.agent_file`, frozen): `agent`, `turn`, `roles`,
 `tools` (the agent's selected `ToolDeclaration`s), `model`, `max_duration_seconds`,
-`max_tool_calls` (`None` exactly when `tools` is empty) and `picture_size` (`None` for a text
-agent). `AgentDefinition.request(messages, *, model=None, appended_system=None,
+`max_tool_calls` (`None` exactly when `tools` is empty), `picture_size` (`None` for a text
+agent) and `deferred_tools` (see "Deferred tools and tool rounds" below).
+`AgentDefinition.request(messages, *, model=None, appended_system=None,
 one_call_per_reply=False)` builds it; `model` overrides the file's model for that run, with a
 model of the agent's kind, and `appended_system` follows the file's prompt in the system text,
 after a blank line. `one_call_per_reply` (`TurnRequest.one_call_per_reply`, default `False`)
@@ -31,6 +32,31 @@ Proved by `tests/test_agent_file.py`: `test_request_carries_the_files_prompt_mod
 `test_request_model_is_the_override_when_given`, `test_request_is_frozen`,
 `test_request_carries_one_call_per_reply_only_when_asked`; the appended text by
 `tests/test_voice_loop.py`: `test_a_spoken_line_that_wakes_sends_one_request_with_prompt_protocol_context_and_the_line`.
+
+**Deferred tools and tool rounds.** `TurnRequest.deferred_tools` (default none) names tools of
+`tools` that are sent with `"defer_loading": true`, in the order `tools` has; a tool loads when a
+result names it in `ToolOutcome.loads`. The request refuses with `ValueError`, before anything is
+sent: a deferred name that is not in `tools`, every tool deferred (a request with no tools is
+valid), a recorded round's `loads` name that is not deferred, and a picture request that holds a
+`ToolRound`. The backend validates the request again at `run`, so a `model_copy` cannot bypass
+these. `Turn.messages` holds `TurnMessage`s and `ToolRound`s. A `ToolRound` is one model reply
+that asked for tools: its `text` (or none) and its `RoundCall`s in reply order, each with the
+`call_id`, `tool`, `arguments` and the answer the model was shown (`result`, `is_error`, `image`,
+`loads`), the calls one call per reply did not run included as errors with the not-run text.
+`FinalEvent.tool_rounds` holds every tool round of the turn, images included. A host records the
+rounds of every finished turn, because leaving one out breaks the cached prefix at the first round
+left out, and replays them as `Turn.messages` before the turn's answer; the next turn then sends
+the last request of the one before, byte for byte, as its prefix. A tool that a round loaded stays
+in `deferred_tools` when the round is replayed. Replayed rounds do not count against
+`max_tool_calls`; only the calls of the turn's own rounds do. A stopped turn has no `FinalEvent`,
+so its rounds are not recorded, and replay resumes at the next finished turn. `Turn` refuses a call
+id that appears twice across its rounds, and a replayed id that the model reuses ends the round
+`failed: provider_error`, detail `malformed_reply`. `call_id` is only non-empty, because the
+gateway mints the ids of a turn; a host that writes a round mints ids from `[A-Za-z0-9_-]`, the
+form the route accepts. Deferral and references need a gateway model that honours them: the adapter
+sends them as they are and does not check the model. A call to a deferred tool that no result
+loaded is served like any offered tool. Proved by `tests/test_backend_gateway_rounds.py` and
+`tests/test_agent_file.py`.
 
 `person` is a `TurnPerson` (frozen, always a person): `principal` (the verified `(iss, sub)`),
 `role` (the app role) and `groups`, an async callable returning the person's groups. Proved by
@@ -217,8 +243,13 @@ to side-effecting, because a tool nobody classified must be assumed to change st
 `tests/test_backend_gateway_tools.py`.
 
 `HandTool` is a declaration with the async handler `(Principal, JsonObject) -> ToolOutcome` that
-serves it in the app's own process; `ToolOutcome` is `content`, `is_error` and `image`, which is
-`None` unless the tool lets the agent see. A `ToolImage` (`agents.turn`, exported by
+serves it in the app's own process; `ToolOutcome` is `content`, `is_error`, `image`, which is
+`None` unless the tool lets the agent see, and `loads`, the deferred tools the answer loads (none
+by default). An answer that loads is references alone: its `content` is blank and it has no error
+and no image, and it names each tool once, only tools of the request's `deferred_tools`. The next
+round's `tool` message holds one `tool_reference` part per name, in order, and the host gets the
+names on `ToolResultEvent.loads`. An answer that breaks these rules is a host defect: the call
+ends `failed`, the model reads `Error: The tool failed.` and the turn goes on. A `ToolImage` (`agents.turn`, exported by
 `agents.tools`) is one JPEG still picture: its bytes, written as canonical standard base64 in JSON,
 refused when empty or when they do not start with the JPEG start-of-image marker. JPEG is the one
 media type a tool sends, and an outcome without an image is sent as before. Proved by
@@ -287,7 +318,7 @@ What the client sends for a text turn, and nothing else:
 | --- | --- |
 | Request | `POST <origin>/v1/chat/completions`, no redirect followed, no cookie stored or sent (the client's jar allows no domain), no proxy variable read; HTTPS trusts `ca_file` alone |
 | Headers | `Authorization: Bearer <key>`, `Content-Type: application/json`, and the transport's own defaults; no `x-litellm-*` or `anthropic-*` header |
-| Body | exactly `model` (the request's `text/<model>` name), `messages` (the system prompt, then the turn's messages, then the round's calls and results), `user`, `stream` (`true`), `stream_options` (`{"include_usage": true}`, on every round) and, when the agent has tools, `tools` (OpenAI function tools of each declaration's `name`, `description` and `parameters`); it does not depend on `one_call_per_reply`; no `parallel_tool_calls`, `max_tokens`, `metadata`, `tags`, `fallbacks`, `num_retries`, `mock_response`, `api_key` or cache marker |
+| Body | exactly `model` (the request's `text/<model>` name), `messages` (the system prompt, then the turn's messages, then the round's calls and results), `user`, `stream` (`true`), `stream_options` (`{"include_usage": true}`, on every round) and, when the agent has tools, `tools` (OpenAI function tools of each declaration's `name`, `description` and `parameters`, and `"defer_loading": true` on each deferred tool); it does not depend on `one_call_per_reply`; no `parallel_tool_calls`, `max_tokens`, `metadata`, `tags`, `fallbacks`, `num_retries`, `mock_response`, `api_key` or cache marker |
 | `user` | `"fp-" + sha256(json.dumps([iss, sub], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()`, 67 characters |
 
 Proved by `tests/test_backend_gateway.py`: `test_the_request_is_one_post_with_the_system_prompt_and_the_messages`,
@@ -364,6 +395,11 @@ for it and it does not count against `max_tool_calls`. The model decides again a
 on. The backend alone holds the rule: the body never asks the provider for it, and the round's
 `model_request.ended` line carries `calls_not_run`. Proved by
 `tests/test_backend_gateway_one_call.py`.
+
+Each round is rendered once, by the same function for the turn and for a replay: an assistant
+message whose `content` is the round's text or `null` and whose `tool_calls` carry each call's
+arguments as compact JSON, then one `tool` message per call in reply order. A loading answer is
+the `tool_reference` parts alone.
 
 For each call, in order: `ToolCallEvent`; `await handler(principal, arguments)`; `ToolResultEvent`.
 Proved by `test_two_calls_in_one_round_run_in_order_each_between_its_events`. A call, or the next
@@ -513,7 +549,7 @@ when it has none; a failed line is a WARNING, because the turn reports the stop 
 | 422 with the `budget_exceeded` error type | `refused`, `budget_spent`, INFO |
 | another 4xx | `failed`, `gateway_refused`, with the `status` |
 | 5xx, or an error event in a 200 stream | `failed`, `gateway_failed` |
-| a reply that is no round or picture, or a round that is not whole (a name not offered, an empty call id, a call id named twice or used in an earlier round) | `failed`, `malformed_reply` |
+| a reply that is no round or picture, or a round that is not whole (a name not offered, an empty call id, a call id named twice or used in an earlier round, a replayed round's included, or a call id or text that is no valid Unicode) | `failed`, `malformed_reply` |
 | a connection refused or lost | `failed`, `connection_failed`, with no `status` unless one came before |
 | the turn's deadline | `failed`, `limit_exceeded` |
 | the host's close | `cancelled` |
