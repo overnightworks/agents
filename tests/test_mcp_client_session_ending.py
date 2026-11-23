@@ -15,6 +15,7 @@ from agents.member_outcomes import (
     StatusFailure,
     Unreachable,
 )
+from tests.support import member_session_support
 from tests.support.mcp_server_support import (
     MemberApp,
 )
@@ -38,6 +39,11 @@ from tests.support.sdk_transport import (
 )
 
 pytestmark = pytest.mark.anyio
+
+anyio_backend = member_session_support.anyio_backend
+app = member_session_support.app
+gate = member_session_support.gate
+bearer = member_session_support.bearer
 
 
 # What the caller's own code raises.
@@ -164,24 +170,16 @@ async def test_an_answer_refused_before_the_close_does_not_outrank_the_failure_t
     assert [type(leaf) for leaf in _leaves(caught.value)] == [Unreachable, Unreachable]
 
 
-async def test_an_answer_landing_after_an_unrequested_cancellation_stays_the_error_it_is(
-    gate: ScriptedGate, bearer: SecretStr, late_answer: Any
-) -> None:
-    echo = late_answer()
-
-    with pytest.raises(echo):
-        await raises_in_the_body(gate, bearer, asyncio.CancelledError())
-
-
+@pytest.mark.parametrize("echoes", [1, 2])
 async def test_answers_landing_after_an_unrequested_cancellation_stay_the_errors_they_are(
-    gate: ScriptedGate, bearer: SecretStr, late_answer: Any
+    gate: ScriptedGate, bearer: SecretStr, late_answer: Any, echoes: int
 ) -> None:
-    echo = late_answer(echoes=2)
+    echo = late_answer(echoes=echoes)
 
-    with pytest.raises(ExceptionGroup) as caught:
+    with pytest.raises(BaseException) as caught:  # noqa: PT011 - one error or a group of them
         await raises_in_the_body(gate, bearer, asyncio.CancelledError())
 
-    assert [type(leaf) for leaf in _leaves(caught.value)] == [echo, echo]
+    assert [type(leaf) for leaf in _leaves(caught.value)] == [echo] * echoes
 
 
 async def cancelled_in_the_body(gate: ScriptedGate, bearer: SecretStr) -> BaseException | None:

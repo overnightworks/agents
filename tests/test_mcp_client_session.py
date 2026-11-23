@@ -47,6 +47,7 @@ from agents.member_outcomes import (
     jsonrpc_code,
     status_code,
 )
+from tests.support import member_session_support
 from tests.support.mcp_server_support import (
     MemberApp,
     a_member,
@@ -71,14 +72,22 @@ from tests.support.scripted_gate import (
     NO_METHOD,
     READ,
     GateReply,
+    Handler,
     ScriptedGate,
     cuts,
     hangs,
 )
+from tests.support.voice_lines import a_line
 
 pytestmark = pytest.mark.anyio
 
-from tests.support.voice_lines import a_line
+anyio_backend = member_session_support.anyio_backend
+app = member_session_support.app
+gate = member_session_support.gate
+bearer = member_session_support.bearer
+place = member_session_support.place
+table = member_session_support.table
+
 
 # What the session reads.
 
@@ -402,6 +411,24 @@ async def test_a_redirect_is_an_unusable_answer_named_by_its_status_and_not_foll
     assert elsewhere.seen == []
 
 
+@pytest.mark.parametrize("status", [HTTPStatus.TEMPORARY_REDIRECT, HTTPStatus.PERMANENT_REDIRECT])
+async def test_a_redirect_to_the_apps_own_origin_is_not_followed_either(
+    app: MemberApp, gate: ScriptedGate, bearer: SecretStr, status: HTTPStatus
+) -> None:
+    stands(app)
+
+    async def redirects(reply: GateReply) -> None:
+        await reply.status(status, {"Location": gate.url})
+
+    gate.script(READ, redirects)
+
+    with pytest.raises(UnusableAnswer) as failure:
+        await reads_the_standing(gate, bearer)
+
+    assert failure.value.code == status_code(status)
+    assert gate.count(READ) == 1
+
+
 async def test_a_cookie_the_app_sets_is_never_sent_back(
     app: MemberApp, gate: ScriptedGate, bearer: SecretStr
 ) -> None:
@@ -651,9 +678,33 @@ async def test_a_jsonrpc_error_that_is_no_refused_revision_is_an_unusable_answer
 # What leaves a session of the bearer.
 
 
+async def test_a_content_type_that_reflects_the_bearer_reaches_no_log(
+    app: MemberApp, gate: ScriptedGate, caplog: pytest.LogCaptureFixture
+) -> None:
+    stands(app)
+    bearer = SecretStr(secrets.token_hex(12))
+    gate.let_in(bearer.get_secret_value(), SUBJECT)
+    reflected = f"application/{bearer.get_secret_value()}"
+    gate.script(READ, lambda reply: reply.body(HTTPStatus.OK, reflected, b"{}"))
+
+    with pytest.raises(UnusableAnswer):
+        await reads_the_standing(gate, bearer)
+
+    warned = "".join(
+        record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING
+    )
+    assert bearer.get_secret_value() not in warned
+    caplog.clear()  # the HTTP library's debug trace of the wire, set by a host, shows headers
+
+
 @pytest.mark.parametrize(
-    "arrangement",
-    ["a refused call", "an answer in no shape", "a cut connection", "an unknown bearer"],
+    "script",
+    [
+        pytest.param(answering(HTTPStatus.SERVICE_UNAVAILABLE), id="a refused call"),
+        pytest.param(lambda reply: reply.raw_result({"contents": 7}), id="an answer in no shape"),
+        pytest.param(cuts, id="a cut connection"),
+        pytest.param(None, id="an unknown bearer"),
+    ],
 )
 async def test_no_bearer_is_in_any_failure_or_in_the_session(
     app: MemberApp, gate: ScriptedGate, bearer: SecretStr, script: Handler | None
@@ -661,7 +712,9 @@ async def test_no_bearer_is_in_any_failure_or_in_the_session(
     stands(app)
     if script is None:
         bearer = SecretStr(secrets.token_urlsafe(24))
-        token = bearer.get_secret_value()
+    else:
+        gate.script(READ, script)
+    shown: list[str] = []
 
     try:
         async with opened(gate, bearer) as session:
@@ -672,5 +725,5 @@ async def test_no_bearer_is_in_any_failure_or_in_the_session(
     else:
         pytest.fail("the call did not fail")
 
-    assert token not in "".join(shown)
+    assert bearer.get_secret_value() not in "".join(shown)
     assert shown

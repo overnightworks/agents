@@ -29,6 +29,37 @@ LIMIT_SECONDS = 10
 ROOM = "room-7"
 
 
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.fixture
+def place() -> PlaceRef:
+    return PlaceRef(kind="call", id=ROOM)
+
+
+@pytest.fixture
+def table() -> PlaceRef:
+    return PlaceRef(kind="call", id="table-1")
+
+
+@pytest.fixture
+def app() -> MemberApp:
+    return MemberApp()
+
+
+@pytest.fixture
+async def gate(app: MemberApp, caplog: pytest.LogCaptureFixture) -> AsyncIterator[ScriptedGate]:
+    async with served(app, caplog) as gate:
+        yield gate
+
+
+@pytest.fixture
+def bearer(gate: ScriptedGate) -> SecretStr:
+    return a_bearer_let_in(gate)
+
+
 @asynccontextmanager
 async def served(app: MemberApp, caplog: pytest.LogCaptureFixture) -> AsyncIterator[ScriptedGate]:
     """The app served behind a gate, and at the end no log line holds a bearer the app was shown."""

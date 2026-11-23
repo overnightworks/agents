@@ -30,7 +30,6 @@ from tests.support.mcp_server_support import (
 
 DISCOVER = "server/discover"
 READ = "resources/read"
-CALL = "tools/call"
 NO_METHOD = ""
 """The key a request that carries no JSON-RPC message, a stream reconnect, is scripted under."""
 _SUBJECT_KEY = "test.subject"
