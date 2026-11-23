@@ -84,6 +84,26 @@ SEP_LIST_RESULT: JsonObject = {
                     "digest": _published_digest("e6f7a8b9"),
                     "size": 18433,
                 },
+                {
+                    "uri": "skill://pdf-processing/scripts/extract.py",
+                    "digest": _published_digest("f7a8b9c0"),
+                    "size": 4096,
+                },
+                {
+                    "uri": "skill://pdf-processing/templates/invoice.md",
+                    "digest": _published_digest("a8b9c0d1"),
+                    "size": 1210,
+                },
+                {
+                    "uri": "skill://pdf-processing/templates/purchase-order.md",
+                    "digest": _published_digest("b9c0d1e2"),
+                    "size": 1388,
+                },
+                {
+                    "uri": "skill://pdf-processing/templates/regional/eu-invoice.md",
+                    "digest": _published_digest("c0d1e2f3"),
+                    "size": 1472,
+                },
             ],
         },
     ],
