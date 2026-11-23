@@ -99,10 +99,13 @@ def _step_at(info: Mapping[str, JsonValue], thousands: int) -> PriceStep:
     return PriceStep.model_validate({"above_prompt_tokens": thousands * _THOUSAND, **prices})
 
 
-def model_info_of(prices: ModelPrices, unpriced: Collection[str] = ()) -> JsonObject:
+def model_info_of(
+    prices: ModelPrices, unpriced: Collection[str] = (), absent: Collection[str] = ()
+) -> JsonObject:
     """An entry's ``model_info`` as the gateway writes it, other tiers and unset steps included.
 
-    Each name in ``unpriced`` is a price field the entry has no price for.
+    Each name in ``unpriced`` is a price field the entry has no price for. Each name in
+    ``absent``, a price field or ``context_window_tokens``, is one whose key the entry leaves out.
     """
     info: JsonObject = {_WINDOW_KEY: prices.context_window_tokens}
     for name, key in _PRICE_KEYS.items():
@@ -117,4 +120,6 @@ def model_info_of(prices: ModelPrices, unpriced: Collection[str] = ()) -> JsonOb
             info[f"{key}_above_{step.above_prompt_tokens // _THOUSAND}k_tokens"] = getattr(
                 step, name
             )
+    for name in absent:
+        del info[_WINDOW_KEY if name == "context_window_tokens" else _PRICE_KEYS[name]]
     return info

@@ -77,14 +77,19 @@ def picture(content: bytes) -> Reply:
 
 
 def model_entry(
-    model_name: str, prices: ModelPrices, *, unpriced: Collection[str] = ()
+    model_name: str,
+    prices: ModelPrices,
+    *,
+    unpriced: Collection[str] = (),
+    absent: Collection[str] = (),
 ) -> JsonObject:
     """One deployment of ``model_name`` in a ``/model/info`` answer, priced as ``prices`` says.
 
     Each name in ``unpriced`` is a price field of ``ModelPrices`` the entry has no price for,
-    written as the gateway writes a missing price.
+    written as the gateway writes a missing price. Each name in ``absent`` is a field of
+    ``ModelPrices`` whose key the entry leaves out.
     """
-    return {"model_name": model_name, "model_info": model_info_of(prices, unpriced)}
+    return {"model_name": model_name, "model_info": model_info_of(prices, unpriced, absent)}
 
 
 def model_info(*entries: JsonObject) -> Reply:
