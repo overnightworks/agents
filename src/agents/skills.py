@@ -289,7 +289,7 @@ def implicit_skill(
     Raises ``ValueError`` for a URL without a host, a repeated tool, or an empty label or
     description; no message echoes the URL, which may carry userinfo.
     """
-    name = _name_from_host(url)
+    name = implicit_skill_name(url)
     if len(set(tools)) != len(tools):
         raise ValueError("a tool is listed twice")
     return Skill(
@@ -301,7 +301,12 @@ def implicit_skill(
     )
 
 
-def _name_from_host(url: str) -> str:
+def implicit_skill_name(url: str) -> SkillName:
+    """The name ``implicit_skill`` gives an app, derived from the host of its MCP ``url``.
+
+    Raises ``ValueError`` for a URL without a host or a host without ``a-z0-9``; no message echoes
+    the URL, which may carry userinfo.
+    """
     try:
         host = urlsplit(url).hostname or ""
     except ValueError:

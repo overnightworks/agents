@@ -16,6 +16,7 @@ from agents.skills import (
     SkillsGetParams,
     SkillsListParams,
     implicit_skill,
+    implicit_skill_name,
     read_skill,
     skill_uri,
 )
@@ -278,30 +279,30 @@ def test_an_entry_breaking_a_rule_fails_the_whole_listing_naming_the_entry(
 
 
 @pytest.mark.parametrize(
-    ("url", "instructions", "name"),
+    ("url", "name"),
     [
+        pytest.param("https://Notes.Example.org:8443/mcp", "notes-example-org", id="host"),
+        pytest.param("http://127.0.0.1:9000/mcp", "127-0-0-1", id="address"),
+        pytest.param("https://xn--bcher-kva.example/mcp", "xn-bcher-kva-example", id="punycode"),
         pytest.param(
-            "https://Notes.Example.org:8443/mcp", "Be brief.", "notes-example-org", id="host"
+            "https://-.notes.example.org./mcp", "notes-example-org", id="hyphens-at-either-end"
         ),
-        pytest.param(
-            "https://notes.example.org/mcp", None, "notes-example-org", id="no-instructions"
-        ),
-        pytest.param("http://127.0.0.1:9000/mcp", "x", "127-0-0-1", id="address"),
-        pytest.param(
-            "https://xn--bcher-kva.example/mcp", "x", "xn-bcher-kva-example", id="punycode"
-        ),
-        pytest.param(
-            "https://-.notes.example.org./mcp", "x", "notes-example-org", id="hyphens-at-either-end"
-        ),
+        pytest.param("https://a.a.a/mcp", "a-a-a", id="repeated-label"),
     ],
 )
-def test_the_implicit_skill_is_named_from_the_urls_host(
-    url: str, instructions: str | None, name: str
+def test_the_implicit_skill_name_is_derived_from_the_urls_host(url: str, name: str) -> None:
+    assert implicit_skill_name(url) == name
+
+
+@pytest.mark.parametrize("instructions", [pytest.param("Be brief.", id="instructions"), None])
+def test_the_implicit_skill_is_keyed_by_its_name_and_carries_the_apps_instructions_and_tools(
+    instructions: str | None,
 ) -> None:
+    url = "https://Notes.Example.org:8443/mcp"
     skill = implicit_skill(SERVER, url, instructions, ["lookup", "save"], SKILL_DESCRIPTION)
 
-    assert skill.name == name
-    assert skill.identity == SkillIdentity(server=SERVER, uri=f"skill://{name}/SKILL.md")
+    assert skill.name == implicit_skill_name(url)
+    assert skill.identity == SkillIdentity(server=SERVER, uri=skill_uri(skill.name))
     assert skill.body == (instructions or "")
     assert skill.tools == ("lookup", "save")
 
@@ -316,21 +317,31 @@ def test_the_implicit_skill_is_named_from_the_urls_host(
 def test_a_long_host_is_cut_to_a_valid_name_without_a_trailing_hyphen(
     host: str, length: int
 ) -> None:
-    skill = implicit_skill(SERVER, f"https://{host}/mcp", None, [], SKILL_DESCRIPTION)
+    name = implicit_skill_name(f"https://{host}/mcp")
 
-    assert len(skill.name) == length
-    assert not skill.name.endswith("-")
-    SkillEntry.model_validate(a_skill_entry(name=skill.name))
+    assert len(name) == length
+    assert not name.endswith("-")
+    SkillEntry.model_validate(a_skill_entry(name=name))
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        pytest.param("secret-token", id="url-without-host"),
+        pytest.param("https://secret-token@[::1/", id="malformed-host"),
+        pytest.param("https://.../mcp", id="host-without-a-z0-9"),
+    ],
+)
+def test_a_url_without_a_name_is_refused_without_the_url(url: str) -> None:
+    with pytest.raises(ValueError, match=r"^(?!.*secret-token)") as refused:
+        implicit_skill_name(url)
+
+    assert "secret-token" not in str(refused.value)
 
 
 @pytest.mark.parametrize(
     ("server", "url", "tools", "description"),
     [
-        pytest.param(SERVER, "secret-token", [], SKILL_DESCRIPTION, id="url-without-host"),
-        pytest.param(
-            SERVER, "https://secret-token@[::1/", [], SKILL_DESCRIPTION, id="malformed-host"
-        ),
-        pytest.param(SERVER, "https://.../mcp", [], SKILL_DESCRIPTION, id="host-without-a-z0-9"),
         pytest.param(
             SERVER, "https://notes.example.org", ["a", "a"], SKILL_DESCRIPTION, id="repeated-tool"
         ),
@@ -338,13 +349,11 @@ def test_a_long_host_is_cut_to_a_valid_name_without_a_trailing_hyphen(
         pytest.param("", "https://notes.example.org", [], SKILL_DESCRIPTION, id="empty-label"),
     ],
 )
-def test_an_implicit_skill_without_a_host_a_label_or_a_description_is_refused_without_the_url(
+def test_an_implicit_skill_with_a_repeated_tool_an_empty_label_or_an_empty_description_is_refused(
     server: str, url: str, tools: list[str], description: str
 ) -> None:
-    with pytest.raises(ValueError, match=r"^(?!.*secret-token)") as refused:
+    with pytest.raises(ValueError):
         implicit_skill(server, url, None, tools, description)
-
-    assert "secret-token" not in str(refused.value)
 
 
 @pytest.mark.parametrize(

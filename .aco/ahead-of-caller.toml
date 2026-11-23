@@ -76,7 +76,7 @@ reason = "serve's loadable check and ToolResultEvent.loads; personas#394 S8's sk
 [[code]]
 path = "src/agents/skills.py"
 item = "overnightworks/personas#394"
-reason = "The skill reader: SkillListing, read_skill and implicit_skill; personas#394 S8 reads each app's skills and builds the implicit skill."
+reason = "The skill reader: SkillListing, read_skill, implicit_skill and implicit_skill_name; personas#394 S8 reads each app's skills, names the implicit skill and builds it."
 
 [[code]]
 path = "src/agents/backend/model_prices.py"
