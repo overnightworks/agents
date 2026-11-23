@@ -168,6 +168,28 @@ def a_bearer_let_in(gate: ScriptedGate) -> SecretStr:
     return token
 
 
+@dataclass
+class BearerRenewedAfterOneRead:
+    """A host's bearer callable that reads valid until armed; armed, it reads valid once and then
+    as a value that is no header value, as a renewal task may replace it between two reads."""
+
+    valid: SecretStr
+    armed: bool = False
+    _reads_left: int = 0
+
+    def arm(self) -> None:
+        self.armed = True
+        self._reads_left = 1
+
+    def __call__(self) -> SecretStr:
+        if not self.armed:
+            return self.valid
+        if self._reads_left == 0:
+            return SecretStr("renewed\nbadly")
+        self._reads_left -= 1
+        return self.valid
+
+
 def opened(gate: ScriptedGate, bearer: SecretStr, **keywords: Any):
     return open_member_session(gate.url, lambda: bearer, **keywords)
 

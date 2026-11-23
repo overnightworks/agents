@@ -10,7 +10,8 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import re
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Final, override
@@ -65,6 +66,10 @@ CALL_ANSWER: Final = contextvars.ContextVar[CallAnswer | None]("call_answer", de
 """The answer of the call whose request this is; the SDK sends each request in the context of the
 call that made it."""
 
+_PINNED_BEARER: Final = contextvars.ContextVar[str | None]("pinned_bearer", default=None)
+"""The bearer a call read before it made its request, which the auth flow of that request carries;
+a request made outside a call reads the bearer itself."""
+
 
 class BearerAuth(httpx2.Auth):
     """Adds the current bearer and the current trace to each request and keeps the last HTTP answer
@@ -77,23 +82,35 @@ class BearerAuth(httpx2.Auth):
         self._bearer = bearer
         self.last_answer: HttpAnswer | None = None
 
-    def read_bearer(self) -> str:
-        """The current bearer; one that is no header value is refused here.
-
-        The SDK's transport tasks end the whole session when a request fails in them, so a call
-        reads the bearer before it makes its request and fails alone.
-        """
+    def _read_bearer(self) -> str:
+        """The current bearer; one that is no header value is refused here, before the header
+        exists, so no library error holds the token."""
         token = self._bearer().get_secret_value()
         if not _is_header_value(token):
-            # Raised before the header exists, so no library error holds the token.
             raise ValueError("the bearer is no valid header value")
         return token
+
+    @contextmanager
+    def pinned_bearer(self) -> Generator[None]:
+        """Reads the bearer once and makes the requests of the caller's context carry it.
+
+        The SDK's transport tasks end the whole session when a request fails in them, so a call
+        reads the bearer here, where a malformed one fails the call alone, and the auth flow reads
+        it no more.
+        """
+        reset = _PINNED_BEARER.set(self._read_bearer())
+        try:
+            yield
+        finally:
+            _PINNED_BEARER.reset(reset)
 
     @override
     async def async_auth_flow(
         self, request: httpx2.Request
     ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
-        token = self.read_bearer()
+        token = _PINNED_BEARER.get()
+        if token is None:
+            token = self._read_bearer()
         request.headers["Authorization"] = f"Bearer {token}"
         request.headers.update(outgoing_headers())
         response = yield request

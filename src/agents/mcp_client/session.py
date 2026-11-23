@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Final, Protocol, override
 
@@ -257,17 +257,19 @@ class _McpMemberSession:
 
     @asynccontextmanager
     async def listen(self) -> AsyncGenerator[AsyncIterator[MemberWake]]:
-        self.auth.read_bearer()
         self.auth.last_answer = None
         deadline = asyncio.timeout(self.stream_seconds)
         raised_in_body: Exception | None = None
         try:
-            async with (
-                deadline,
-                subscribe(
-                    self.session, resource_subscriptions=[STANDING_URI], tools_list_changed=True
-                ) as subscription,
-            ):
+            async with deadline, AsyncExitStack() as opened:
+                with self.auth.pinned_bearer():
+                    subscription = await opened.enter_async_context(
+                        subscribe(
+                            self.session,
+                            resource_subscriptions=[STANDING_URI],
+                            tools_list_changed=True,
+                        )
+                    )
                 if STANDING_URI not in (subscription.honored.resource_subscriptions or ()):
                     raise UnusableAnswer(LISTEN_NOT_HONORED_CODE)
                 self._move_list_counter(honoured=bool(subscription.honored.tools_list_changed))
@@ -475,10 +477,12 @@ class _McpMemberSession:
         """The call's answer; a failure is told by the call's own last HTTP answer, never by one to
         a call beside it. A bearer that is no header value fails the call before its request."""
         try:
-            self.auth.read_bearer()
-        except ValueError:
+            with self.auth.pinned_bearer():
+                return await self._answered(request)
+        finally:
             request.close()
-            raise
+
+    async def _answered[Answer](self, request: Coroutine[object, object, Answer]) -> Answer:
         self.auth.last_answer = None
         call = CallAnswer()
         reset = CALL_ANSWER.set(call)
@@ -513,9 +517,9 @@ async def open_member_session(
     """A session at the app's revision; the failures a call raises are the ones ``MemberSession``
     names.
 
-    ``bearer`` is read for every request, so a renewed token reaches the next one; a token that is
-    no header value fails the request before it is sent. ``on_argument_left_out`` is told once per
-    session of each optional argument the app's tool does not declare. A bare ``ClientSession``
+    ``bearer`` is read once for each call, so a renewed token reaches the next call; a token that is
+    no header value fails the call before its request is sent. ``on_argument_left_out`` is told once
+    per session of each optional argument the app's tool does not declare. A bare ``ClientSession``
     discovers the revision: the SDK's own client would fall back to ``initialize`` on any error, so
     a 401 on the probe would enter a path this runner does not have. Several leaves, failures or
     defects, leave as one ``ExceptionGroup`` holding each of them. A session whose task was being

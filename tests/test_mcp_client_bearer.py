@@ -20,6 +20,7 @@ from tests.support import member_session_support
 from tests.support.mcp_server_support import MemberApp
 from tests.support.member_session_support import (
     SUBJECT,
+    BearerRenewedAfterOneRead,
     answering,
     logged_outside_the_wire_trace,
     opened,
@@ -113,6 +114,29 @@ async def test_a_bearer_renewed_into_a_malformed_value_fails_the_next_call_alone
         with pytest.raises(ValueError, match="bearer"):
             await call(session)
         current = bearer
+        standing = await session.read_standing()
+
+    assert standing.standings
+    assert task.cancelling() == 0
+
+
+@pytest.mark.parametrize("call", REQUESTS)
+async def test_a_call_reads_its_bearer_once_so_a_renewal_after_the_check_cannot_end_the_session(
+    app: MemberApp,
+    gate: ScriptedGate,
+    bearer: SecretStr,
+    call: Callable[[MemberSession], Awaitable[object]],
+) -> None:
+    stands(app)
+    renewing = BearerRenewedAfterOneRead(bearer)
+    task = asyncio.current_task()
+    assert task is not None
+
+    async with open_member_session(gate.url, renewing) as session:
+        renewing.arm()
+        await call(session)
+        renewing.valid = bearer
+        renewing.armed = False
         standing = await session.read_standing()
 
     assert standing.standings
