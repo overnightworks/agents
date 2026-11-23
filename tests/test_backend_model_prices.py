@@ -256,48 +256,55 @@ def test_steps_out_of_order_or_repeated_are_refused(steps):
         a_model_prices(steps=steps)
 
 
-# LiteLLM's /model/info entry of a model with a one-hour cache write and one tier above 100k tokens.
-WIRE_INFO = {
-    "max_input_tokens": 200000,
-    "input_cost_per_token": 1e-06,
-    "output_cost_per_token": 5e-06,
-    "cache_read_input_token_cost": 1e-07,
-    "cache_creation_input_token_cost": 1.25e-06,
-    "cache_creation_input_token_cost_above_1hr": 2e-06,
-    "input_cost_per_token_above_100k_tokens": 2e-06,
-    "output_cost_per_token_above_100k_tokens": 1e-05,
-    "cache_read_input_token_cost_above_100k_tokens": 2e-07,
-    "cache_creation_input_token_cost_above_100k_tokens": 2.5e-06,
-    "cache_creation_input_token_cost_above_1hr_above_100k_tokens": 4e-06,
-}
-WIRE_PRICES = a_model_prices(
-    context_window_tokens=200_000,
-    input_per_token=1e-06,
-    output_per_token=5e-06,
-    cache_read_per_token=1e-07,
-    cache_write_5m_per_token=1.25e-06,
-    cache_write_1h_per_token=2e-06,
-    steps=(
-        a_price_step(
-            100_000,
-            input_per_token=2e-06,
-            output_per_token=1e-05,
-            cache_read_per_token=2e-07,
-            cache_write_5m_per_token=2.5e-06,
-            cache_write_1h_per_token=4e-06,
+@pytest.fixture
+def litellm_info():
+    """LiteLLM's /model/info entry of a model with a one-hour cache write and a tier above 100k."""
+    return {
+        "max_input_tokens": 200000,
+        "input_cost_per_token": 1e-06,
+        "output_cost_per_token": 5e-06,
+        "cache_read_input_token_cost": 1e-07,
+        "cache_creation_input_token_cost": 1.25e-06,
+        "cache_creation_input_token_cost_above_1hr": 2e-06,
+        "input_cost_per_token_above_100k_tokens": 2e-06,
+        "output_cost_per_token_above_100k_tokens": 1e-05,
+        "cache_read_input_token_cost_above_100k_tokens": 2e-07,
+        "cache_creation_input_token_cost_above_100k_tokens": 2.5e-06,
+        "cache_creation_input_token_cost_above_1hr_above_100k_tokens": 4e-06,
+    }
+
+
+@pytest.fixture
+def litellm_prices():
+    """The prices ``litellm_info`` states."""
+    return a_model_prices(
+        context_window_tokens=200_000,
+        input_per_token=1e-06,
+        output_per_token=5e-06,
+        cache_read_per_token=1e-07,
+        cache_write_5m_per_token=1.25e-06,
+        cache_write_1h_per_token=2e-06,
+        steps=(
+            a_price_step(
+                100_000,
+                input_per_token=2e-06,
+                output_per_token=1e-05,
+                cache_read_per_token=2e-07,
+                cache_write_5m_per_token=2.5e-06,
+                cache_write_1h_per_token=4e-06,
+            ),
         ),
-    ),
-)
+    )
 
 
-def test_the_reader_takes_the_key_names_litellm_writes():
+def test_the_reader_takes_the_key_names_litellm_writes(litellm_info, litellm_prices):
     other_tier = {"input_cost_per_token_above_100k_tokens_batches": 1e-06, "unrelated": "x"}
-    document = {"data": [{"model_name": MODEL, "model_info": {**WIRE_INFO, **other_tier}}]}
+    document = {"data": [{"model_name": MODEL, "model_info": {**litellm_info, **other_tier}}]}
 
-    assert model_prices_in(document, MODEL) == WIRE_PRICES
+    assert model_prices_in(document, MODEL) == litellm_prices
 
 
-def test_the_fake_gateway_writes_the_key_names_litellm_writes():
-    written = model_entry(MODEL, WIRE_PRICES)["model_info"]
+def test_the_fake_gateway_writes_the_key_names_litellm_writes(litellm_info, litellm_prices):
+    written = model_entry(MODEL, litellm_prices)["model_info"]
 
-    assert WIRE_INFO.items() <= written.items()
+    assert litellm_info.items() <= written.items()
