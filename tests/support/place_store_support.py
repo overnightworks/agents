@@ -129,10 +129,10 @@ class PlaceStoreFake(InMemoryPlaceStore):
             raise self.read_failure
         return await super().listeners(uri)
 
-    def _lapse_due(self) -> list[ListeningTurn]:
+    def _lapse_round(self) -> list[ListeningTurn]:
         if self.serve_failure is not None:
             raise self.serve_failure
-        return super()._lapse_due()
+        return super()._lapse_round()
 
 
 @dataclass

@@ -139,7 +139,7 @@ class InMemoryPlaceStore:
     ) -> NoReturn:
         while True:
             await asyncio.sleep(every.total_seconds())
-            for turn in self._lapse_due():
+            for turn in self._lapse_round():
                 lapsed(turn)
 
     def resubscribe(self) -> None:
@@ -156,7 +156,7 @@ class InMemoryPlaceStore:
     def release_signals(self) -> None:
         self._released.set()
 
-    def _lapse_due(self) -> list[ListeningTurn]:
+    def _lapse_round(self) -> list[ListeningTurn]:
         """One round of ``serve_stream_lapses``; a test double overrides it to fail the round."""
         now = asyncio.get_running_loop().time()
         turns: list[ListeningTurn] = []
