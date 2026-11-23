@@ -1,6 +1,8 @@
 """An app's skills as SEP-2640 (the MCP skills extension) serves them.
 
-``SkillListing`` and ``SkillAnswer`` read the results of ``skills/list`` and ``skills/get``;
+``SkillsListParams`` and ``SkillsGetParams`` are the params of ``skills/list`` and ``skills/get``,
+which a runner sends and an app's front parses; ``SkillListing`` and ``SkillAnswer`` read their
+results;
 an entry that breaks the Agent Skills rules for its name, description, compatibility or metadata
 fails the listing whole. ``read_skill`` verifies a ``SKILL.md`` against its entry and returns the
 ``Skill`` a runner offers its model, keyed on the host's label for the server and the entry's uri,
@@ -145,6 +147,18 @@ class SkillEntry(_Record):
     @cached_property
     def _frontmatter_view(self) -> SkillFrontmatter:
         return SkillFrontmatter.model_validate(self.frontmatter)
+
+
+class SkillsListParams(_Record):
+    """The params of ``skills/list``: the cursor of the page to read, absent for the first."""
+
+    cursor: StrictStr | None = None
+
+
+class SkillsGetParams(_Record):
+    """The params of ``skills/get``: the uri of the skill's ``SKILL.md``."""
+
+    uri: StrictStr
 
 
 class SkillListing(_Record):
