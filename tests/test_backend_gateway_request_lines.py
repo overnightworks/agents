@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import aclosing, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +19,8 @@ from agents.backend.fake_gateway import (
     FakeGateway,
     Reply,
     completion,
+    model_entry,
+    model_info,
     picture,
     tool_call,
     tool_round,
@@ -33,9 +35,11 @@ from tests.support.gateway_turn_support import (
     _turn,
     a_chunk,
     a_fragment,
+    a_model_prices,
     a_picture_request,
     a_request,
     an_event_stream,
+    read_prices,
     self_signed_authority,
 )
 from tests.support.keep_alive_gateway import serving_keep_alive
@@ -48,6 +52,7 @@ log_lines = log_lines
 
 MODEL_REQUEST = "model_request.ended"
 PICTURE_REQUEST = "picture_request.ended"
+MODEL_PRICES_REQUEST = "model_prices_request.ended"
 
 
 def _send_completion(scenario: Scenario, transport: httpx2.AsyncBaseTransport) -> None:
@@ -62,6 +67,22 @@ def _send_picture(scenario: Scenario, transport: httpx2.AsyncBaseTransport) -> N
         runner.run(_turn(backend, a_picture_request(), scenario.person()[0]))
 
 
+async def _completion_once(backend: GatewayBackend, scenario: Scenario) -> None:
+    await _turn(backend, a_request(), scenario.person()[0])
+
+
+async def _picture_once(backend: GatewayBackend, scenario: Scenario) -> None:
+    await _turn(backend, a_picture_request(), scenario.person()[0])
+
+
+async def _prices_once(backend: GatewayBackend, scenario: Scenario) -> None:
+    await read_prices(backend, "text/sonnet-medium")
+
+
+def _send_prices(scenario: Scenario, transport: httpx2.AsyncBaseTransport) -> None:
+    scenario.prices_outcome(GatewayBackend(scenario.config(), transport=transport))
+
+
 type Send = Callable[[Scenario, httpx2.AsyncBaseTransport], None]
 
 
@@ -70,6 +91,7 @@ class Request:
     """One kind of gateway request: how it is sent, its line, and how its deadline ends it."""
 
     send: Send
+    once: Callable[[GatewayBackend, Scenario], Awaitable[None]]
     event: str
     ok: Reply
     deadline_reason: str
@@ -77,10 +99,22 @@ class Request:
 
 
 REQUESTS = [
-    Request(_send_completion, MODEL_REQUEST, completion("hi"), "limit_exceeded", 31),
-    Request(_send_picture, PICTURE_REQUEST, picture(b"PNG"), "limit_exceeded", 31),
+    Request(
+        _send_completion, _completion_once, MODEL_REQUEST, completion("hi"), "limit_exceeded", 31
+    ),
+    Request(_send_picture, _picture_once, PICTURE_REQUEST, picture(b"PNG"), "limit_exceeded", 31),
+    Request(
+        _send_prices,
+        _prices_once,
+        MODEL_PRICES_REQUEST,
+        model_info(model_entry("text/sonnet-medium", a_model_prices())),
+        "limit_exceeded",
+        31,
+    ),
 ]
-EVERY_REQUEST = pytest.mark.parametrize("request_kind", REQUESTS, ids=["completions", "pictures"])
+EVERY_REQUEST = pytest.mark.parametrize(
+    "request_kind", REQUESTS, ids=["completions", "pictures", "model prices"]
+)
 
 BUDGET_BODY = json.dumps({"error": {"type": "budget_exceeded", "code": "422"}}).encode()
 OTHER_422_BODY = json.dumps({"error": {"type": "invalid_request_error", "code": "422"}}).encode()
@@ -343,10 +377,9 @@ def test_a_deadline_reached_while_the_app_holds_a_piece_is_a_limit_exceeded_line
 async def _send_twice(
     scenario: Scenario, request_kind: Request, *, origin: str, ca_file: Path | None = None
 ) -> None:
-    make_request = a_request if request_kind.event == MODEL_REQUEST else a_picture_request
     async with GatewayBackend(scenario.config(origin=origin, ca_file=ca_file)) as backend:
         for _ in range(2):
-            await _turn(backend, make_request(), scenario.person()[0])
+            await request_kind.once(backend, scenario)
 
 
 async def _send_twice_to_a_dropping_server(
@@ -422,6 +455,12 @@ def test_a_line_carries_the_id_of_the_trace_it_is_written_in(scenario, log_lines
 
     assert trace_id is not None
     assert _the_line(log_lines, request_kind)["trace_id"] == trace_id
+
+
+def test_an_answer_without_the_model_is_an_ok_line(scenario, log_lines):
+    _send_prices(scenario, FakeGateway(model_info()))
+
+    assert log_lines.one(MODEL_PRICES_REQUEST)["outcome"] == "ok"
 
 
 def test_the_hosts_close_during_a_round_is_a_cancelled_line(scenario, log_lines):

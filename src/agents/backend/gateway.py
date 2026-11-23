@@ -54,6 +54,7 @@ from agents.backend.gateway_request import (
     request_body,
     round_messages,
 )
+from agents.backend.model_prices import ModelPricesError, model_prices_in
 from agents.backend.streamed_round import (
     AssembledMessage,
     MalformedRound,
@@ -73,6 +74,7 @@ from agents.turn import (
     MAX_EVENT_BYTES,
     MAX_RUN_FILES_BYTES,
     FailureCode,
+    ModelPrices,
     NonEmptyUnicodeText,
     RejectionCode,
     RoundCall,
@@ -94,8 +96,12 @@ from agents.turn_events import (
 _LOGGER: Final = logging.getLogger(__name__)
 _COMPLETIONS_PATH: Final = "/v1/chat/completions"
 _PICTURES_PATH: Final = "/v1/images/generations"
+_MODEL_INFO_PATH: Final = "/v1/model/info"
 _MODEL_REQUEST_EVENT: Final = "model_request.ended"
 _PICTURE_REQUEST_EVENT: Final = "picture_request.ended"
+_MODEL_PRICES_REQUEST_EVENT: Final = "model_prices_request.ended"
+_MODEL_PRICES_SECONDS: Final = 30
+_MAX_MODEL_INFO_BYTES: Final = 4 * 1024 * 1024
 _BUDGET_EXCEEDED: Final = "budget_exceeded"
 _TRAILING_READ_SECONDS: Final = 1
 _TRAILING_READ_BYTES: Final = 65536
@@ -178,8 +184,7 @@ class GatewayBackend(AgentBackend):
         errors it passed through; a stop the host raised is the same exception, its traceback
         cut of the gateway path's frames, which hold the key, the reply and the call arguments.
         """
-        if self._closed:
-            raise RuntimeError("the gateway backend is closed")
+        self._refuse_when_closed()
         try:
             async with contextlib.aclosing(self._turn(request, person)) as events:
                 async for event in events:
@@ -196,6 +201,42 @@ class GatewayBackend(AgentBackend):
         else:
             return
         raise closed
+
+    async def model_prices(self, model: str) -> ModelPrices:
+        """The window and the prices per token of ``model``: one ``GET`` with the app's key.
+
+        An answer with no one price record for it raises ``ModelPricesError``, any other failure
+        ``TurnStopped``, as for a turn; after ``aclose`` it raises ``RuntimeError``.
+        """
+        self._refuse_when_closed()
+        try:
+            return await self._read_prices(model)
+        except _GatewayStop as stopped:
+            closed: Exception = _plain(stopped)
+        except ModelPricesError as error:
+            closed = error.with_traceback(None)
+        raise closed
+
+    async def _read_prices(self, model: str) -> ModelPrices:
+        deadline = asyncio.get_running_loop().time() + _MODEL_PRICES_SECONDS
+        key = _read_key(self._config.gateway.key_file)
+        async with _request_line(_MODEL_PRICES_REQUEST_EVENT) as step:
+            answer = await _before(deadline, self._priced(model, key, step))
+        if isinstance(answer, ModelPricesError):
+            raise answer
+        return answer
+
+    async def _priced(
+        self, model: str, key: str, step: StepTimer
+    ) -> ModelPrices | ModelPricesError:
+        async with _opened(self._pooled_client(), _MODEL_INFO_PATH, key, step) as response:
+            body = await _read_body(response, _MAX_MODEL_INFO_BYTES)
+        try:
+            return model_prices_in(loaded_json(body), model)
+        except ModelPricesError as error:
+            return error
+        except _UNREADABLE_REPLY:
+            raise _malformed_reply() from None
 
     async def _turn(
         self, request: TurnRequest, person: TurnPerson
@@ -284,16 +325,22 @@ class GatewayBackend(AgentBackend):
     def _post(
         self, path: str, body: str, key: str, step: StepTimer
     ) -> contextlib.AbstractAsyncContextManager[httpx2.Response]:
+        return _opened(self._pooled_client(), path, key, step, content=body)
+
+    def _refuse_when_closed(self) -> None:
         if self._closed:
             raise RuntimeError("the gateway backend is closed")
+
+    def _pooled_client(self) -> httpx2.AsyncClient:
+        self._refuse_when_closed()
         if self._pooled is None:
             self._pooled = _client(self._config.gateway, self._transport)
-        return _opened(self._pooled, path, key, step, content=body)
+        return self._pooled
 
 
 @contextlib.asynccontextmanager
 async def _opened(
-    client: httpx2.AsyncClient, path: str, key: str, step: StepTimer, *, content: str
+    client: httpx2.AsyncClient, path: str, key: str, step: StepTimer, *, content: str | None = None
 ) -> AsyncGenerator[httpx2.Response, None]:
     """The gateway's 200 response, open while it is read; a connection lost meanwhile is raised.
 
@@ -301,16 +348,14 @@ async def _opened(
     response's status goes on the request's line, and so does ``connect_ms`` when the request
     opened a new connection, whether or not a response came.
     """
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-        **outgoing_headers(),
-    }
+    headers = {"Authorization": f"Bearer {key}", **outgoing_headers()}
+    if content is not None:
+        headers["Content-Type"] = "application/json"
     connecting = _ConnectTimes()
     try:
         # ssl.SSLError is an OSError.
         async with client.stream(
-            "POST",
+            "GET" if content is None else "POST",
             path,
             content=content,
             headers=headers,

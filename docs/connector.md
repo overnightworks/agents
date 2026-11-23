@@ -499,6 +499,42 @@ httpx2 INFO line with the gateway URL and httpcore's DEBUG response headers unde
 level. The key stays out of the log even under DEBUG, because `httpcore2` prints a request by its
 method only (`test_debug_logging_writes_the_key_into_no_record`).
 
+### Model prices
+
+`await backend.model_prices(model)` returns the `ModelPrices` (`agents.turn`) of a model, `model`
+being the gateway's name for it (`text/<model>`): `context_window_tokens`, the input, output,
+cache-read and five-minute cache-write prices per token (`input_per_token`, `output_per_token`,
+`cache_read_per_token`, `cache_write_5m_per_token`), the one-hour cache-write price
+(`cache_write_1h_per_token`, `None` where the model has none) and `steps`. A step is a
+`PriceStep`: `above_prompt_tokens` and the five prices that hold above that many prompt tokens,
+each `None` where the gateway names no price for the step. `steps` is a tuple ordered by threshold,
+empty when the model has none. The record reports; a host's pure decision combines it with
+`TurnUsage`, and no decision lives in the client. `ModelPrices` is not on the `AgentBackend` port.
+
+The call is one `GET /v1/model/info` with the app's key over the pooled client, no query, no person
+and no budget, under a deadline of 30 seconds, and it writes one `model_prices_request.ended` line
+as a request of a turn does. It reads LiteLLM's answer in `backend/model_prices.py`, the one place of
+its key names: the entries whose `model_name` is `model`, `max_input_tokens` and the input, output,
+cache-read, five-minute and one-hour write prices of their `model_info`, and a step for each
+`<price>_above_<N>k_tokens` key that holds a price (N thousand tokens; other tiers such as
+`_batches` are not read). A model's answer has one price record or none:
+
+| Case | Raises |
+|---|---|
+| the gateway lists no entry named `model` | `ModelPricesError`, reason `model_not_listed` |
+| entries of that name that differ in any read value | `ModelPricesError`, reason `entries_differ` |
+| a missing (null, absent or 0) input, output, cache-read or five-minute write price | `ModelPricesError`, reason `base_price_missing` |
+| a refusal, a failing gateway, a lost connection, an unusable key, the deadline | `TurnStopped`, as for a turn |
+| an answer that is not the list of entries, or an entry without its window | `TurnStopped`, `failed: provider_error`, detail `malformed_reply` |
+
+`ModelPricesError` and its reasons (`ModelPricesFailure`) are in `agents.backend.model_prices`. It is
+raised from a frame that holds neither the key nor the reply. In a host's
+proof, `backend.fake_gateway.model_info(model_entry(name, prices))` is the scripted answer; a price
+field named in `unpriced=` is written as the gateway writes a missing one, and a field named in
+`absent=` (a price or `context_window_tokens`) has no key. A price that is not a finite number is a
+malformed reply. Proved by `tests/test_backend_model_prices.py` and the `model prices` cases of
+`tests/test_backend_gateway_request_lines.py`.
+
 ### The log
 
 The library logs through standard-library loggers named under `agents` and logline's guide
@@ -530,7 +566,7 @@ WARNING, with `reason` (`no_status`, `incomplete`, `too_large`, `status`, `not_t
 when the app sent one. The inner route request carries the outer trace id under a new span id.
 
 Each request to the gateway writes one line when it ends: `model_request.ended` per round of a
-turn and `picture_request.ended`. A line carries `duration_ms`,
+turn, `picture_request.ended` and `model_prices_request.ended`. A line carries `duration_ms`,
 `outcome` and the response's `status` once one came; `connect_ms`, the time to open a new
 connection (TCP connect, and the TLS handshake where there is one), only on a request that opened
 one, whether or not a response came, never on a reused connection or a failed connect; a round's line also carries `first_output_ms`

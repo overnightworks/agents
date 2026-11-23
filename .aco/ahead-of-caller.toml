@@ -41,7 +41,7 @@ reason = "The calling core; hopin#1115 moves hopin's calling and send-away decis
 [[code]]
 path = "src/agents/turn.py"
 item = "overnightworks/personas#394"
-reason = "ToolRound and RoundCall in Turn.messages; personas#394 S8 replays a finished turn's tool rounds and writes a skill's join block. It moves to S8's own item if personas#394 closes when S8 is cut."
+reason = "ToolRound and RoundCall in Turn.messages; personas#394 S8 replays a finished turn's tool rounds and writes a skill's join block. ModelPrices and PriceStep; personas#394 S6 reads them from GatewayBackend.model_prices. It moves to S8's and S6's own items if personas#394 closes when they are cut."
 
 [[code]]
 path = "src/agents/agent_file.py"
@@ -66,7 +66,7 @@ reason = "defer_loading and tool_reference rendering and ToolRound replay; perso
 [[code]]
 path = "src/agents/backend/gateway.py"
 item = "overnightworks/personas#394"
-reason = "the seeding of replayed call ids and FinalEvent.tool_rounds' assembly; personas#394 S8 replays recorded rounds. It moves to S8's own item if personas#394 closes when S8 is cut."
+reason = "the seeding of replayed call ids and FinalEvent.tool_rounds' assembly; personas#394 S8 replays recorded rounds. GatewayBackend.model_prices; personas#394 S6 reads the window and prices. It moves to S8's and S6's own items if personas#394 closes when they are cut."
 
 [[code]]
 path = "src/agents/backend/tool_result.py"
@@ -77,3 +77,13 @@ reason = "serve's loadable check and ToolResultEvent.loads; personas#394 S8's sk
 path = "src/agents/skills.py"
 item = "overnightworks/personas#394"
 reason = "The skill reader: SkillListing, read_skill and implicit_skill; personas#394 S8 reads each app's skills and builds the implicit skill."
+
+[[code]]
+path = "src/agents/backend/model_prices.py"
+item = "overnightworks/personas#394"
+reason = "The /model/info reader and writer; personas#394 S6 decides when summarising pays from GatewayBackend.model_prices. It moves to S6's own item if personas#394 closes when S6 is cut."
+
+[[code]]
+path = "src/agents/backend/fake_gateway.py"
+item = "overnightworks/personas#394"
+reason = "model_entry and model_info, the scripted answer of model_prices; personas#394 S6's proofs script it. It moves to S6's own item if personas#394 closes when S6 is cut."

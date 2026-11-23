@@ -50,6 +50,7 @@ source_modules =
     agents.backend.fake_gateway
     agents.backend.gateway
     agents.backend.gateway_request
+    agents.backend.model_prices
     agents.backend.streamed_round
     agents.backend.tool_result
     agents.calling
@@ -87,6 +88,7 @@ source_modules =
     agents.backend.fake_gateway
     agents.backend.gateway
     agents.backend.gateway_request
+    agents.backend.model_prices
     agents.backend.streamed_round
     agents.backend.tool_result
     agents.calling
@@ -117,6 +119,7 @@ source_modules =
     agents
     agents.agent_file
     agents.backend
+    agents.backend.model_prices
     agents.calling
     agents.config
     agents.errors
@@ -149,6 +152,7 @@ source_modules =
     agents
     agents.agent_file
     agents.backend
+    agents.backend.model_prices
     agents.calling
     agents.config
     agents.errors
@@ -237,6 +241,18 @@ name = backend.gateway_request imports no HTTP library and not backend.gateway
 type = forbidden
 source_modules =
     agents.backend.gateway_request
+forbidden_modules =
+    httpx2
+    httpx
+    agents.backend.gateway
+
+# The price reader is pure the same way: it reads the gateway's model info into ModelPrices, so it
+# imports no HTTP library, and gateway.py calls it, never the reverse.
+[importlinter:contract:model-prices-stays-pure]
+name = backend.model_prices imports no HTTP library and not backend.gateway
+type = forbidden
+source_modules =
+    agents.backend.model_prices
 forbidden_modules =
     httpx2
     httpx

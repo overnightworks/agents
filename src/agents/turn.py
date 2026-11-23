@@ -443,6 +443,49 @@ class RoundUsage(StrictModel):
     usage: TurnUsage | None
 
 
+TokenPrice = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+PositivePrice = Annotated[float, Field(gt=0, allow_inf_nan=False)]
+
+
+class PriceStep(StrictModel):
+    """The prices per token that hold once the prompt has more than ``above_prompt_tokens`` tokens.
+
+    A price the gateway names no step for is ``None``: the base price holds.
+    """
+
+    above_prompt_tokens: Annotated[int, Field(gt=0)]
+    input_per_token: TokenPrice | None
+    output_per_token: TokenPrice | None
+    cache_read_per_token: TokenPrice | None
+    cache_write_5m_per_token: TokenPrice | None
+    cache_write_1h_per_token: TokenPrice | None
+
+
+class ModelPrices(StrictModel):
+    """A model's context window and its prices per token, as the gateway reports them.
+
+    ``context_window_tokens`` is the most prompt tokens a request may hold. The cache write is
+    priced by lifetime: five minutes, and one hour, which is ``None`` where the model has no
+    such price. ``steps`` lists the prices that hold above a prompt-token threshold, ordered by
+    threshold and empty when the model has none. The record reports; its reader decides.
+    """
+
+    context_window_tokens: Annotated[int, Field(gt=0)]
+    input_per_token: PositivePrice
+    output_per_token: PositivePrice
+    cache_read_per_token: PositivePrice
+    cache_write_5m_per_token: PositivePrice
+    cache_write_1h_per_token: TokenPrice | None
+    steps: tuple[PriceStep, ...] = ()
+
+    @model_validator(mode="after")
+    def _refuse_steps_out_of_order(self) -> ModelPrices:
+        thresholds = [step.above_prompt_tokens for step in self.steps]
+        if thresholds != sorted(set(thresholds)):
+            raise ValueError("steps must rise by threshold, each threshold once")
+        return self
+
+
 class Principal(StrictModel):
     """The verified caller exactly as the app bound it: no bound, no normalization."""
 
