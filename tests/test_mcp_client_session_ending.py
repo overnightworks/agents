@@ -26,6 +26,7 @@ from tests.support.member_session_support import (
     stands,
 )
 from tests.support.scripted_gate import (
+    CALL,
     DISCOVER,
     READ,
     GateReply,
@@ -143,15 +144,44 @@ async def test_a_leaf_the_body_raises_keeps_the_cause_it_was_raised_from(
     assert caught.value.__cause__ is cause
 
 
+@pytest.mark.parametrize("method", [READ, CALL], ids=["a read", "a tool call"])
 async def test_a_request_whose_answer_names_no_request_ends_as_unreachable(
-    app: MemberApp, gate: ScriptedGate, bearer: SecretStr
+    app: MemberApp, gate: ScriptedGate, bearer: SecretStr, method: str
 ) -> None:
     stands(app)
-    gate.script(READ, lambda reply: reply.raw_result({"contents": []}, answering="no-request"))
+    gate.script(method, lambda reply: reply.raw_result({}, answering="no-request"))
 
     with pytest.raises(Unreachable):
-        async with asyncio.timeout(LIMIT_SECONDS):
-            await reads_the_standing(gate, bearer)
+        async with asyncio.timeout(LIMIT_SECONDS), opened(gate, bearer) as session:
+            if method == READ:
+                await session.read_standing()
+            else:
+                await session.invoke("a-tool", {})
+
+
+async def test_a_task_cancelled_during_a_member_call_ends_as_the_cancellation(
+    gate: ScriptedGate, bearer: SecretStr
+) -> None:
+    calling = asyncio.Event()
+
+    async def hangs_in_the_call(reply: GateReply) -> None:
+        calling.set()
+        await hangs(reply)
+
+    async def invokes() -> None:
+        async with opened(gate, bearer) as session:
+            await session.invoke("a-tool", {})
+
+    gate.script(CALL, hangs_in_the_call)
+    task = asyncio.create_task(invokes())
+    async with asyncio.timeout(LIMIT_SECONDS):
+        await calling.wait()
+    task.cancel()
+
+    async with asyncio.timeout(LIMIT_SECONDS):
+        (ended,) = await asyncio.gather(task, return_exceptions=True)
+
+    assert isinstance(ended, asyncio.CancelledError)
 
 
 def _leaves(error: BaseException) -> list[BaseException]:

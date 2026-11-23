@@ -27,8 +27,9 @@ from mcp_types import (
 )
 from pydantic import SecretStr
 
-from agents.mcp_client import open_member_session
+from agents.mcp_client import READ_SECONDS, open_member_session
 from agents.member import (
+    LEASE_SECONDS,
     STANDING_URI,
     MemberStanding,
     PartialSpeech,
@@ -763,3 +764,7 @@ async def test_no_bearer_is_in_any_failure_or_in_the_session(
 
     assert bearer.get_secret_value() not in "".join(shown)
     assert shown
+
+
+def test_the_runner_cuts_a_stream_before_the_lease_of_its_member_would_have_ended() -> None:
+    assert READ_SECONDS < LEASE_SECONDS
