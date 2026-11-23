@@ -1,8 +1,0 @@
-claim_id = "f260a8e626584bccb16a7c9ff0497ee8"
-agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
-role = "builder"
-base = "436ead89c5b6eed707a5b964310bdb57e1735689"
-branch = "claude/issue-1097-take-quality-v0-24-0"
-scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", ".github/workflows/release.yml", "pyproject.toml", "uv.lock"]
-opened_commit = "3f36d65b570e536417205825286fe765e4df45eb"
-whole_reason = "One release: its pins in three workflows, the pytest-randomly lock it requires and the seeded pytest calls it checks"
