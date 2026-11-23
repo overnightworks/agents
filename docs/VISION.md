@@ -10,6 +10,11 @@ heard text with its speaker in the place's window, spoken text through one stand
 sound stays with the app and the speech service; this library carries text, and the one still
 picture an app's tool hands an agent to see.
 
+An agent with an account of its own takes part in an app's place as a member, the same way in
+every app: it is called and sent away, hears and sees what happens there, speaks and acts through
+the app's tools. The library owns this member protocol for both sides, the app that hosts and the
+runner that visits.
+
 ## What it does
 
 It gives every app the same answers to the hard questions of running an agent:
@@ -17,7 +22,8 @@ It gives every app the same answers to the hard questions of running an agent:
 - when a turn may be retried, and why one that cannot finish stopped;
 - what a tool may change, and which tools only read;
 - how one person keeps one budget across text and pictures;
-- who may call an agent to a place and send it away.
+- who may call an agent to a place and send it away;
+- how an app proves that it receives an agent the way every other app does.
 
 ## Why
 
@@ -28,8 +34,9 @@ they exist and adds only what they leave open, so it stays small.
 
 ## Who uses it today
 
-Apps that run their agents in their own process. Each one owns its deployment facts: where its
-gateway is, which key it uses, which tools it offers and who the signed-in person is.
+Apps that run their agents in their own process, and the runner whose agents visit those apps.
+Each one owns its deployment facts: where its gateway is, which key it uses, which tools it offers
+and who the signed-in person is.
 
 ## What it deliberately is not
 
