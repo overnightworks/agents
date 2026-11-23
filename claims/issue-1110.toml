@@ -1,0 +1,8 @@
+claim_id = "de3ccf4da98c4d00aad62d510f23fedd"
+agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
+role = "builder"
+base = "547eb81ae58c9c3041c5b5cb3741b8623925f7cf"
+branch = "claude/issue-1110-skill-reader"
+scope = [".aco/ahead-of-caller.toml", ".importlinter", "docs/ARCHITECTURE.md", "docs/connector.md", "src/agents/__init__.py", "src/agents/agent_file.py", "src/agents/front_matter.py", "src/agents/skills.py", "tests/support/skill_support.py", "tests/test_skills.py"]
+opened_commit = "69fc71b4a793723940955faba99685d9f8567fd5"
+whole_reason = "One base reader of the skills wire with its shared front-matter owner, its import contracts, registry entry and documentation."
