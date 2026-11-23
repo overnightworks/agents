@@ -22,7 +22,10 @@ mcp-server = [
     "overnightworks-logline>=0.4,<2",
 ]
 mcp-client = [
+    "anyio>=4.12,<5",
+    "httpx2>=2.12,<3",
     "mcp>=2.3,<3",
+    "overnightworks-logline>=0.4,<2",
 ]
 redis = [
     "overnightworks-agents[mcp-server]",

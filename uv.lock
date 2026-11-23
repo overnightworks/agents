@@ -525,7 +525,10 @@ dev = [
     { name = "uvicorn" },
 ]
 mcp-client = [
+    { name = "anyio" },
+    { name = "httpx2" },
     { name = "mcp" },
+    { name = "overnightworks-logline" },
 ]
 mcp-server = [
     { name = "anyio" },
@@ -551,16 +554,19 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", marker = "extra == 'mcp-client'", specifier = ">=4.12,<5" },
     { name = "anyio", marker = "extra == 'mcp-server'", specifier = ">=4.12,<5" },
     { name = "cryptography", marker = "extra == 'dev'", specifier = ">=50.0.2" },
     { name = "fakeredis", extras = ["lua"], marker = "extra == 'dev'", specifier = ">=2.35,<3" },
     { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.133,<1" },
     { name = "httpx2", marker = "extra == 'backend'", specifier = ">=2.12,<3" },
+    { name = "httpx2", marker = "extra == 'mcp-client'", specifier = ">=2.12,<3" },
     { name = "mcp", marker = "extra == 'mcp-client'", specifier = ">=2.3,<3" },
     { name = "mcp", marker = "extra == 'mcp-server'", specifier = ">=2.3,<3" },
     { name = "overnightworks-agents", extras = ["backend", "mcp-client", "mcp-server", "redis", "voice"], marker = "extra == 'dev'" },
     { name = "overnightworks-agents", extras = ["mcp-server"], marker = "extra == 'redis'" },
     { name = "overnightworks-logline", marker = "extra == 'backend'", specifier = ">=0.4,<2" },
+    { name = "overnightworks-logline", marker = "extra == 'mcp-client'", specifier = ">=0.4,<2" },
     { name = "overnightworks-logline", marker = "extra == 'mcp-server'", specifier = ">=0.4,<2" },
     { name = "overnightworks-logline", marker = "extra == 'voice'", specifier = ">=0.4,<2" },
     { name = "overnightworks-tandem", marker = "extra == 'redis'", specifier = ">=0.12.1,<0.16" },

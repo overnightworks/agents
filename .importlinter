@@ -190,6 +190,7 @@ source_modules =
     agents.turn
     agents.turn_events
 forbidden_modules =
+    agents.http_client
     httpx2
     httpx
     mcp
@@ -255,6 +256,7 @@ forbidden_modules =
     agents.errors
     agents.mcp_wire
     agents.turn_events
+    agents.http_client
     agents.mcp_client
     agents.mcp_client.**
     agents.mcp_server

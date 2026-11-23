@@ -67,18 +67,25 @@ flowchart TB
   and `member` (the records an app and an agent say to each other about a member, the place window
   and the place view) with `member_presentation` (an agent's looks, figure and voices) and
   `member_place` (a place's reference and the URIs of its window and view), and `calling` (the
-  decisions of calling and sending away an agent, pure, on facts the app supplies).
+  decisions of calling and sending away an agent, pure, on facts the app supplies); and
+  `member_outcomes`, the failures and codes of a call to an app's member endpoint, pure so that a
+  runner's decisions read them without the client.
 - The **`backend` extra** adds `httpx2` for `backend.gateway.GatewayBackend`, the port's one
-  implementation, and `backend.fake_gateway`, its test transport.
+  implementation, and `backend.fake_gateway`, its test transport. `http_client` builds the
+  `httpx2` client of the gateway and of the member client: no proxy variable read, no redirect
+  followed, no cookie kept.
 - The **`mcp-server` extra** adds `anyio` and the official MCP SDK for `agents.mcp_server`, a thin
   ASGI shell before the SDK that serves an app's tools to one signed-in person's agent on MCP
   revision 2026-07-28, with the `MemberResources` port through which a member reads an app's truth
   and `MemberHearing`, the in-memory record of who hears whom ([hearing.md](hearing.md)); the
   `PlaceStore` port has `InMemoryPlaceStore` for a host's tests and `RedisPlaceStore` for pods;
   `mcp_wire` holds what the SDK does not own (the strict JSON reader, the bearer-reflection check).
-- The **`mcp-client` extra** adds the official MCP SDK for `agents.mcp_client`, what a runner
-  sends an app's endpoint: today the `skills/list` and `skills/get` requests over an SDK session.
-  It and `agents.mcp_server` import each other nowhere.
+- The **`mcp-client` extra** adds `anyio`, `httpx2`, logline and the official MCP SDK for
+  `agents.mcp_client`, what a runner sends an app's endpoint: `open_member_session`, one SDK
+  session on `http_client`'s policy that reads the member's standing, place and view and folds
+  what goes wrong into the failures of `member_outcomes`, and the `skills/list` and `skills/get`
+  requests. The session writes no log line and decides nothing; the URL, the bearer source and the
+  transport come from the host. It and `agents.mcp_server` import each other nowhere.
 - The **`redis` extra** adds `overnightworks-tandem`, which brings `redis`, for
   `agents.mcp_server.redis_place_store`, the only module that imports tandem; no agents module
   imports `redis`. The place store is what the pods of one app share, through the `PlaceStore`

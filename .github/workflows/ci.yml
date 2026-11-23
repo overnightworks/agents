@@ -125,6 +125,7 @@ jobs:
               ) or module.name == "agents.voice" or module.name.startswith(
                   "agents.voice."
               ) or module.name in (
+                  "agents.http_client",
                   "agents.backend.gateway",
                   "agents.backend.fake_gateway",
                   "agents.backend.tool_result",
@@ -152,12 +153,12 @@ jobs:
           proof="$(mktemp -d "$RUNNER_TEMP/client-mcp-client.XXXXXX")"
           uv venv "$proof/venv"
           client_wheel="$(ls "$GITHUB_WORKSPACE"/dist/overnightworks_agents-*-py3-none-any.whl)"
-          uv pip install --python "$proof/venv/bin/python" "$client_wheel[mcp-client]"
+          uv pip install --python "$proof/venv/bin/python" "$client_wheel[mcp-client]" "$LOGLINE_SOURCE"
           cd "$proof"
           "$proof/venv/bin/python" -I -c '
-          import agents.mcp_client.skills
+          import agents.mcp_client
 
-          print("imported", agents.mcp_client.skills.__name__)
+          print("imported", agents.mcp_client.__name__)
           '
 
       - name: The client wheel with the redis extra imports its place store

@@ -101,4 +101,14 @@ reason = "list_skills and get_skill over an SDK session; personas#394 S8a sends 
 [[code]]
 path = "src/agents/member_outcomes.py"
 item = "overnightworks/personas#426"
-reason = "The failures and codes of a member call; personas#426 (#1115 S4) subclasses them and reads their codes, and skat#856 and hopin#1140 catch them."
+reason = "The failures and codes of a member call; personas#426 (#1115 S4) subclasses them and reads their codes."
+
+[[code]]
+path = "src/agents/mcp_client/session.py"
+item = "overnightworks/personas#426"
+reason = "The member session: personas#426 (#1115 S4) opens it for the runner; transport is for the in-process and loopback apps of overnightworks/skat#856 and overnightworks/hopin#1140."
+
+[[code]]
+path = "src/agents/mcp_client/__init__.py"
+item = "overnightworks/personas#426"
+reason = "The member session's public names; personas#426 (#1115 S4) imports them."
