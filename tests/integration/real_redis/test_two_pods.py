@@ -61,6 +61,7 @@ from tests.support.redis_listen_support import (
     Resynced,
     delivered_up_to,
     eventually,
+    handling_failed,
     namespace_of,
     snapshots_around_evalsha,
     subscribed,
@@ -435,18 +436,13 @@ def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_keeps_its_c
         around_scripts = snapshots_around_evalsha(client, lambda: namespace_of(watcher, PREFIX))
         store = RedisPlaceStore(client, key_prefix=PREFIX)
 
-        async def handling_failed() -> bool:
-            return any(
-                line["outcome"] == "failed" for line in log_lines.of("deadline_handling.ended")
-            )
-
         async with subscribed(store) as events:
             await store.acknowledged("held", alice, [STANDING_URI], timedelta(milliseconds=1))
             await delivered_up_to(store, events, _FIRST_BARRIER)
             admin.hset(f"{PREFIX}-agents:v1:streams", "held", record)
             scripts_before = len(around_scripts)
             async with lapsing(store, every=_EVERY) as turns:
-                await eventually(handling_failed, seconds=WAIT_SECONDS)
+                await eventually(lambda: handling_failed(log_lines), seconds=WAIT_SECONDS)
             scripts_run = around_scripts[scripts_before:]
             return (
                 scripts_run,

@@ -157,6 +157,7 @@ class InMemoryPlaceStore:
         self._released.set()
 
     def _lapse_due(self) -> list[ListeningTurn]:
+        """One round of ``serve_stream_lapses``; a test double overrides it to fail the round."""
         now = asyncio.get_running_loop().time()
         turns: list[ListeningTurn] = []
         for stream in [name for name, record in self._streams.items() if record.due <= now]:

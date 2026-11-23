@@ -26,6 +26,7 @@ from tests.support.redis_listen_support import (
     a_pod,
     delivered_up_to,
     eventually,
+    handling_failed,
     key_names,
     namespace_of,
     snapshots_around_evalsha,
@@ -167,10 +168,6 @@ def test_a_lapse_that_cannot_read_the_record_writes_nothing_and_keeps_its_claim(
     assert seen == [Resynced(), _YES, _BEFORE_THE_LAPSE, _AFTER_THE_LAPSE]
     assert claimed_keys == [b"held"]
     assert turns == []
-
-
-async def handling_failed(log_lines: LogLines) -> bool:
-    return any(line["outcome"] == "failed" for line in log_lines.of("deadline_handling.ended"))
 
 
 async def record_held(raw: FakeAsyncRedis, record: str) -> None:

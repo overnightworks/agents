@@ -20,6 +20,7 @@ from tandem import Deadlines
 from agents.mcp_server.place_store import ListeningTurn, PlaceSignal
 from agents.mcp_server.redis_place_store import CLAIM_FOR, RedisPlaceStore
 from agents.member import STANDING_URI
+from tests.support.log_lines import LogLines
 from tests.support.mcp_server_support import a_member
 
 
@@ -121,6 +122,10 @@ async def eventually(check: Callable[[], Awaitable[bool]], *, seconds: float) ->
     async with asyncio.timeout(seconds):
         while not await check():
             await asyncio.sleep(0.1)
+
+
+async def handling_failed(log_lines: LogLines) -> bool:
+    return any(line["outcome"] == "failed" for line in log_lines.of("deadline_handling.ended"))
 
 
 async def namespace_of(raw: Redis, prefix: str) -> dict[str, object]:
