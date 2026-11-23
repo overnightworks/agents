@@ -542,18 +542,21 @@ async def open_member_session(
                 cancelled_in_body = task_is_being_cancelled()
                 raise
     except Exception as error:
-        outcome = folded(error, raised_in_body, auth, cancelled_in_body=cancelled_in_body)
-        own = [*leaves_of(error), *(leaves_of(raised_in_body) if raised_in_body else ())]
-        if not any(outcome is leaf for leaf in own):
-            raise outcome from None
-    if outcome is not None:
-        # Raised outside the handler, a leaf the body raised keeps its cause and its context; the
-        # group of the caller's exit that is being handled would otherwise replace the context.
-        context = outcome.__context__
-        try:
-            raise outcome
-        finally:
-            outcome.__context__ = context
+        folded_error = folded(error, raised_in_body, auth, cancelled_in_body=cancelled_in_body)
+        raised = () if raised_in_body is None else leaves_of(raised_in_body)
+        own = [*leaves_of(error), *raised]
+        if not any(folded_error is leaf for leaf in own):
+            raise folded_error from None
+        outcome = folded_error
+    finally:
+        if outcome is not None:
+            # Raised outside the handler, a leaf the body raised keeps its cause and its context;
+            # the group of the caller's exit that is being handled would otherwise replace it.
+            context = outcome.__context__
+            try:
+                raise outcome
+            finally:
+                outcome.__context__ = context
 
 
 async def _discover(session: ClientSession, auth: BearerAuth) -> None:
