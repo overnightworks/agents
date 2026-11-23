@@ -495,13 +495,13 @@ def test_a_pod_whose_user_is_refused_keeps_serving_and_the_other_pod_lapses(
 
         window = LISTEN_ALLOWANCE_SECONDS + CLAIM_FOR.total_seconds() + LAPSE_POLL_SECONDS + 5
         async with pod_a.following():
-            admin.acl_setuser(pod_a_user, commands=["-evalsha"])
+            admin.acl_setuser(pod_a_user, enabled=True, commands=["-evalsha"])
             async with pod_b.following():
                 async with pod_b.opened(WRITTEN_MEMBER) as stream:
                     await pod_b.acknowledged(WRITTEN_MEMBER, stream, [STANDING_URI], tools=False)
                 await eventually(both_heard_the_no, seconds=window)
                 dead = pod_a.dead
-                admin.acl_setuser(pod_a_user, commands=["+evalsha"])
+                admin.acl_setuser(pod_a_user, enabled=True, commands=["+evalsha"])
                 await eventually(recovered, seconds=window)
         return dead
 

@@ -600,8 +600,7 @@ when it has none; a failed line is a WARNING, because the turn reports the stop 
 The place store and the listen record write one `<noun>.ended` line per call of the
 store, with `duration_ms` and `outcome`; a call that fails is `failed` with `error_type`, the class
 of the failure. A failed call adds `cause_type`: the type of the innermost cause a `PlaceStoreError`
-stands for, such as the lost connection or the refusal the store library met, the name
-`listen_lapse.ended` carries as `last_error_type`.
+stands for, such as the lost connection or the refusal the store library met.
 No line carries a URI, a generation or content:
 
 | Line | Fields beside the timer's |
@@ -621,14 +620,13 @@ State changes and background runs write their own lines, carrying `sub` where th
 | `listening.lapsed` | once for each URI a lapse turned to no, written by the pod that claimed the lapse |
 | `member_lease.opened` | a renewal started a lease |
 | `member_lease.lapsed` | a lapse is handed to `lease_ended`; it may repeat as the handover may |
-| `listen_lapse.ended` | a lapse run that lapsed or failed a stream: `stream_count`, `turn_count`, `failed_count` and, after a failure, `last_error_type`; `failed` with `reason` `store_failed` or `lapse_failed`, WARNING. A run that found nothing writes no line |
-| `listen_lapse.resumed` | the first run after failed ones, with `failed_run_count`; a streak of failed runs writes only its first |
+| `listen_lapse_service.stopped` | the listen lapse service ended on an exception that is no failure of the store, ERROR, `error_type` and the traceback; it is not restarted and the front turns dead |
 | `place_subscription.renewed` | a later confirmation of the subscription, with `stream_count` |
 | `place_subscription.failed` | the subscription failed for good, ERROR, `error_type` of its cause |
 | `place_signal.refused` | a payload on the channel that is no address: `reason` `not_an_address` and `character_count`, INFO |
 | `host_callback.failed` | `listening_changed` or `listening_resynced` raised: `callback` and `error_type`, ERROR |
-| `lease_lapse_service.failed` | the lapse service failed, WARNING, `error_type`, the first of a streak; a traceback only for an unexpected exception |
-| `lease_lapse_service.resumed` | the restarted service ran longer than the pause without failing, INFO, with `failed_run_count` |
+| `lease_lapse_service.stopped` | the lease lapse service ended on an exception that is no failure of the store, ERROR, `error_type` and the traceback; it is not restarted |
+| tandem's `lapse_round.ended` (LOG-11), `deadline_round.ended` (LOG-29) and `deadline_handling.ended` (LOG-28) | what the two lapse services write while they serve: a round that claimed a lapse or failed on the store, and each handling, with tandem's `deadline_kind` `listen` for the listen record. An outage or a refusal of the store is ridden out and told there, never by a line of agents' |
 
 ## The person front
 
@@ -1086,12 +1084,12 @@ another pod, and the signals and turns the port hands over carry no trace of the
 by `test_a_wake_is_handled_in_the_trace_of_the_pod_that_sent_it` and, on two pods,
 `test_a_listen_on_one_pod_reaches_the_host_of_the_other_in_the_trace_of_its_request`.
 
-Each lapse run of the listen poll runs in a trace of its own,
-`logline.unit_trace(None)`, so its `listen_lapse.ended`, `listen_lapse.resumed` and
-`listening.lapsed` lines and the `listening-no` wake it writes share one trace id, and a pod that
-hears that wake handles it in it. A run that finds nothing writes no line. Proved by
-`test_each_lapse_run_writes_its_lines_in_one_trace_of_its_own` and
-`test_the_no_a_lapse_run_wakes_is_heard_in_the_trace_of_that_run`.
+Each lapse the listen record serves is handled in a trace tandem opens for that handling
+(DEADLINE-24), so tandem's `deadline_handling.ended` of it, agents' `listening.lapsed` line and the
+`listening-no` wake it writes share one trace id, and a pod that hears that wake handles it in it.
+An idle front writes no line of its own. Proved by
+`test_the_lapsed_line_shares_the_trace_of_its_handling_and_its_wake` and
+`test_the_no_a_lapse_wakes_is_heard_in_the_trace_of_its_handling`.
 
 `running()` yields at the first confirmed subscription, so a pod turns ready only once it hears
 changes. The front enters the store's `following(*, on_resync, on_signal, on_failed,
@@ -1111,7 +1109,9 @@ tandem or redis to catch it) once the client's `Retry` gives up: delivery is unc
 member sees the change by its next listen's read within `LISTEN_BOUND_SECONDS`. A payload on agents' channel that is no address
 writes `place_signal.refused` with its length and is skipped. If the subscription fails for good
 after startup, the front writes `place_subscription.failed`, ends its open listens and answers
-every request with 503 until the pod restarts.
+every request with 503 until the pod restarts. So does a lapse service that ends on an exception
+that is no failure of the store: the front writes `listen_lapse_service.stopped` and turns dead,
+because a pod that lapses nothing would answer yes for streams that are gone.
 Proved by `tests/test_mcp_server_place_wake.py`, `tests/test_mcp_server_memory_place_store.py`, `tests/integration/test_redis_place_store.py` and
 the tests of `tests/integration/real_redis`, which `scripts/run_redis_tests.sh` runs.
 
@@ -1151,13 +1151,14 @@ log only the exception's type. Proved by `tests/test_mcp_server_listen.py`.
 **Whether a member listens.** `await changes.listens_to(principal, uri)` answers, on every pod
 alike, whether that principal holds a stream, on any pod, whose acknowledgement honored the URI and
 whose lapse has not yet run; `await changes.listeners(uri)` lists those principals. A stream lapses
-`LISTEN_ALLOWANCE_SECONDS` after it ends, at the next lapse poll (about a second), or `claim_for`
-later if the pod that claimed its lapse died. `PlaceStore.lapse_due` returns a `LapseRun` (the
-`turns` it published, the `stream_count` it lapsed, a `failed_count` with the `last_error_type`),
-which a host that implements the port builds, with `LapseRun`, `ListeningTurn`, `PlaceSignal`,
-`ResourceChange` and `ToolsChange` imported from `agents.mcp_server`; `Principal`
-comes from `agents.turn`, its one owner, and `agents.mcp_server` does not re-export it. The run's
-pod writes `listening.lapsed` for each turn. Both read the place store on Redis time and raise
+`LISTEN_ALLOWANCE_SECONDS` after it ends, at the next lapse round (about a second), or `claim_for`
+later if the pod that claimed its lapse died. `ResourceChanges.following()` runs
+`PlaceStore.serve_stream_lapses(lapsed, every=...)`, which `RedisPlaceStore` builds on tandem's
+`Deadlines.serve_due`; a host that implements the port serves its own loop and builds
+`ListeningTurn`, `PlaceSignal`, `ResourceChange` and `ToolsChange`, imported from
+`agents.mcp_server`; `Principal` comes from `agents.turn`, its one owner, and `agents.mcp_server`
+does not re-export it. The method hands each turn it published to `lapsed`, which does not raise,
+and the pod that lapsed it writes `listening.lapsed` for each turn. Both read the place store on Redis time and raise
 `PlaceStoreError` when it fails; a host that gets the error does not offer the agent. An app that
 offers an agent only while it can answer an invitation asks for `STANDING_URI`. The allowance lets a
 runner that listens again at once (the connection and one `current` call, a few milliseconds plus the
@@ -1273,11 +1274,10 @@ is extended while the handler runs and the handler is never cancelled by it, and
 raises gets the lapse again once the claim has run out, `claim_for` (5 s) later. A pod that dies
 mid-handling hands it to another. So the app's lapse action is idempotent and fenced by the
 generation, one atomic step in the app's own store that acts only if the generation it stored is
-the lapsed one; a lease that started again meanwhile has another generation and is left alone. A
-failure of the lapse service, a refusal or an unexpected exception, writes `lease_lapse_service.failed`
-once per streak, by type, and the service serves again after 5 s, writing
-`lease_lapse_service.resumed` once it has run that long without failing; it never ends silently and
-no readiness signal reflects it. The block's exit cancels the service and waits for it. Proved by
+the lapsed one; a lease that started again meanwhile has another generation and is left alone. The
+service rides out an outage or a refusal of the store (tandem's LEASE-20, told by its `lapse_round.ended`, LOG-11)
+and is never restarted: an exception that is no failure of the store ends it with one
+`lease_lapse_service.stopped` line with its traceback, and no readiness signal reflects it. The block's exit cancels the service and waits for it. Proved by
 `tests/test_mcp_server_leases.py`, `tests/integration/test_redis_leases.py` and the real-Redis
 cells of `tests/integration/real_redis`: a lease renewed on one pod still holds, with its
 generation, on another after the first was killed, and its lapse reaches `lease_ended` once with that

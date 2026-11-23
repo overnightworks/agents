@@ -318,7 +318,7 @@ class ResourceChanges:
         A stream not yet acknowledged and one honoring only other URIs do not count; the URI
         asked is compared as it is, so a place window is not the standing, and a stream that honored
         only the tool list counts for no URI. A stream lapses ``LISTEN_ALLOWANCE_SECONDS`` after it
-        ends, at the next lapse poll. Raises ``PlaceStoreError`` when the store fails.
+        ends, at the next lapse round. Raises ``PlaceStoreError`` when the store fails.
         """
         async with store_step("listening_lookup.ended", _LOG):
             return await self._store.listens_to(principal, uri)
