@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 from typing import Any
 
@@ -27,7 +28,7 @@ from mcp_types import (
 )
 from pydantic import SecretStr
 
-from agents.mcp_client import READ_SECONDS, open_member_session
+from agents.mcp_client import READ_SECONDS, MemberSession, open_member_session
 from agents.member import (
     LEASE_SECONDS,
     STANDING_URI,
@@ -728,6 +729,36 @@ async def test_a_bearer_that_is_no_header_value_is_refused_before_any_request_an
     assert not gate.seen
     assert marker not in "".join(repr(each) + str(each) for each in chain)
     assert not any(isinstance(each, CallFailure) for each in chain)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(lambda session: session.read_standing(), id="a read"),
+        pytest.param(lambda session: session.declared_tools(), id="a tool list"),
+        pytest.param(lambda session: session.listen().__aenter__(), id="a listen"),
+    ],
+)
+async def test_a_bearer_renewed_into_a_malformed_value_fails_the_next_call_alone(
+    app: MemberApp,
+    gate: ScriptedGate,
+    bearer: SecretStr,
+    call: Callable[[MemberSession], Awaitable[object]],
+) -> None:
+    stands(app)
+    current = bearer
+    task = asyncio.current_task()
+    assert task is not None
+
+    async with open_member_session(gate.url, lambda: current) as session:
+        current = SecretStr("renewed\nbadly")
+        with pytest.raises(ValueError, match="bearer"):
+            await call(session)
+        current = bearer
+        standing = await session.read_standing()
+
+    assert standing.standings
+    assert task.cancelling() == 0
 
 
 async def reads_the_standing_showing(

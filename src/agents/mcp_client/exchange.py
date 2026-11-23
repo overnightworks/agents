@@ -77,14 +77,23 @@ class BearerAuth(httpx2.Auth):
         self._bearer = bearer
         self.last_answer: HttpAnswer | None = None
 
-    @override
-    async def async_auth_flow(
-        self, request: httpx2.Request
-    ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
+    def read_bearer(self) -> str:
+        """The current bearer; one that is no header value is refused here.
+
+        The SDK's transport tasks end the whole session when a request fails in them, so a call
+        reads the bearer before it makes its request and fails alone.
+        """
         token = self._bearer().get_secret_value()
         if not _is_header_value(token):
             # Raised before the header exists, so no library error holds the token.
             raise ValueError("the bearer is no valid header value")
+        return token
+
+    @override
+    async def async_auth_flow(
+        self, request: httpx2.Request
+    ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
+        token = self.read_bearer()
         request.headers["Authorization"] = f"Bearer {token}"
         request.headers.update(outgoing_headers())
         response = yield request

@@ -8,7 +8,7 @@ callback. Every call that fails raises a ``CallFailure`` of ``agents.member_outc
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Final, Protocol, override
@@ -257,6 +257,7 @@ class _McpMemberSession:
 
     @asynccontextmanager
     async def listen(self) -> AsyncGenerator[AsyncIterator[MemberWake]]:
+        self.auth.read_bearer()
         self.auth.last_answer = None
         deadline = asyncio.timeout(self.stream_seconds)
         raised_in_body: Exception | None = None
@@ -470,9 +471,14 @@ class _McpMemberSession:
             raise UnusableAnswer(INVALID_ANSWER_CODE)
         return result
 
-    async def _asked[Answer](self, request: Awaitable[Answer]) -> Answer:
+    async def _asked[Answer](self, request: Coroutine[object, object, Answer]) -> Answer:
         """The call's answer; a failure is told by the call's own last HTTP answer, never by one to
-        a call beside it."""
+        a call beside it. A bearer that is no header value fails the call before its request."""
+        try:
+            self.auth.read_bearer()
+        except ValueError:
+            request.close()
+            raise
         self.auth.last_answer = None
         call = CallAnswer()
         reset = CALL_ANSWER.set(call)
