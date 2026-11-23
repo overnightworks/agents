@@ -1,8 +1,0 @@
-claim_id = "3b91886f77544a018ce2147a03c4afcc"
-agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
-role = "builder"
-base = "9882cc20fda16fb2449f31d8ec680e4219a8207d"
-branch = "claude/issue-1140-integration-tests-carry-the-marker"
-scope = ["AGENTS.md", "docs/connector.md", "pyproject.toml", "quality/config.toml", "scripts/run_redis_tests.sh", "tests"]
-opened_commit = "a59e94cf09ee82918ed321a0ce9af4abcc4d3845"
-whole_reason = "the moves, their selection in pyproject and the runner, the documents naming the paths and the dropped entries change together, or the layout check or a runner breaks"
