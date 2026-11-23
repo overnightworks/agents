@@ -256,8 +256,10 @@ def _with_front_matter(lines: str) -> bytes:
 def test_a_file_that_is_not_what_its_entry_promised_is_refused(
     refusal: SkillRefusal, content: bytes, wire: JsonObject
 ) -> None:
+    entry = _entry(wire)
+
     with pytest.raises(SkillRefused) as refused:
-        read_skill(SERVER, _entry(wire), content)
+        read_skill(SERVER, entry, content)
 
     assert refused.value.refusal is refusal
 
