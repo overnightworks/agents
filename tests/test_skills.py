@@ -13,106 +13,22 @@ from agents.skills import (
     SkillListing,
     SkillRefusal,
     SkillRefused,
+    SkillsGetParams,
+    SkillsListParams,
     implicit_skill,
     read_skill,
     skill_uri,
 )
 from agents.turn import JsonObject
-from tests.support.skill_support import SKILL_DESCRIPTION, a_skill_entry, skill_markdown
+from tests.support.skill_support import (
+    SEP_GET_RESULT,
+    SEP_LIST_RESULT,
+    SKILL_DESCRIPTION,
+    a_skill_entry,
+    skill_markdown,
+)
 
 SERVER = "notes.example.org"
-
-_DIGEST_PREFIX = "sha256:"
-
-
-def _published_digest(shortened: str) -> str:
-    return _DIGEST_PREFIX + (shortened * 8)[:64]
-
-
-# SEP-2640's own skills/list and skills/get example results; each shortened digest is a valid one.
-SEP_LIST_RESULT: JsonObject = {
-    "resultType": "complete",
-    "skills": [
-        {
-            "uri": "skill://git-workflow/SKILL.md",
-            "frontmatter": {
-                "name": "git-workflow",
-                "description": "Follow this team's Git conventions for branching and commits",
-            },
-            "resources": [
-                {
-                    "uri": "skill://git-workflow/SKILL.md",
-                    "digest": _published_digest("a1b2c3d4"),
-                    "size": 2314,
-                }
-            ],
-        },
-        {
-            "uri": "skill://acme/billing/refunds/SKILL.md",
-            "frontmatter": {
-                "name": "refunds",
-                "description": "Process customer refund requests per company policy",
-                "license": "Apache-2.0",
-            },
-            "resources": [
-                {
-                    "uri": "skill://acme/billing/refunds/SKILL.md",
-                    "digest": _published_digest("b2c3d4e5"),
-                    "size": 3871,
-                },
-                {
-                    "uri": "skill://acme/billing/refunds/examples/email.md",
-                    "digest": _published_digest("c3d4e5f6"),
-                    "size": 962,
-                },
-            ],
-        },
-        {
-            "uri": "skill://pdf-processing/SKILL.md",
-            "frontmatter": {
-                "name": "pdf-processing",
-                "description": "Extract, fill, and assemble PDF documents",
-                "metadata": {"version": "2.1.0"},
-            },
-            "resources": [
-                {
-                    "uri": "skill://pdf-processing/SKILL.md",
-                    "digest": _published_digest("d5e6f7a8"),
-                    "size": 5120,
-                },
-                {
-                    "uri": "skill://pdf-processing/references/FORMS.md",
-                    "digest": _published_digest("e6f7a8b9"),
-                    "size": 18433,
-                },
-                {
-                    "uri": "skill://pdf-processing/scripts/extract.py",
-                    "digest": _published_digest("f7a8b9c0"),
-                    "size": 4096,
-                },
-                {
-                    "uri": "skill://pdf-processing/templates/invoice.md",
-                    "digest": _published_digest("a8b9c0d1"),
-                    "size": 1210,
-                },
-                {
-                    "uri": "skill://pdf-processing/templates/purchase-order.md",
-                    "digest": _published_digest("b9c0d1e2"),
-                    "size": 1388,
-                },
-                {
-                    "uri": "skill://pdf-processing/templates/regional/eu-invoice.md",
-                    "digest": _published_digest("c0d1e2f3"),
-                    "size": 1472,
-                },
-            ],
-        },
-    ],
-}
-SEP_GET_RESULT: JsonObject = {
-    "resultType": "complete",
-    "skill": SEP_LIST_RESULT["skills"][2],  # type: ignore[index]
-}
 
 
 def test_the_published_listing_validates_and_keeps_each_entrys_frontmatter() -> None:
@@ -429,3 +345,34 @@ def test_an_implicit_skill_without_a_host_a_label_or_a_description_is_refused_wi
         implicit_skill(server, url, None, tools, description)
 
     assert "secret-token" not in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    ("params", "valid"),
+    [
+        pytest.param(SkillsListParams, {}, id="list-without-cursor"),
+        pytest.param(SkillsListParams, {"cursor": "c1", "other": 1}, id="list-ignores-unknown"),
+        pytest.param(SkillsGetParams, {"uri": "skill://a/SKILL.md", "other": 1}, id="get"),
+    ],
+)
+def test_the_request_params_validate_as_declared_and_ignore_unknown_keys(
+    params: type[SkillsListParams | SkillsGetParams], valid: JsonObject
+) -> None:
+    assert params.model_validate(valid).model_dump(exclude_none=True) == {
+        key: value for key, value in valid.items() if key != "other"
+    }
+
+
+@pytest.mark.parametrize(
+    ("params", "invalid"),
+    [
+        pytest.param(SkillsListParams, {"cursor": 3}, id="cursor-not-a-string"),
+        pytest.param(SkillsGetParams, {}, id="uri-absent"),
+        pytest.param(SkillsGetParams, {"uri": 3}, id="uri-not-a-string"),
+    ],
+)
+def test_request_params_breaking_a_rule_are_refused(
+    params: type[SkillsListParams | SkillsGetParams], invalid: JsonObject
+) -> None:
+    with pytest.raises(ValidationError):
+        params.model_validate(invalid)

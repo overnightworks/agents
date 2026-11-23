@@ -705,9 +705,14 @@ the tool and the exception's class
 so a runner needs no parser of its own. An app declares them with the
 `io.modelcontextprotocol/skills` extension (`SKILLS_EXTENSION`) in its discover answer and serves
 `skills/list` and `skills/get` (`SKILLS_LIST_METHOD`, `SKILLS_GET_METHOD`). The module does no
-I/O: the runner sends the requests with its own typed `Request` subclasses and passes
-`SkillListing` and `SkillAnswer` as the `result_type` of `send_request`, which validates the
-result itself.
+I/O and holds the params of both requests (`SkillsListParams` with an optional `cursor`,
+`SkillsGetParams` with a `uri`) beside the results. With the `mcp-client` extra the runner calls
+`agents.mcp_client.skills.list_skills(session, cursor)`, one page as a `SkillListing`, and
+`get_skill(session, uri)`, a `SkillAnswer`, over an SDK `ClientSession`, and writes no `Request`
+subclass of its own. The functions log nothing and catch nothing: an SDK error leaves as the SDK
+raises it and a result that breaks a rule fails as `pydantic.ValidationError`. Paging is the
+runner's: it passes `next_cursor` back until it is absent
+(`test_following_the_next_cursor_yields_every_entry_once_and_stops_when_it_is_absent`).
 
 **What a listing must hold.** A listing validates with unknown keys ignored at every level
 (`ttlMs`, `cacheScope`, `_meta`, `resultType`), and SEP's own examples pass

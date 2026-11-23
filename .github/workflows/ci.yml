@@ -120,6 +120,8 @@ jobs:
           for module in pkgutil.walk_packages(agents.__path__, "agents."):
               if module.name == "agents.mcp_server" or module.name.startswith(
                   "agents.mcp_server."
+              ) or module.name == "agents.mcp_client" or module.name.startswith(
+                  "agents.mcp_client."
               ) or module.name == "agents.voice" or module.name.startswith(
                   "agents.voice."
               ) or module.name in (
@@ -143,6 +145,19 @@ jobs:
           import agents.mcp_server
 
           print("imported", agents.mcp_server.__name__)
+          '
+
+      - name: The client wheel with the mcp-client extra imports its client half
+        run: |
+          proof="$(mktemp -d "$RUNNER_TEMP/client-mcp-client.XXXXXX")"
+          uv venv "$proof/venv"
+          client_wheel="$(ls "$GITHUB_WORKSPACE"/dist/overnightworks_agents-*-py3-none-any.whl)"
+          uv pip install --python "$proof/venv/bin/python" "$client_wheel[mcp-client]"
+          cd "$proof"
+          "$proof/venv/bin/python" -I -c '
+          import agents.mcp_client.skills
+
+          print("imported", agents.mcp_client.skills.__name__)
           '
 
       - name: The client wheel with the redis extra imports its place store

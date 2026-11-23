@@ -21,6 +21,9 @@ mcp-server = [
     "mcp>=2.3,<3",
     "overnightworks-logline>=0.4,<2",
 ]
+mcp-client = [
+    "mcp>=2.3,<3",
+]
 redis = [
     "overnightworks-agents[mcp-server]",
     "overnightworks-tandem>=0.12.1,<0.16",
@@ -30,7 +33,7 @@ voice = [
     "syntok>=1.4.4,<2",
 ]
 dev = [
-    "overnightworks-agents[backend,mcp-server,redis,voice]",
+    "overnightworks-agents[backend,mcp-client,mcp-server,redis,voice]",
     "fakeredis[lua]>=2.35,<3",
     "redis>=8.1,<9",
     "pyright==1.1.414",
