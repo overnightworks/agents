@@ -327,7 +327,7 @@ def _folded(
     auth: _BearerAuth,
     *,
     cancelled_in_body: bool,
-) -> BaseException:
+) -> CallFailure | asyncio.CancelledError | ExceptionGroup[Exception] | BaseException:
     """What a session that ended in ``error`` raises.
 
     The SDK's task groups wrap what is raised inside them, so every leaf is looked at: a failure of
