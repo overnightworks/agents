@@ -705,6 +705,30 @@ def test_the_log_check_reads_a_bearer_that_only_a_logged_exception_holds(
     assert bearer in logged_outside_the_wire_trace(caplog)
 
 
+@pytest.mark.parametrize(
+    "shape",
+    ["", "first-{}\nsecond", "{}\r\nX-Injected: yes", "{}\x00"],
+    ids=["empty", "a newline", "a CR LF", "a control character"],
+)
+async def test_a_bearer_that_is_no_header_value_is_refused_before_any_request_and_named_nowhere(
+    gate: ScriptedGate, shape: str
+) -> None:
+    marker = secrets.token_hex(12)
+    refused = SecretStr(shape.format(marker))
+
+    with pytest.raises(ValueError, match="bearer") as caught:
+        await reads_the_standing(gate, refused)
+
+    chain: list[BaseException] = []
+    error: BaseException | None = caught.value
+    while error is not None and error not in chain:
+        chain.append(error)
+        error = error.__cause__ or error.__context__
+    assert not gate.seen
+    assert marker not in "".join(repr(each) + str(each) for each in chain)
+    assert not any(isinstance(each, CallFailure) for each in chain)
+
+
 async def reads_the_standing_showing(
     gate: ScriptedGate, bearer: SecretStr, shown: list[str]
 ) -> None:

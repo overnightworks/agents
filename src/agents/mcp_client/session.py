@@ -29,6 +29,9 @@ from mcp_types import (
     UNSUPPORTED_PROTOCOL_VERSION,
     InputRequiredResult,
     JSONRPCError,
+    JSONRPCMessage,
+    JSONRPCRequest,
+    JSONRPCResponse,
     ReadResourceResult,
     TextResourceContents,
     jsonrpc_message_adapter,
@@ -104,9 +107,16 @@ class _HttpAnswer:
 @dataclass
 class _CallAnswer:
     """The last HTTP answer to one call, which only its own requests write, so no call beside it
-    on the session can."""
+    on the session can; and the deadline that ends the call when its answer names another
+    request."""
 
     answer: _HttpAnswer | None = None
+    stranding: asyncio.Timeout | None = None
+
+    def strand(self) -> None:
+        """Ends the call now: the app answered, and the answer is for no request of the call."""
+        if self.stranding is not None:
+            self.stranding.reschedule(asyncio.get_running_loop().time())
 
 
 _CALL_ANSWER: Final = contextvars.ContextVar[_CallAnswer | None]("call_answer", default=None)
@@ -129,7 +139,11 @@ class _BearerAuth(httpx2.Auth):
     async def async_auth_flow(
         self, request: httpx2.Request
     ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
-        request.headers["Authorization"] = f"Bearer {self._bearer().get_secret_value()}"
+        token = self._bearer().get_secret_value()
+        if not _is_header_value(token):
+            # Raised before the header exists, so no library error holds the token.
+            raise ValueError("the bearer is no valid header value")
+        request.headers["Authorization"] = f"Bearer {token}"
         request.headers.update(outgoing_headers())
         response = yield request
         if response.status_code < HTTPStatus.BAD_REQUEST:
@@ -141,7 +155,36 @@ class _BearerAuth(httpx2.Auth):
         if (call := _CALL_ANSWER.get()) is not None:
             call.answer = self.last_answer
         if response.status_code < HTTPStatus.BAD_REQUEST:
+            await _strand_an_answer_to_no_request(request, response)
             _withhold_diagnostics(response)
+
+
+def _is_header_value(token: str) -> bool:
+    """Whether the token can be the rest of an ``Authorization`` header: not empty, and no control
+    character, newline included."""
+    return token.isascii() and token.isprintable() and bool(token)
+
+
+async def _strand_an_answer_to_no_request(
+    request: httpx2.Request, response: httpx2.Response
+) -> None:
+    """Ends the call whose complete JSON answer is the answer to no request of its own.
+
+    The SDK drops an answer whose id matches no request, and the request it was sent for waits
+    for ever; the id is the only thing that tells such an answer from the call's own.
+    """
+    if (call := _CALL_ANSWER.get()) is None or _media_type_of(response) != "application/json":
+        return
+    asked = _message_of(request)
+    if not isinstance(asked, JSONRPCRequest):
+        return
+    await response.aread()
+    try:
+        answer = jsonrpc_message_adapter.validate_json(response.content, by_name=False)
+    except ValidationError:
+        return
+    if isinstance(answer, JSONRPCResponse | JSONRPCError) and answer.id != asked.id:
+        call.strand()
 
 
 def _withhold_diagnostics(response: httpx2.Response) -> None:
@@ -154,19 +197,27 @@ def _withhold_diagnostics(response: httpx2.Response) -> None:
     names itself in no log line.
     """
     response.next_request = None
-    media_type = response.headers.get("content-type", "").partition(";")[0].strip().lower()
+    media_type = _media_type_of(response)
     if response.status_code >= HTTPStatus.MULTIPLE_CHOICES or media_type not in _SDK_MEDIA_TYPES:
         response.headers.pop("content-type", None)
 
 
-def _method_of(request: httpx2.Request) -> str | None:
-    """The MCP method the request carried; none for a request that carries no JSON-RPC message, as
-    a reconnect does."""
+def _message_of(request: httpx2.Request) -> JSONRPCMessage | None:
+    """The JSON-RPC message the request carried; none for a request that carries none, as a
+    reconnect does."""
     try:
-        message = jsonrpc_message_adapter.validate_json(request.content, by_name=False)
+        return jsonrpc_message_adapter.validate_json(request.content, by_name=False)
     except ValidationError:
         return None
-    return getattr(message, "method", None)
+
+
+def _method_of(request: httpx2.Request) -> str | None:
+    """The MCP method the request carried."""
+    return getattr(_message_of(request), "method", None)
+
+
+def _media_type_of(response: httpx2.Response) -> str:
+    return response.headers.get("content-type", "").partition(";")[0].strip().lower()
 
 
 async def _answer_code_of(response: httpx2.Response) -> str | None:
@@ -176,7 +227,7 @@ async def _answer_code_of(response: httpx2.Response) -> str | None:
     The SDK takes an error body for a JSON-RPC error when the answer says it is JSON and the body
     parses as one.
     """
-    media_type = response.headers.get("content-type", "").partition(";")[0].strip().lower()
+    media_type = _media_type_of(response)
     if media_type == "application/json":
         try:
             await response.aread()
@@ -237,7 +288,8 @@ class _McpMemberSession:
         call = _CallAnswer()
         reset = _CALL_ANSWER.set(call)
         try:
-            return await request
+            async with asyncio.timeout(None) as call.stranding:
+                return await request
         except _CALL_ERRORS as error:
             raise _failure_of(error, call.answer) from None
         finally:
@@ -395,7 +447,8 @@ async def open_member_session(
                 cancelled_in_body = _task_is_being_cancelled()
                 raise
     except Exception as error:
-        raise _folded(error, raised_in_body, auth, cancelled_in_body=cancelled_in_body) from None
+        folded = _folded(error, raised_in_body, auth, cancelled_in_body=cancelled_in_body)
+        raise folded from folded.__cause__
 
 
 async def _discover(session: ClientSession, auth: _BearerAuth) -> None:

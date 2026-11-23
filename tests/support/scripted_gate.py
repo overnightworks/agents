@@ -61,8 +61,12 @@ class GateReply:
     async def result(self, result: BaseModel) -> None:
         await self.raw_result(result.model_dump(by_alias=True, mode="json", exclude_none=True))
 
-    async def raw_result(self, result: dict[str, Any]) -> None:
-        await self._whole(HTTPStatus.OK, {"jsonrpc": "2.0", "id": self.rpc.id, "result": result})
+    async def raw_result(
+        self, result: dict[str, Any], *, answering: int | str | None = None
+    ) -> None:
+        """Answers the request, or the request ``answering`` names, with the result."""
+        request_id = self.rpc.id if answering is None else answering
+        await self._whole(HTTPStatus.OK, {"jsonrpc": "2.0", "id": request_id, "result": result})
 
     async def error(
         self, code: int, *, status: HTTPStatus = HTTPStatus.BAD_REQUEST, data: object = None

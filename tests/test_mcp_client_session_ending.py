@@ -27,6 +27,7 @@ from tests.support.member_session_support import (
 )
 from tests.support.scripted_gate import (
     DISCOVER,
+    READ,
     GateReply,
     ScriptedGate,
     hangs,
@@ -124,6 +125,33 @@ async def test_every_leaf_of_nested_groups_the_body_raises_reaches_the_caller(
         await raises_in_the_body(gate, bearer, nested)
 
     assert list(_leaves(caught.value)) == [failure, own, defect]
+
+
+@pytest.mark.parametrize("grouped", [False, True], ids=["alone", "in a group"])
+async def test_a_leaf_the_body_raises_keeps_the_cause_it_was_raised_from(
+    gate: ScriptedGate, bearer: SecretStr, grouped: bool
+) -> None:
+    cause = OSError("the file the caller read")
+    own = BodyError("the caller's own code failed")
+    own.__cause__ = cause
+    raised = ExceptionGroup("own", [own]) if grouped else own
+
+    with pytest.raises(BodyError) as caught:
+        await raises_in_the_body(gate, bearer, raised)
+
+    assert caught.value is own
+    assert caught.value.__cause__ is cause
+
+
+async def test_a_request_whose_answer_names_no_request_ends_as_unreachable(
+    app: MemberApp, gate: ScriptedGate, bearer: SecretStr
+) -> None:
+    stands(app)
+    gate.script(READ, lambda reply: reply.raw_result({"contents": []}, answering="no-request"))
+
+    with pytest.raises(Unreachable):
+        async with asyncio.timeout(LIMIT_SECONDS):
+            await reads_the_standing(gate, bearer)
 
 
 def _leaves(error: BaseException) -> list[BaseException]:
