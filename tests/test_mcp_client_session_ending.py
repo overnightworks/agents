@@ -169,12 +169,15 @@ async def test_a_request_whose_answer_names_no_request_ends_as_unreachable(
     stands(app)
     gate.script(method, lambda reply: reply.raw_result({}, answering="no-request"))
 
-    with pytest.raises(Unreachable):
+    async def sends_the_request() -> None:
         async with asyncio.timeout(LIMIT_SECONDS), opened(gate, bearer) as session:
             if method == READ:
                 await session.read_standing()
             else:
                 await session.invoke("a-tool", {})
+
+    with pytest.raises(Unreachable):
+        await sends_the_request()
 
 
 async def test_an_answer_echoing_the_id_as_text_still_answers_its_request(

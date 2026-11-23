@@ -218,10 +218,11 @@ async def test_an_accept_on_a_cold_session_fails_with_the_failure_of_the_apps_to
         await reply.error(INTERNAL_ERROR, status=HTTPStatus.OK)
 
     gate.script(LIST_TOOLS, refuses_the_list)
+    invitation = accepting(place, figure=a_figure())
 
     async with opened(gate, bearer) as session:
         with pytest.raises(UnusableAnswer) as failure:
-            await session.accept(accepting(place, figure=a_figure()))
+            await session.accept(invitation)
 
     assert failure.value.code == jsonrpc_code(INTERNAL_ERROR)
     assert tools.calls == []
@@ -234,10 +235,11 @@ async def test_an_accept_without_the_tool_is_a_protocol_error_that_is_an_unusabl
         await reply.error(INVALID_PARAMS, status=HTTPStatus.OK)
 
     gate.script(CALL, knows_no_such_tool)
+    invitation = accepting(place)
 
     async with opened(gate, bearer) as session:
         with pytest.raises(UnusableAnswer) as failure:
-            await session.accept(accepting(place))
+            await session.accept(invitation)
 
     assert failure.value.code == jsonrpc_code(INVALID_PARAMS)
     assert (failure.value.method, failure.value.answer) == (None, None)
@@ -275,10 +277,11 @@ async def test_an_accept_result_the_sdk_cannot_validate_is_an_unusable_answer(
 
     gate.script(LIST_TOOLS, lists_a_tool_with_an_output_schema)
     gate.script(CALL, lambda reply: reply.raw_result(answer))
+    invitation = accepting(place, figure=a_figure())
 
     async with opened(gate, bearer) as session:
         with pytest.raises(UnusableAnswer) as failure:
-            await session.accept(accepting(place, figure=a_figure()))
+            await session.accept(invitation)
 
     assert failure.value.code == INVALID_ANSWER_CODE
 

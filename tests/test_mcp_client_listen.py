@@ -293,10 +293,13 @@ async def test_a_stream_the_app_cuts_ends_the_iteration_as_unreachable(
 
     gate.script(LISTEN, cuts_after_acknowledging)
 
-    with pytest.raises(Unreachable):
+    async def reads_the_stream() -> None:
         async with opened(gate, bearer) as session, session.listen() as stream:
             async for _ in stream:
                 pass
+
+    with pytest.raises(Unreachable):
+        await reads_the_stream()
 
 
 async def test_traffic_with_no_acknowledgement_until_past_the_deadline_is_unreachable(
@@ -331,13 +334,16 @@ async def test_a_stream_that_outlasts_its_deadline_by_sending_on_is_unreachable(
 
     gate.script(LISTEN, sends_the_next_once_the_last_was_read)
 
-    with pytest.raises((Unreachable, ExceptionGroup)) as caught:
+    async def reads_the_standing_for_each_pulse() -> None:
         async with (
             opened(gate, bearer, stream_seconds=SHORT_STREAM_SECONDS) as session,
             session.listen() as stream,
         ):
             async for _ in stream:
                 await session.read_standing()
+
+    with pytest.raises((Unreachable, ExceptionGroup)) as caught:
+        await reads_the_standing_for_each_pulse()
 
     leaves = caught.value.exceptions if isinstance(caught.value, ExceptionGroup) else [caught.value]
     assert all(isinstance(leaf, Unreachable) for leaf in leaves)

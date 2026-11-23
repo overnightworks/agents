@@ -250,10 +250,14 @@ async def test_a_page_that_breaks_a_rule_fails_naming_the_entry_and_no_text_of_t
     gate.script(SKILLS_LIST_METHOD, *served)
 
     async with opened(gate, bearer) as session:
-        with pytest.raises(UnusableAnswer) as failure:
+
+        async def lists_every_page() -> None:
             for _ in pages[:-1]:
                 await session.list_skills()
             await session.list_skills(listed=listed)
+
+        with pytest.raises(UnusableAnswer) as failure:
+            await lists_every_page()
 
     assert (failure.value.code, failure.value.entry) == (INVALID_ANSWER_CODE, index)
     assert marker not in f"{failure.value} {failure.value!r} {failure.value.answer}"
