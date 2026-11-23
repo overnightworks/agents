@@ -41,6 +41,7 @@ from agents.mcp_client.fold import (
     InvalidToolResult,
     failure_of,
     folded,
+    leaves_of,
     task_is_being_cancelled,
 )
 from agents.mcp_client.results import (
@@ -520,6 +521,7 @@ async def open_member_session(
     timeout = httpx2.Timeout(CONNECT_SECONDS, read=stream_seconds)
     raised_in_body: Exception | None = None
     cancelled_in_body = False
+    outcome: Exception | asyncio.CancelledError | None = None
     try:
         async with (
             policy_client(timeout=timeout, transport=transport, auth=auth) as client,
@@ -541,7 +543,12 @@ async def open_member_session(
                 raise
     except Exception as error:
         outcome = folded(error, raised_in_body, auth, cancelled_in_body=cancelled_in_body)
-        raise outcome from outcome.__cause__
+        own = [*leaves_of(error), *(leaves_of(raised_in_body) if raised_in_body else ())]
+        if not any(outcome is leaf for leaf in own):
+            raise outcome from None
+    if outcome is not None:
+        # Raised outside the handler, a leaf the body raised keeps its cause and its context.
+        raise outcome
 
 
 async def _discover(session: ClientSession, auth: BearerAuth) -> None:

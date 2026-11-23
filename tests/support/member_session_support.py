@@ -4,7 +4,6 @@ bearer it lets in, and the records it shows."""
 from __future__ import annotations
 
 import asyncio
-import copy
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -115,7 +114,7 @@ class MemberTools:
         return ToolDeclaration(
             name=name,
             description=f"The member tool {name}.",
-            parameters=copy.deepcopy(parameters),
+            parameters=parameters,
             effect=ToolEffect.SIDE_EFFECTING,
         )
 
