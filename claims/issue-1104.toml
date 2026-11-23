@@ -3,6 +3,6 @@ agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
 role = "builder"
 base = "c667ef696c5850760e714f75b14c95e3be3bb8a1"
 branch = "claude/issue-1104-turn-defers-tools-records-rounds"
-scope = [".aco/ahead-of-caller.toml", "docs/ARCHITECTURE.md", "docs/connector.md", "src/agents/agent_file.py", "src/agents/backend/gateway.py", "src/agents/backend/gateway_request.py", "src/agents/backend/tool_result.py", "src/agents/tools.py", "src/agents/turn.py", "src/agents/turn_events.py", "tests/support/gateway_turn_support.py", "tests/test_agent_file.py", "tests/test_backend_gateway_one_call.py", "tests/test_backend_gateway_rounds.py", "tests/test_backend_gateway_stream.py", "tests/test_backend_gateway_tools.py", "tests/test_turn_tool_image.py"]
+scope = [".aco/ahead-of-caller.toml", "docs/ARCHITECTURE.md", "docs/connector.md", "src/agents/agent_file.py", "src/agents/backend/gateway.py", "src/agents/backend/gateway_request.py", "src/agents/backend/tool_result.py", "src/agents/tools.py", "src/agents/turn.py", "src/agents/turn_events.py", "tests/support/gateway_turn_support.py", "tests/test_agent_file.py", "tests/test_backend_gateway.py", "tests/test_backend_gateway_one_call.py", "tests/test_backend_gateway_rounds.py", "tests/test_backend_gateway_stream.py", "tests/test_backend_gateway_tools.py", "tests/test_turn_tool_image.py"]
 opened_commit = "0a2ea920e44da27d4ab3b81776b633ce5c71c009"
 whole_reason = "One turn vocabulary change and its one renderer: deferral, whole tool rounds and their replay, and loading results."
