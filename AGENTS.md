@@ -17,7 +17,7 @@
 ## Rules
 
 - The turn's vocabulary has one owner, `agents.turn`; `turn_events` is the in-process event, never a wire format.
-- The libraries of the `backend` and `mcp-server` extras are imported only inside the module that needs them; `.importlinter` forbids them in the client's base modules.
+- The libraries of the `backend`, `mcp-client` and `mcp-server` extras are imported only inside the module that needs them; `.importlinter` forbids them in the client's base modules.
 - `tandem` is imported only by `agents.mcp_server.redis_place_store`, which `agents.mcp_server` does not re-export; no module of `agents` imports `redis`, which tandem brings.
 - `src/agents/figure_vocabulary.py`, `src/agents/agents-vocabulary.json` and `scripts/member-tool-wire.json` are generated, never edited; figure owns the gestures and moods in the first.
 - Deployment facts (the gateway origin and key file) come from the host's `AgentConfig`, never from an environment variable or a module default.

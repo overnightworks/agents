@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.14"
 
 [[package]]
@@ -524,6 +524,9 @@ dev = [
     { name = "syntok" },
     { name = "uvicorn" },
 ]
+mcp-client = [
+    { name = "mcp" },
+]
 mcp-server = [
     { name = "anyio" },
     { name = "mcp" },
@@ -553,8 +556,9 @@ requires-dist = [
     { name = "fakeredis", extras = ["lua"], marker = "extra == 'dev'", specifier = ">=2.35,<3" },
     { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.133,<1" },
     { name = "httpx2", marker = "extra == 'backend'", specifier = ">=2.12,<3" },
+    { name = "mcp", marker = "extra == 'mcp-client'", specifier = ">=2.3,<3" },
     { name = "mcp", marker = "extra == 'mcp-server'", specifier = ">=2.3,<3" },
-    { name = "overnightworks-agents", extras = ["backend", "mcp-server", "redis", "voice"], marker = "extra == 'dev'" },
+    { name = "overnightworks-agents", extras = ["backend", "mcp-client", "mcp-server", "redis", "voice"], marker = "extra == 'dev'" },
     { name = "overnightworks-agents", extras = ["mcp-server"], marker = "extra == 'redis'" },
     { name = "overnightworks-logline", marker = "extra == 'backend'", specifier = ">=0.4,<2" },
     { name = "overnightworks-logline", marker = "extra == 'mcp-server'", specifier = ">=0.4,<2" },
@@ -572,7 +576,7 @@ requires-dist = [
     { name = "syntok", marker = "extra == 'voice'", specifier = ">=1.4.4,<2" },
     { name = "uvicorn", marker = "extra == 'dev'", specifier = ">=0.54,<1" },
 ]
-provides-extras = ["backend", "mcp-server", "redis", "voice", "dev"]
+provides-extras = ["backend", "mcp-server", "mcp-client", "redis", "voice", "dev"]
 
 [package.metadata.requires-dev]
 dev = [

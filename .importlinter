@@ -109,6 +109,58 @@ forbidden_modules =
     agents.voice.**
     syntok
 
+# The mcp-client extra stays an extra the same way as voice: the package __init__ is a source, the
+# mcp_client package inside it is not, and the ** wildcard keeps every mcp_client module forbidden.
+[importlinter:contract:client-base-stays-free-of-mcp-client]
+name = the client base modules import neither agents.mcp_client nor its extras
+type = forbidden
+as_packages = False
+source_modules =
+    agents
+    agents.agent_file
+    agents.backend
+    agents.backend.fake_gateway
+    agents.backend.gateway
+    agents.backend.gateway_request
+    agents.backend.model_prices
+    agents.backend.streamed_round
+    agents.backend.tool_result
+    agents.calling
+    agents.config
+    agents.errors
+    agents.figure_vocabulary
+    agents.front_matter
+    agents.member
+    agents.member_place
+    agents.member_presentation
+    agents.mcp_wire
+    agents.skills
+    agents.tools
+    agents.turn
+    agents.turn_events
+forbidden_modules =
+    agents.mcp_client
+    agents.mcp_client.**
+    mcp
+    mcp_types
+
+# The client and server halves of the SDK stay apart: a runner sends and an app serves.
+[importlinter:contract:mcp-client-and-mcp-server-stay-apart]
+name = agents.mcp_client and agents.mcp_server import each other nowhere
+type = forbidden
+source_modules =
+    agents.mcp_client
+forbidden_modules =
+    agents.mcp_server
+
+[importlinter:contract:mcp-server-imports-no-mcp-client]
+name = agents.mcp_server imports no agents.mcp_client
+type = forbidden
+source_modules =
+    agents.mcp_server
+forbidden_modules =
+    agents.mcp_client
+
 # The backend extra stays an extra: backend.gateway and backend.fake_gateway import
 # httpx2, so no base module (the package __init__ and the backend port included) does.
 [importlinter:contract:client-base-stays-free-of-http]
@@ -197,6 +249,8 @@ forbidden_modules =
     agents.errors
     agents.mcp_wire
     agents.turn_events
+    agents.mcp_client
+    agents.mcp_client.**
     agents.mcp_server
     agents.mcp_server.**
     agents.voice
@@ -282,6 +336,7 @@ forbidden_modules =
     anyio
     agents.backend.gateway
     agents.backend.fake_gateway
+    agents.mcp_client
     agents.mcp_server
 
 # syntok lives in voice.sentences; the other voice modules reach it only through that module.

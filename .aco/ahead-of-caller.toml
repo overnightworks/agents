@@ -87,3 +87,13 @@ reason = "The /model/info reader and writer; personas#394 S6 decides when summar
 path = "src/agents/backend/fake_gateway.py"
 item = "overnightworks/personas#394"
 reason = "model_entry and model_info, the scripted answer of model_prices; personas#394 S6's proofs script it. It moves to S6's own item if personas#394 closes when S6 is cut."
+
+[[code]]
+path = "src/agents/mcp_client/__init__.py"
+item = "overnightworks/personas#394"
+reason = "The runner's skill requests; personas#394 S8 reads each app's skills through them."
+
+[[code]]
+path = "src/agents/mcp_client/skills.py"
+item = "overnightworks/personas#394"
+reason = "list_skills and get_skill over an SDK session; personas#394 S8a sends them from its app session until #1115 moves the session in."

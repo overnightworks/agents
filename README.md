@@ -16,12 +16,13 @@ The distribution is not on PyPI. A host pins the git tag:
 
 `overnightworks-agents @ git+https://github.com/overnightworks/agents@v<version>`
 
-The base depends on `pydantic` and `ruamel.yaml` only. Four extras are optional:
+The base depends on `pydantic` and `ruamel.yaml` only. Five extras are optional:
 
 | Extra | Adds | For |
 |---|---|---|
 | `backend` | `httpx2`, `overnightworks-logline` | `GatewayBackend`, the one backend, and `FakeGateway`, its scripted transport for tests |
 | `mcp-server` | `anyio`, the official MCP SDK (`mcp`), `overnightworks-logline` | `agents.mcp_server`, an app's MCP endpoint on revision 2026-07-28 |
+| `mcp-client` | the official MCP SDK (`mcp`) | `agents.mcp_client`, what a runner sends an app's MCP endpoint: its skills, read over an SDK session |
 | `redis` | `mcp-server`, `overnightworks-tandem` 0.12.1 up to below 0.16 (which brings `redis`) | `RedisPlaceStore`, the place store and the member leases of an app that runs more than one pod |
 | `voice` | `syntok`, `overnightworks-logline` | `agents.voice`, the voice loop: an agent hears a place's lines and answers sentence by sentence, as text |
 

@@ -76,6 +76,9 @@ flowchart TB
   and `MemberHearing`, the in-memory record of who hears whom ([hearing.md](hearing.md)); the
   `PlaceStore` port has `InMemoryPlaceStore` for a host's tests and `RedisPlaceStore` for pods;
   `mcp_wire` holds what the SDK does not own (the strict JSON reader, the bearer-reflection check).
+- The **`mcp-client` extra** adds the official MCP SDK for `agents.mcp_client`, what a runner
+  sends an app's endpoint: today the `skills/list` and `skills/get` requests over an SDK session.
+  It and `agents.mcp_server` import each other nowhere.
 - The **`redis` extra** adds `overnightworks-tandem`, which brings `redis`, for
   `agents.mcp_server.redis_place_store`, the only module that imports tandem; no agents module
   imports `redis`. The place store is what the pods of one app share, through the `PlaceStore`

@@ -8,5 +8,6 @@ its caller (``agents.turn_events``), the backend that runs a turn against the ga
 (``agents.mcp_wire`` and ``agents.mcp_server``).
 Its base depends on pydantic and ruamel.yaml only; the ``backend`` extra adds the HTTP library
 for the gateway and the ``mcp-server`` extra adds anyio and the official MCP SDK for
-``agents.mcp_server``, which no base module imports.
+``agents.mcp_server``, which no base module imports; the ``mcp-client`` extra adds the SDK for
+``agents.mcp_client``, what a runner sends such an endpoint.
 """
