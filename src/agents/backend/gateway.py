@@ -695,13 +695,13 @@ def _calls_of(
         "content": message["content"],
         "tool_calls": raw_calls,
     }
-    served = calls[:1] if one_call_per_reply else calls
+    served, calls_not_run = (calls[:1], len(calls) - 1) if one_call_per_reply else (calls, None)
     return _Round(
         text="",
         calls=tuple(calls),
         message=reply,
         served=tuple(served),
-        calls_not_run=len(calls) - len(served) if one_call_per_reply else None,
+        calls_not_run=calls_not_run,
         usage=usage,
     )
 
