@@ -58,16 +58,16 @@ flowchart TB
 
 ## Building blocks
 
-- The **base** depends on `pydantic` and `ruamel.yaml` only: `agent_file` (the agent-file reader), `front_matter` (the YAML front
-  matter the agent file and a skill share), `skills` (an app's skills as SEP-2640 defines them),
-  `tools` (the tool contract and the one owner that turns a record into a tool's input schema),
-  `figure_vocabulary` (figure's gestures, framings and moods, generated from the pinned figure release, so
-  figure alone decides what an agent can show), `turn` (the turn's vocabulary, the size bounds and
-  the failure codes), `turn_events`, `config`, the `backend` port and `member` (the records an
-  app and an agent say to each other about a member, the place window and the place view) with
-  `member_presentation` (an agent's looks, figure and voices) and `member_place` (a place's
-  reference and the URIs of its window and view), and `calling` (the decisions of calling and
-  sending away an agent, pure, on facts the app supplies).
+- The **base** depends on `pydantic` and `ruamel.yaml` only: `agent_file` (the agent-file reader),
+  `front_matter` (the YAML front matter the agent file and a skill share), `skills` (an app's skills
+  as SEP-2640 defines them), `tools` (the tool contract and the one owner that turns a record into a
+  tool's input schema), `figure_vocabulary` (figure's gestures, framings and moods, generated from
+  the pinned figure release, so figure alone decides what an agent can show), `turn` (the turn's
+  vocabulary, the size bounds and the failure codes), `turn_events`, `config`, the `backend` port
+  and `member` (the records an app and an agent say to each other about a member, the place window
+  and the place view) with `member_presentation` (an agent's looks, figure and voices) and
+  `member_place` (a place's reference and the URIs of its window and view), and `calling` (the
+  decisions of calling and sending away an agent, pure, on facts the app supplies).
 - The **`backend` extra** adds `httpx2` for `backend.gateway.GatewayBackend`, the port's one
   implementation, and `backend.fake_gateway`, its test transport.
 - The **`mcp-server` extra** adds `anyio` and the official MCP SDK for `agents.mcp_server`, a thin
