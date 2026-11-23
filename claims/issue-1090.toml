@@ -1,5 +1,5 @@
 claim_id = "d1d140c0294e4ac4b6d4dd304fa852b9"
-agent = "Claude 8efd9444-79aa-4140-bdee-51202585646f"
+agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
 role = "builder"
 base = "99f410c8f3a8b36cb7c674f2bc081fc996d2bf2d"
 branch = "claude/issue-1090-round-reuse-line"
