@@ -32,8 +32,8 @@ def admin(redis_url: str) -> Iterator[Redis]:
 
 
 @pytest.fixture
-def pods(tmp_path: Path, redis_url: str, admin: Redis) -> Iterator[tuple[Pod, Pod]]:
-    """Pod A as its own Redis user, pod B as the default one."""
+def pod_a_user(admin: Redis) -> Iterator[str]:
+    """The Redis user pod A connects as, with every right; a test takes some away."""
     admin.acl_setuser(
         POD_A_USER,
         enabled=True,
@@ -43,14 +43,20 @@ def pods(tmp_path: Path, redis_url: str, admin: Redis) -> Iterator[tuple[Pod, Po
         commands=["+@all"],
     )
     try:
-        pod_a = started(tmp_path, as_user(redis_url, POD_A_USER, POD_A_PASSWORD))
-        try:
-            pod_b = started(tmp_path, redis_url)
-            try:
-                yield pod_a, pod_b
-            finally:
-                pod_b.kill()
-        finally:
-            pod_a.kill()
+        yield POD_A_USER
     finally:
         admin.acl_deluser(POD_A_USER)
+
+
+@pytest.fixture
+def pods(tmp_path: Path, redis_url: str, pod_a_user: str) -> Iterator[tuple[Pod, Pod]]:
+    """Pod A as its own Redis user, pod B as the default one."""
+    pod_a = started(tmp_path, as_user(redis_url, pod_a_user, POD_A_PASSWORD))
+    try:
+        pod_b = started(tmp_path, redis_url)
+        try:
+            yield pod_a, pod_b
+        finally:
+            pod_b.kill()
+    finally:
+        pod_a.kill()

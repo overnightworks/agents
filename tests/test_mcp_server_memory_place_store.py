@@ -23,12 +23,14 @@ from agents.mcp_server.place_store import (
 )
 from agents.member import STANDING_URI
 from tests.support.mcp_server_support import a_member, settled
+from tests.support.place_store_support import lapsing
 from tests.support.virtual_time import in_virtual_time
 
 _READY_WITHIN = timedelta(seconds=10)
 _ALICE = a_member("alice")
 _BOB = a_member("bob")
 _HOLDS = timedelta(seconds=30)
+_EVERY = timedelta(seconds=1)
 _ANOTHER_POD = "another-pod"
 
 
@@ -160,8 +162,8 @@ def test_the_turns_of_the_listen_record_reach_the_subscriptions_in_the_order_the
         async with following.open():
             await store.acknowledged("first", _ALICE, [STANDING_URI], _HOLDS)
             await store.acknowledged("second", _ALICE, [STANDING_URI], _HOLDS)
-            await asyncio.sleep(_HOLDS.total_seconds())
-            await store.lapse_due()
+            async with lapsing(store, every=_EVERY):
+                await asyncio.sleep(_HOLDS.total_seconds() + _EVERY.total_seconds())
             await settled()
 
     in_virtual_time(scenario())
@@ -268,9 +270,9 @@ def test_a_stream_is_listened_to_until_it_ends_and_its_allowance_runs_out() -> N
         answers.append(await store.listeners(STANDING_URI))
         await store.ended("stream", timedelta(seconds=5))
         await store.ended("stream", _HOLDS)
-        await asyncio.sleep(5)
-        run = await store.lapse_due()
-        answers += [run.stream_count, await store.listens_to(_ALICE, STANDING_URI)]
+        async with lapsing(store, every=_EVERY) as turns:
+            await asyncio.sleep(5 + _EVERY.total_seconds())
+        answers += [turns, await store.listens_to(_ALICE, STANDING_URI)]
         return answers
 
     assert in_virtual_time(scenario()) == [
@@ -278,6 +280,6 @@ def test_a_stream_is_listened_to_until_it_ends_and_its_allowance_runs_out() -> N
         frozenset(),
         True,
         frozenset({_ALICE}),
-        1,
+        [ListeningTurn(_ALICE, STANDING_URI, listens=False)],
         False,
     ]

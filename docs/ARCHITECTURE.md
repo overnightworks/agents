@@ -97,7 +97,7 @@ flowchart TB
   port keeps the listen record, so every pod answers who listens and a pod that dies loses its
   claim after `claim_for`. The `LeaseRecord` port keeps a member's lease on tandem's `Leases`, and beside it the
   member's owner and name for the lease's span, so a lease and its facts survive the pod that
-  renewed them; `MemberLeases` (`mcp_server.leases`) supervises the lapse
+  renewed them; `MemberLeases` (`mcp_server.leases`) runs the lapse
   service. `agents.mcp_server` does not re-export `RedisPlaceStore`, so an app without
   `ResourceChanges` or `MemberLeases` never loads tandem. `docs/connector.md` owns the contract.
 - The **`voice` extra** adds `syntok` and logline's `unit_trace` for `agents.voice`: the voice loop
@@ -137,8 +137,9 @@ route as an in-process request into the host's application.
 Every answer of the front is buffered, so a bearer reflected into it can be withheld whole. The
 one streaming path is `subscriptions/listen`, per verified principal: a change published through
 the place store reaches every pod's subscription, which wakes that principal's open streams. A
-subscription that fails for good turns the front dead, which answers 503 until the pod restarts,
-because a pod that no change reaches would serve stale truth. The shell's writer checks each frame
+subscription that fails for good, or a lapse service that ends unexpectedly, turns the front dead,
+which answers 503 until the pod restarts, because a pod that no change reaches, or that lapses
+nothing, would serve stale truth. The shell's writer checks each frame
 for the bearer and caps the call, because the SDK's write to a client has no timeout.
 
 ## Deployment

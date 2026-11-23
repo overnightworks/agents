@@ -322,9 +322,9 @@ class McpPersonFront:
         """The SDK's manager for the host's lifespan; a request outside it fails loud.
 
         With ``ResourceChanges`` it yields at the first confirmed subscription of the place store
-        and raises ``PlaceStoreError`` if that fails first. A subscription that fails later
-        leaves it entered: the front logs the cause, ends its open listens and answers every
-        request with 503 until the pod restarts.
+        and raises ``PlaceStoreError`` if that fails first. A subscription that fails later, or
+        a lapse service that ends unexpectedly, leaves it entered: the front logs the cause, ends
+        its open listens and answers every request with 503 until the pod restarts.
         """
         if self._manager is not None:
             raise RuntimeError("the person front is already running")
