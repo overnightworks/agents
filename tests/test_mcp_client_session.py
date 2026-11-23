@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+from collections.abc import Iterator
+from contextlib import contextmanager
 from http import HTTPStatus
 from typing import Any
 
@@ -678,7 +680,7 @@ async def test_a_jsonrpc_error_that_is_no_refused_revision_is_an_unusable_answer
 # What leaves a session of the bearer.
 
 
-async def test_a_content_type_that_reflects_the_bearer_reaches_no_log(
+async def test_a_content_type_that_reflects_the_bearer_reaches_no_log_line_of_the_sdk(
     app: MemberApp, gate: ScriptedGate, caplog: pytest.LogCaptureFixture
 ) -> None:
     stands(app)
@@ -687,14 +689,23 @@ async def test_a_content_type_that_reflects_the_bearer_reaches_no_log(
     reflected = f"application/{bearer.get_secret_value()}"
     gate.script(READ, lambda reply: reply.body(HTTPStatus.OK, reflected, b"{}"))
 
-    with pytest.raises(UnusableAnswer):
-        await reads_the_standing(gate, bearer)
+    with without_the_wire_trace_of_the_http_library():
+        with pytest.raises(UnusableAnswer):
+            await reads_the_standing(gate, bearer)
 
-    warned = "".join(
-        record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING
-    )
-    assert bearer.get_secret_value() not in warned
-    caplog.clear()  # the HTTP library's debug trace of the wire, set by a host, shows headers
+    assert bearer.get_secret_value() not in caplog.text
+
+
+@contextmanager
+def without_the_wire_trace_of_the_http_library() -> Iterator[None]:
+    """The library traces response headers at DEBUG before the auth flow sees them."""
+    wire = logging.getLogger("httpcore2")
+    before = wire.level
+    wire.setLevel(logging.INFO)
+    try:
+        yield
+    finally:
+        wire.setLevel(before)
 
 
 @pytest.mark.parametrize(
