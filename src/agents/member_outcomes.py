@@ -1,7 +1,7 @@
 """How a call to an app's member endpoint fails; the runner decides what each failure means.
 
-The failures and the codes a member client names them by are pure, so a runner's decisions read them without
-the client or its libraries.
+The failures and the codes a member client names them by are pure, so a runner's decisions read
+them without the client or its libraries.
 """
 
 from __future__ import annotations
@@ -18,7 +18,10 @@ UNSUPPORTED_VERSION_CODE: Final = "unsupported_version"
 
 # The base of the failures below, which name their kind; a suffix would repeat it.
 class CallFailure(Exception):  # noqa: N818
-    """A call did not give an answer the runner can use; an app's error status says the failed MCP method and answer."""
+    """A call did not give an answer the runner can use.
+
+    An app's error status says the failed MCP method and answer.
+    """
 
     method: str | None = None
     answer: str | None = None
@@ -27,8 +30,8 @@ class CallFailure(Exception):  # noqa: N818
 class StatusFailure(CallFailure):
     """The server answered with an HTTP status that is not success.
 
-    An app's answer says the MCP method that failed and what it carried: a code of the JSON-RPC error, else its
-    content type; never its content.
+    An app's answer says the MCP method that failed and what it carried: a code of the JSON-RPC
+    error, else its content type; never its content.
     """
 
     def __init__(self, status: int, method: str | None = None, answer: str | None = None) -> None:
@@ -43,7 +46,7 @@ class Unreachable(CallFailure):
 
 
 class UnusableAnswer(CallFailure):
-    """The server answered, but with an error or a body the runner cannot use; ``code`` says which."""
+    """The server answered, but with an error or a body the runner cannot use; ``code`` says why."""
 
     def __init__(self, code: str, method: str | None = None, answer: str | None = None) -> None:
         super().__init__(code)
