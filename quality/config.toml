@@ -105,6 +105,11 @@ rule = "test-layout"
 reason = "an adapter-bound suite: it needs the redis extra, so it lives apart from the core suites"
 
 [[layout.allow]]
+path = "tests/integration/test_redis_place_store_record.py"
+rule = "test-layout"
+reason = "an adapter-bound suite: it needs the redis extra, so it lives apart from the core suites"
+
+[[layout.allow]]
 path = "tests/integration/test_redis_place_following.py"
 rule = "test-layout"
 reason = "an adapter-bound suite: it needs the redis extra, so it lives apart from the core suites"

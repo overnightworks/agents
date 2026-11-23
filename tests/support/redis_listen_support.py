@@ -15,9 +15,10 @@ import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
 from logline.trace import current_trace_id
 from redis.asyncio import Redis
+from tandem import Deadlines
 
 from agents.mcp_server.place_store import ListeningTurn, PlaceSignal
-from agents.mcp_server.redis_place_store import RedisPlaceStore
+from agents.mcp_server.redis_place_store import CLAIM_FOR, RedisPlaceStore
 from agents.member import STANDING_URI
 from tests.support.mcp_server_support import a_member
 
@@ -137,6 +138,18 @@ async def namespace_of(raw: Redis, prefix: str) -> dict[str, object]:
             case other:
                 state[key.decode()] = other
     return state
+
+
+def key_names(raw: Redis, *, prefix: str = KEY_PREFIX) -> dict[str, str]:
+    """The keys of the listen record by role: tandem's three, then the record's own two."""
+    deadlines = Deadlines(raw, key_prefix=f"{prefix}-agents", kind="listen", claim_for=CLAIM_FOR)
+    return {
+        "due": deadlines.keys.due,
+        "claimed": deadlines.keys.claimed,
+        "claim": deadlines.keys.claim,
+        "listens": f"{prefix}-agents:v1:listens",
+        "streams": f"{prefix}-agents:v1:streams",
+    }
 
 
 def snapshots_around_evalsha[Snapshot](
