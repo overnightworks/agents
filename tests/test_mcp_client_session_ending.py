@@ -147,6 +147,21 @@ async def test_a_leaf_the_body_raises_keeps_the_cause_it_was_raised_from(
     assert caught.value.__cause__ is cause
 
 
+@pytest.mark.parametrize("grouped", [False, True], ids=["alone", "in a group"])
+async def test_a_leaf_the_body_raises_keeps_the_context_it_was_raised_in(
+    gate: ScriptedGate, bearer: SecretStr, grouped: bool
+) -> None:
+    context = KeyError("what the caller was handling")
+    own = BodyError("the caller's own code failed")
+    own.__context__ = context
+    raised = ExceptionGroup("own", [own]) if grouped else own
+
+    with pytest.raises(BodyError) as caught:
+        await raises_in_the_body(gate, bearer, raised)
+
+    assert caught.value.__context__ is context
+
+
 @pytest.mark.parametrize("method", [READ, CALL], ids=["a read", "a tool call"])
 async def test_a_request_whose_answer_names_no_request_ends_as_unreachable(
     app: MemberApp, gate: ScriptedGate, bearer: SecretStr, method: str
@@ -169,10 +184,8 @@ async def test_an_answer_echoing_the_id_as_text_still_answers_its_request(
         contents = TextResourceContents(
             uri=STANDING_URI, text='{"standings": []}', mime_type="application/json"
         )
-        await reply.raw_result(
-            ReadResourceResult(contents=[contents], ttl_ms=0, cache_scope="private").model_dump(
-                by_alias=True, mode="json", exclude_none=True
-            ),
+        await reply.result(
+            ReadResourceResult(contents=[contents], ttl_ms=0, cache_scope="private"),
             answering=str(reply.rpc.id),
         )
 

@@ -547,8 +547,13 @@ async def open_member_session(
         if not any(outcome is leaf for leaf in own):
             raise outcome from None
     if outcome is not None:
-        # Raised outside the handler, a leaf the body raised keeps its cause and its context.
-        raise outcome
+        # Raised outside the handler, a leaf the body raised keeps its cause and its context; the
+        # group of the caller's exit that is being handled would otherwise replace the context.
+        context = outcome.__context__
+        try:
+            raise outcome
+        finally:
+            outcome.__context__ = context
 
 
 async def _discover(session: ClientSession, auth: BearerAuth) -> None:

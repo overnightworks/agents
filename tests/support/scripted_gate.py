@@ -73,8 +73,10 @@ class GateReply:
     rpc: Rpc
     send: Callable[[dict[str, Any]], Awaitable[None]]
 
-    async def result(self, result: BaseModel) -> None:
-        await self.raw_result(result.model_dump(by_alias=True, mode="json", exclude_none=True))
+    async def result(self, result: BaseModel, *, answering: int | str | None = None) -> None:
+        await self.raw_result(
+            result.model_dump(by_alias=True, mode="json", exclude_none=True), answering=answering
+        )
 
     async def raw_result(
         self, result: dict[str, Any], *, answering: int | str | None = None
