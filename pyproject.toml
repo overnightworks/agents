@@ -37,8 +37,8 @@ voice = [
 ]
 dev = [
     "overnightworks-agents[backend,mcp-client,mcp-server,redis,voice]",
-    "fakeredis[lua]>=2.35,<3",
-    "redis>=8.1,<9",
+    "fakeredis[lua]>=2.41,<3",
+    "redis>=8.2,<9",
     "pyright==1.1.414",
     "pytest>=9.1,<10",
     "pytest-cov>=7.1,<8",
