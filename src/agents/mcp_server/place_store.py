@@ -87,18 +87,6 @@ class ListeningTurn:
     listens: bool
 
 
-@dataclass(frozen=True)
-class LapseRun:
-    """What one ``lapse_due`` did: the ``turns`` it published, the streams it ``stream_count``
-    lapsed, and the streams it could not (``failed_count``), with the type name of the last
-    failure. A run that claimed nothing is all zeros and ``None``."""
-
-    turns: tuple[ListeningTurn, ...] = ()
-    stream_count: int = 0
-    failed_count: int = 0
-    last_error_type: str | None = None
-
-
 class PlaceSignals(Protocol):
     async def publish(self, signal: PlaceSignal) -> None:
         """Sends the signal to every pod subscribed, this one included.
@@ -135,8 +123,8 @@ class PlaceSignals(Protocol):
 
 class ListenRecord(Protocol):
     """Which principal listens to which URI: the streams that honored a URI, each with a deadline
-    on the store's clock. Every method raises ``PlaceStoreError`` when the store refuses or does
-    not answer."""
+    on the store's clock. Every method but ``serve_stream_lapses`` raises ``PlaceStoreError`` when
+    the store refuses or does not answer."""
 
     async def acknowledged(
         self, stream: str, principal: Principal, uris: Collection[str], holds_for: timedelta
@@ -160,11 +148,21 @@ class ListenRecord(Protocol):
         """The principals with a recorded stream that honored the URI."""
         ...
 
-    async def lapse_due(self) -> LapseRun:
-        """Lapses every stream whose deadline passed that nobody else lapses now; a principal's
-        last stream of a URI turns it to no, publishes a ``ListeningTurn`` and is one of the
-        run's ``turns``, which this call's pod alone returns. A stream that fails to lapse is
-        counted, not raised, and its claim runs out."""
+    async def serve_stream_lapses(
+        self, lapsed: Callable[[ListeningTurn], None], *, every: timedelta
+    ) -> NoReturn:
+        """Lapses every stream whose deadline passed, on one pod and at least once, about every
+        ``every``, until cancelled. A principal's last stream of a URI turns it to no and publishes
+        a ``ListeningTurn``, which is also handed to ``lapsed`` on the pod whose lapse published it.
+        A stream that fails to lapse is lapsed again once its claim has run out; an outage or a
+        refusal of the store is ridden out. It ends only when cancelled or on an exception that is
+        no failure of the store.
+
+        ``lapsed`` must not raise. If it does, the stream has lapsed all the same: the Redis store
+        writes the handling as failed and its retry finds the stream gone, so the turn reaches
+        ``lapsed`` at most once; the in-memory store's loop ends with the exception, which the
+        front treats as an unexpected end.
+        """
         ...
 
 
@@ -235,8 +233,9 @@ class LeaseRecord(Protocol):
         one live pod, at least once, until cancelled.
 
         A claim on a lapse is extended while ``handle`` runs, and ``handle`` is not cancelled when
-        the claim runs out; one that raises gets the lapse again once its claim has run out. Raises
-        ``PlaceStoreError`` when the store refuses, after which a new call serves again.
+        the claim runs out; one that raises gets the lapse again once its claim has run out. An
+        outage or a refusal of the store is ridden out; it ends only when cancelled or on an
+        exception that is no failure of the store.
         """
         ...
 

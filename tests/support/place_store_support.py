@@ -9,18 +9,18 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Mapping
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import NoReturn
 
 from agents.mcp_server import InMemoryPlaceStore
 from agents.mcp_server.place_store import (
-    LapseRun,
     LeaseRenewal,
     LeaseRoster,
     LeaseStanding,
     ListeningTurn,
+    ListenRecord,
     PlaceSignal,
     PlaceStoreError,
 )
@@ -35,13 +35,28 @@ def refused_with_a_cause() -> PlaceStoreError:
     return refusal
 
 
+@asynccontextmanager
+async def lapsing(record: ListenRecord, *, every: timedelta) -> AsyncGenerator[list[ListeningTurn]]:
+    """``record.serve_stream_lapses`` as a task for the block, which yields what it handed to
+    ``lapsed``; the block's end cancels the loop, and one that ended on its own raises here."""
+    turns: list[ListeningTurn] = []
+    serving = asyncio.create_task(record.serve_stream_lapses(turns.append, every=every))
+    try:
+        yield turns
+    finally:
+        serving.cancel()
+        with suppress(asyncio.CancelledError):
+            await serving
+
+
 class PlaceStoreFake(InMemoryPlaceStore):
     """An ``InMemoryPlaceStore`` that fails the calls a test names.
 
     ``publish_failure`` makes every publish raise; ``ended_takes`` is the seconds the record's
     ``ended`` waits before it answers. A ``*_failure`` raises from that call of the record;
     ``acknowledged_failure`` raises after the acknowledgement committed and published, the way a
-    lost reply does. ``published`` holds the signals published and ``stream_calls`` the calls a
+    lost reply does. ``serve_failure`` ends ``serve_stream_lapses`` at its next round with that
+    exception. ``published`` holds the signals published and ``stream_calls`` the calls a
     stream made to the record. ``signal_tasks`` are the tasks that handle the subscriptions'
     signals, which tells a host's callable which task called it.
     """
@@ -52,8 +67,7 @@ class PlaceStoreFake(InMemoryPlaceStore):
         self.acknowledged_failure: PlaceStoreError | None = None
         self.ended_failure: PlaceStoreError | None = None
         self.ended_takes: float = 0
-        self.lapse_failure: Exception | None = None
-        self.lapse_item_failure: str | None = None
+        self.serve_failure: Exception | None = None
         self.read_failure: PlaceStoreError | None = None
         self.published: list[PlaceSignal] = []
         self.stream_calls: list[str] = []
@@ -115,20 +129,17 @@ class PlaceStoreFake(InMemoryPlaceStore):
             raise self.read_failure
         return await super().listeners(uri)
 
-    async def lapse_due(self) -> LapseRun:
-        if self.lapse_failure is not None:
-            raise self.lapse_failure
-        if self.lapse_item_failure is not None:
-            return LapseRun(failed_count=1, last_error_type=self.lapse_item_failure)
-        return await super().lapse_due()
+    def _lapse_round(self) -> list[ListeningTurn]:
+        if self.serve_failure is not None:
+            raise self.serve_failure
+        return super()._lapse_round()
 
 
 @dataclass
 class LeaseRecordFake:
     """A ``LeaseRecord`` whose leases last ``LEASE_SECONDS`` of the loop's time.
 
-    ``serve_failures`` are raised by the next calls of ``serve_lapses``, one each; ``fail_running``
-    is raised by the call that runs, at its next round. A ``handle`` that
+    ``serve_failures`` are raised by the next calls of ``serve_lapses``, one each. A ``handle`` that
     raises is recorded in ``handler_failures`` and its lapse stays due, as the store gives it again.
     ``failure`` makes ``renew``, ``state``, ``facts`` and ``live`` raise. ``serving`` is true while
     a call of ``serve_lapses`` runs, and ``serve_call_count`` counts them.
@@ -136,7 +147,6 @@ class LeaseRecordFake:
 
     failure: PlaceStoreError | None = None
     serve_failures: list[Exception] = field(default_factory=list)
-    fail_running: Exception | None = None
     handler_failures: list[Exception] = field(default_factory=list)
     serve_call_count: int = 0
     serving: bool = False
@@ -202,8 +212,6 @@ class LeaseRecordFake:
                     else:
                         self._lapses.remove(lapse)
                 await asyncio.sleep(1)
-                if self.fail_running is not None:
-                    raise self.fail_running
         finally:
             self.serving = False
 

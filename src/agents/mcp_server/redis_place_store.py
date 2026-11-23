@@ -42,6 +42,7 @@ from pydantic import TypeAdapter, ValidationError
 from tandem import (
     Client,
     Deadlines,
+    Due,
     Lapse,
     Leases,
     Liveness,
@@ -55,7 +56,6 @@ from tandem import (
 
 from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.place_store import (
-    LapseRun,
     LeaseRenewal,
     LeaseRoster,
     LeaseStanding,
@@ -64,7 +64,6 @@ from agents.mcp_server.place_store import (
     PlaceStoreError,
     ResourceChange,
     ToolsChange,
-    failure_type,
 )
 from agents.member import LEASE_SECONDS, MemberFacts
 from agents.turn import Principal
@@ -77,7 +76,6 @@ _LEASE_LASTS: Final = timedelta(seconds=LEASE_SECONDS)
 _FACTS_KEY_INFIX: Final = ":v1:member-facts:"
 _FACTS_UNREADABLE: Final = "a stored member's facts are unreadable"
 _LEASE_SWEEP_EVERY: Final = timedelta(seconds=1)
-_LAPSE_BATCH: Final = 20
 _MILLISECOND: Final = timedelta(milliseconds=1)
 
 # Every script takes the same KEYS: tandem's due, claimed and claim, then the listens and streams.
@@ -426,28 +424,14 @@ class RedisPlaceStore:
         texts = {member.split("\n")[1] for member in await self._members_of(f"{uri}\n", -1)}
         return frozenset(_principal_from(text) for text in texts)
 
-    async def lapse_due(self) -> LapseRun:
-        with _store_errors():
-            claims = await self._deadlines.claim_due(limit=_LAPSE_BATCH)
-        turns: list[ListeningTurn] = []
-        lapsed = failed = 0
-        last_error_type: str | None = None
-        for due in claims:
-            try:
-                with _store_errors():
-                    turns.extend(await self._lapsed_turns(due.key))
-                    await self._deadlines.done(due)
-            except PlaceStoreError as failure:
-                failed += 1
-                last_error_type = failure_type(failure)
-            else:
-                lapsed += 1
-        return LapseRun(
-            turns=tuple(turns),
-            stream_count=lapsed,
-            failed_count=failed,
-            last_error_type=last_error_type,
-        )
+    async def serve_stream_lapses(
+        self, lapsed: Callable[[ListeningTurn], None], *, every: timedelta
+    ) -> NoReturn:
+        async def handle(due: Due) -> None:
+            for turn in await self._lapsed_turns(due.key):
+                lapsed(turn)
+
+        await self._deadlines.serve_due(handle, every=every)
 
     async def renew(self, principal: Principal, facts: MemberFacts) -> LeaseRenewal:
         text = _principal_text(principal)
@@ -507,8 +491,7 @@ class RedisPlaceStore:
         async def hand_over(lapse: Lapse) -> None:
             await handle(_principal_from(lapse.holder), lapse.generation)
 
-        with _store_errors():
-            await self._leases.serve_lapses(hand_over, every=_LEASE_SWEEP_EVERY)
+        await self._leases.serve_lapses(hand_over, every=_LEASE_SWEEP_EVERY)
 
     async def _lapsed_turns(self, stream: str) -> list[ListeningTurn]:
         reply = await self._lapse.run(

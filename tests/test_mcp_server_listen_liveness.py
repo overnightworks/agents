@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import suppress
+from http import HTTPStatus
 
 import pytest
 
@@ -21,7 +22,9 @@ from tests.support.mcp_server_support import (
     MemberApp,
     listen_connection,
     open_stream,
+    post,
     resolve_member,
+    rpc_body,
     settled,
     window_uri,
 )
@@ -491,82 +494,31 @@ def test_a_listen_whose_task_is_cancelled_still_ends_its_stream_in_the_store(
     assert place_store.stream_calls == ["acknowledged", "ended"]
 
 
-@pytest.mark.parametrize(
-    ("failure", "logged_type"),
-    [
-        pytest.param(PlaceStoreError("the store is down"), "PlaceStoreError", id="a store error"),
-        pytest.param(refused_with_a_cause(), "PermissionError", id="a refusal with its cause"),
-        pytest.param(RuntimeError("the secret detail"), "RuntimeError", id="an unexpected error"),
-    ],
-)
-def test_a_failing_lapse_writes_one_failed_line_by_type_and_the_next_tick_lapses(
+def test_an_unexpected_end_of_the_lapse_service_writes_one_error_line_and_turns_the_front_dead(
     signalling_front: McpPersonFront,
-    host: ListeningHost,
     place_store: PlaceStoreFake,
     alice: Principal,
     log_lines: LogLines,
-    failure: Exception,
-    logged_type: str,
 ) -> None:
     connection = listen_connection(signalling_front, alice, [STANDING_URI])
 
-    async def scenario() -> list[bool]:
-        async with signalling_front.running():
-            async with open_stream(connection):
-                pass
-            place_store.lapse_failure = failure
-            await asyncio.sleep(_PAST_THE_ALLOWANCE)
-            failing = [listens for _p, _u, listens, _t in host.calls]
-            place_store.lapse_failure = None
+    async def scenario() -> int:
+        async with signalling_front.running(), open_stream(connection):
+            place_store.serve_failure = RuntimeError("the secret detail")
             await asyncio.sleep(2 * LAPSE_POLL_SECONDS)
-            return [*failing, host.calls[-1][2]]
+            return (await post(signalling_front, alice, rpc_body("tools/list")))[0]["status"]
 
-    assert served(scenario()) == [True, True, False]
-    ran = log_lines.of("listen_lapse.ended")
-    assert [line["outcome"] for line in ran] == ["failed", "ok"]
-    assert (ran[0]["level"], ran[0]["last_error_type"]) == ("warning", logged_type)
-    assert "secret detail" not in log_lines.everything()
-
-
-def test_a_lapse_run_that_fails_for_several_polls_writes_its_first_failure_and_then_its_recovery(
-    signalling_front: McpPersonFront, place_store: PlaceStoreFake, log_lines: LogLines
-) -> None:
-    failed_polls = 3
-
-    async def scenario() -> None:
-        async with signalling_front.running():
-            place_store.lapse_failure = PlaceStoreError("the store is down")
-            await asyncio.sleep(failed_polls * LAPSE_POLL_SECONDS + 0.5)
-            place_store.lapse_failure = None
-            await asyncio.sleep(2 * LAPSE_POLL_SECONDS)
-
-    served(scenario())
-
-    assert [(line["event"], line["level"]) for line in log_lines.written_by("agents")] == [
-        ("listen_lapse.ended", "warning"),
-        ("listen_lapse.resumed", "info"),
-    ]
-    assert log_lines.one("listen_lapse.resumed")["failed_run_count"] == failed_polls
-
-
-def test_a_lapse_run_in_which_one_stream_failed_is_one_failed_line_with_its_counts(
-    signalling_front: McpPersonFront, place_store: PlaceStoreFake, log_lines: LogLines
-) -> None:
-    place_store.lapse_item_failure = "StoreError"
-
-    async def scenario() -> None:
-        async with signalling_front.running():
-            await asyncio.sleep(LAPSE_POLL_SECONDS + 0.5)
-
-    served(scenario())
-
-    failed = log_lines.one("listen_lapse.ended")
-    assert (failed["outcome"], failed["reason"], failed["failed_count"]) == (
-        "failed",
-        "lapse_failed",
-        1,
+    assert served(scenario()) == HTTPStatus.SERVICE_UNAVAILABLE
+    assert connection.returned_after is not None
+    stopped = log_lines.one("listen_lapse_service.stopped")
+    assert (stopped["level"], stopped["error_type"]) == ("error", "RuntimeError")
+    assert "RuntimeError" in str(stopped["exception"])
+    assert "secret detail" not in json.dumps(
+        {field: value for field, value in stopped.items() if field != "exception"}
     )
-    assert failed["last_error_type"] == "StoreError"
+    assert [
+        line["event"] for line in log_lines.written_by("agents") if line["level"] == "error"
+    ] == ["listen_lapse_service.stopped"]
 
 
 async def _idle_front(front: McpPersonFront, seconds: float) -> None:
@@ -574,7 +526,7 @@ async def _idle_front(front: McpPersonFront, seconds: float) -> None:
         await asyncio.sleep(seconds)
 
 
-def test_a_lapse_run_that_found_nothing_writes_no_line(
+def test_an_idle_front_writes_no_line_of_its_own(
     signalling_front: McpPersonFront, log_lines: LogLines
 ) -> None:
     served(_idle_front(signalling_front, 5 * LAPSE_POLL_SECONDS))
@@ -582,7 +534,7 @@ def test_a_lapse_run_that_found_nothing_writes_no_line(
     assert log_lines.written_by("agents") == []
 
 
-def test_a_lapse_writes_one_line_with_its_counts_and_one_lapsed_line_for_the_principal(
+def test_a_lapse_writes_one_lapsed_line_for_the_principal(
     signalling_front: McpPersonFront, alice: Principal, log_lines: LogLines
 ) -> None:
     connection = listen_connection(signalling_front, alice, [STANDING_URI])
@@ -595,43 +547,7 @@ def test_a_lapse_writes_one_line_with_its_counts_and_one_lapsed_line_for_the_pri
 
     served(scenario())
 
-    ran = log_lines.one("listen_lapse.ended")
-    assert (ran["outcome"], ran["stream_count"], ran["turn_count"], ran["failed_count"]) == (
-        "ok",
-        1,
-        1,
-        0,
-    )
     assert log_lines.one("listening.lapsed")["sub"] == alice.sub
-
-
-def test_each_lapse_run_writes_its_lines_in_one_trace_of_its_own(
-    signalling_front: McpPersonFront,
-    place_store: PlaceStoreFake,
-    alice: Principal,
-    log_lines: LogLines,
-) -> None:
-    connection = listen_connection(signalling_front, alice, [STANDING_URI])
-
-    async def scenario() -> None:
-        async with signalling_front.running():
-            async with open_stream(connection):
-                pass
-            place_store.lapse_failure = PlaceStoreError("the store is down")
-            await asyncio.sleep(_PAST_THE_ALLOWANCE)
-            place_store.lapse_failure = None
-            await asyncio.sleep(2 * LAPSE_POLL_SECONDS)
-
-    served(scenario())
-
-    failed, ended = log_lines.of("listen_lapse.ended")
-    trace_of_failed_run = failed["trace_id"]
-    trace_of_ended_run = ended["trace_id"]
-    assert trace_of_failed_run
-    assert trace_of_ended_run
-    assert trace_of_failed_run != trace_of_ended_run
-    assert log_lines.one("listen_lapse.resumed")["trace_id"] == trace_of_ended_run
-    assert log_lines.one("listening.lapsed")["trace_id"] == trace_of_ended_run
 
 
 def test_two_pods_and_one_acknowledgement_write_one_opened_line_and_one_lapsed_line(

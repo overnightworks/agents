@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
 import pytest
@@ -20,7 +19,6 @@ from tandem import Deadlines, WakeChannel, wake_channel
 from agents.mcp_server import McpPersonFront, ResourceChanges
 from agents.mcp_server.asgi import LOGGER_NAME
 from agents.mcp_server.place_store import (
-    LapseRun,
     ListeningTurn,
     PlaceSignal,
     PlaceStoreError,
@@ -46,6 +44,7 @@ from tests.support.mcp_server_support import (
     resolve_member,
     window_uri,
 )
+from tests.support.place_store_support import lapsing
 from tests.support.redis_listen_support import (
     UNUSUAL_PRINCIPALS,
     UNUSUAL_URIS,
@@ -55,8 +54,8 @@ from tests.support.redis_listen_support import (
     a_pod,
     arrived,
     delivered_up_to,
-    namespace_of,
-    snapshots_around_evalsha,
+    eventually,
+    key_names,
     subscribed,
 )
 
@@ -67,6 +66,8 @@ log_lines = log_lines
 _PREFIX = "notes"
 _ALICE = a_member("alice")
 _BOB = a_member("bob")
+_EVERY = timedelta(milliseconds=50)
+_WAIT_SECONDS = 10
 _ALLOWANCE = timedelta(seconds=LISTEN_ALLOWANCE_SECONDS)
 _OPEN = timedelta(seconds=LISTEN_BOUND_SECONDS + LISTEN_ALLOWANCE_SECONDS)
 _YES = ListeningTurn(_ALICE, STANDING_URI, listens=True)
@@ -96,7 +97,7 @@ def test_a_signal_one_pod_publishes_reaches_the_subscription_of_another(
     assert asyncio.run(scenario()) == [Resynced(), signal]
 
 
-async def _published_in_a_trace(store: RedisPlaceStore, how: str, redis_clock: RedisClock) -> None:
+async def _published_in_a_trace(store: RedisPlaceStore, how: str) -> None:
     match how:
         case "a resource change":
             await store.publish(ResourceChange(_ALICE, STANDING_URI, "pod-a"))
@@ -104,37 +105,28 @@ async def _published_in_a_trace(store: RedisPlaceStore, how: str, redis_clock: R
             await store.publish(ToolsChange(_ALICE, "pod-a"))
         case "a listen turned to yes":
             await store.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
-        case "a listen lapsed to no":
-            await store.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
-            redis_clock.advance(_ALLOWANCE.total_seconds())
-            await store.lapse_due()
 
 
 @pytest.mark.parametrize(
-    ("how", "wake_count"),
-    [
-        ("a resource change", 1),
-        ("a tool list change", 1),
-        ("a listen turned to yes", 1),
-        ("a listen lapsed to no", 2),
-    ],
+    "how",
+    ["a resource change", "a tool list change", "a listen turned to yes"],
 )
 def test_a_wake_is_handled_in_the_trace_of_the_pod_that_sent_it(
-    server: FakeServer, redis_clock: RedisClock, how: str, wake_count: int
+    server: FakeServer, how: str
 ) -> None:
     async def scenario() -> tuple[str | None, list[str | None]]:
         traces: list[str | None] = []
         async with subscribed(a_pod(server), traces) as events:
             with unit_trace(None):
                 sender_trace = current_trace_id()
-                await _published_in_a_trace(a_pod(server), how, redis_clock)
+                await _published_in_a_trace(a_pod(server), how)
             await delivered_up_to(a_pod(server), events, _AFTER_EVERYTHING)
             return sender_trace, traces[:-1]
 
     sender_trace, wake_traces = asyncio.run(scenario())
 
     assert sender_trace is not None
-    assert wake_traces == [sender_trace] * wake_count
+    assert wake_traces == [sender_trace]
 
 
 def test_a_payload_that_is_no_address_is_skipped_and_refused_by_its_length_only(
@@ -252,14 +244,59 @@ def a_pod_that_loses_its_connection_after(server: FakeServer, evalshas: int) -> 
     return RedisPlaceStore(client, key_prefix=_PREFIX)
 
 
+_WITNESS_URI = window_uri("witness")
+
+
+def without_witnesses(events: list[object]) -> list[object]:
+    """The events that are no turn of a witness of ``lapsed_at``."""
+    return [
+        event
+        for event in events
+        if not (isinstance(event, ListeningTurn) and event.uri == _WITNESS_URI)
+    ]
+
+
 async def lapsed_at(
     clock: RedisClock, store: RedisPlaceStore, listener: Principal, seconds: float
 ) -> bool:
-    """Whether the principal still listens ``seconds`` after the clock's start, once ``store`` ran
-    its lapse."""
-    clock.since_start(seconds)
-    await store.lapse_due()
+    """Whether the principal still listens ``seconds`` after the clock's start, once ``store``,
+    serving, handled every stream due by then.
+
+    The proof is a witness the call acknowledges before it moves the clock: a stream of its own
+    on a URI of its own, due at exactly the instant the clock is set to, whose id sorts after every
+    other stream's, so a claim handles it last. Once its no has arrived, every key that waited in
+    the due set at that instant has been handled. A key whose claim ran out is claimed only after
+    all of those, so this call proves nothing for one.
+    """
+    witness = f"~witness-{seconds}"
+    no = ListeningTurn(a_member(witness), _WITNESS_URI, listens=False)
+    await store.acknowledged(
+        witness,
+        no.principal,
+        [_WITNESS_URI],
+        timedelta(seconds=clock.start + seconds - clock.now),
+    )
+    async with lapsing(store, every=_EVERY) as turns:
+        clock.since_start(seconds)
+
+        async def witness_lapsed() -> bool:
+            return no in turns
+
+        await eventually(witness_lapsed, seconds=_WAIT_SECONDS)
     return not await store.listens_to(listener, STANDING_URI)
+
+
+async def no_longer_listens(store: RedisPlaceStore, listener: Principal) -> bool:
+    return not await store.listens_to(listener, STANDING_URI)
+
+
+async def handed_over(turns: list[ListeningTurn]) -> bool:
+    return bool(turns)
+
+
+async def claimed(raw: FakeAsyncRedis) -> bool:
+    """Whether a pod holds a claim on a stream of the record."""
+    return bool(await raw.zcard(key_names(raw)["claimed"]))
 
 
 def test_a_listen_through_one_store_is_listed_by_another_and_wakes_its_subscription(
@@ -307,13 +344,12 @@ def test_an_open_stream_that_never_ends_lapses_at_the_bound_plus_the_allowance_w
             await store_a.acknowledged("stream", _ALICE, [STANDING_URI], _OPEN)
             before = await lapsed_at(redis_clock, store_b, _ALICE, _OPEN.total_seconds() - 1)
             at_the_end = await lapsed_at(redis_clock, store_b, _ALICE, _OPEN.total_seconds())
-            await store_a.lapse_due()
             return before, at_the_end, await delivered_up_to(store_b, events, _AFTER_EVERYTHING)
 
     before, at_the_end, seen = asyncio.run(scenario())
 
     assert (before, at_the_end) == (False, True)
-    assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
+    assert without_witnesses(seen) == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
 
 
 @pytest.mark.parametrize(
@@ -356,7 +392,8 @@ def test_ended_on_a_claimed_stream_leaves_the_claim_and_the_lapse_completes(
         await store.ended("stream", timedelta(0))
         still_claimed = await claims.claim_due(limit=1)
         redis_clock.advance(CLAIM_FOR.total_seconds())
-        await store.lapse_due()
+        async with lapsing(store, every=_EVERY):
+            await eventually(lambda: no_longer_listens(store, _ALICE), seconds=_WAIT_SECONDS)
         return still_claimed, await store.listens_to(_ALICE, STANDING_URI)
 
     assert asyncio.run(scenario()) == ([], False)
@@ -383,56 +420,85 @@ def test_acknowledged_twice_with_one_stream_returns_empty_publishes_nothing_and_
 
     assert replayed == frozenset()
     assert (before, at_the_end) == (False, True)
-    assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
+    assert without_witnesses(seen) == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
 
 
 def test_a_lapse_whose_claim_was_never_finished_is_done_again_by_the_next_claim_without_a_second_no(
     server: FakeServer, redis_clock: RedisClock
 ) -> None:
-    async def scenario() -> tuple[LapseRun, LapseRun, list[object]]:
+    async def scenario() -> tuple[list[ListeningTurn], list[ListeningTurn], list[object]]:
         store_a = a_pod_that_loses_its_connection_after(server, evalshas=2)
         store_b = a_pod(server)
+        raw = FakeAsyncRedis(server=server)
+
+        async def nothing_left() -> bool:
+            return not await raw.keys("*")
+
         async with subscribed(store_b) as events:
             await store_b.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            first = await store_a.lapse_due()
+            async with lapsing(store_a, every=_EVERY) as turns_a:
+                await eventually(lambda: handed_over(turns_a), seconds=_WAIT_SECONDS)
             redis_clock.advance(CLAIM_FOR.total_seconds())
-            second = await store_b.lapse_due()
-            return first, second, await delivered_up_to(store_b, events, _AFTER_EVERYTHING)
+            async with lapsing(store_b, every=_EVERY) as turns_b:
+                await eventually(nothing_left, seconds=_WAIT_SECONDS)
+            return turns_a, turns_b, await delivered_up_to(store_b, events, _AFTER_EVERYTHING)
 
-    first, second, seen = asyncio.run(scenario())
+    turns_a, turns_b, seen = asyncio.run(scenario())
 
     assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
-    assert first == LapseRun(
-        turns=(ListeningTurn(_ALICE, STANDING_URI, listens=False),),
-        failed_count=1,
-        last_error_type="ConnectionError",
-    )
-    assert second == LapseRun(stream_count=1)
+    assert (turns_a, turns_b) == ([_NO], [])
 
 
-def test_a_lapse_returns_the_turns_it_published_and_the_count_of_the_streams_it_lapsed(
+def test_a_lapse_hands_its_turns_to_lapsed_on_the_pod_that_published_them(
     server: FakeServer, redis_clock: RedisClock
 ) -> None:
-    first = window_uri("first")
+    window = window_uri("first")
+    no_for_window = ListeningTurn(_ALICE, window, listens=False)
 
-    async def scenario() -> tuple[LapseRun, LapseRun]:
+    async def scenario() -> tuple[
+        list[ListeningTurn], list[ListeningTurn], list[Event], list[Event]
+    ]:
+        store_a, store_b = a_pod(server), a_pod(server)
+        async with subscribed(store_a) as heard_by_a, subscribed(store_b) as heard_by_b:
+            await store_a.acknowledged("stream", _ALICE, [STANDING_URI, window], _ALLOWANCE)
+            redis_clock.advance(_ALLOWANCE.total_seconds())
+            async with (
+                lapsing(store_a, every=_EVERY) as turns_a,
+                lapsing(store_b, every=_EVERY) as turns_b,
+            ):
+                await arrived(heard_by_a, 5)
+                await arrived(heard_by_b, 5)
+            return turns_a, turns_b, list(heard_by_a), list(heard_by_b)
+
+    turns_a, turns_b, heard_by_a, heard_by_b = asyncio.run(scenario())
+
+    idle, lapsing_pod = sorted([turns_a, turns_b], key=len)
+    assert idle == []
+    assert set(lapsing_pod) == {_NO, no_for_window}
+    assert len(lapsing_pod) == 2
+    for heard in (heard_by_a, heard_by_b):
+        assert {_NO, no_for_window} <= set(heard)
+
+
+def test_the_lapsed_line_shares_the_trace_of_its_handling_and_its_wake(
+    server: FakeServer, redis_clock: RedisClock, log_lines: LogLines
+) -> None:
+    async def scenario() -> str | None:
         store = a_pod(server)
-        await store.acknowledged("one", _ALICE, [STANDING_URI, first], _ALLOWANCE)
-        await store.acknowledged("two", _ALICE, [STANDING_URI], _ALLOWANCE)
-        idle = await store.lapse_due()
-        redis_clock.advance(_ALLOWANCE.total_seconds())
-        return idle, await store.lapse_due()
+        traces: list[str | None] = []
+        async with subscribed(a_pod(server), traces) as heard:
+            async with ResourceChanges(store).following():
+                await store.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
+                redis_clock.advance(_ALLOWANCE.total_seconds())
+                await arrived(heard, 3)
+            return traces[-1]
 
-    idle, lapsed = asyncio.run(scenario())
+    wake_trace = asyncio.run(scenario())
 
-    assert idle == LapseRun()
-    assert (lapsed.stream_count, lapsed.failed_count, lapsed.last_error_type) == (2, 0, None)
-    assert set(lapsed.turns) == {
-        ListeningTurn(_ALICE, STANDING_URI, listens=False),
-        ListeningTurn(_ALICE, first, listens=False),
-    }
-    assert len(lapsed.turns) == 2
+    assert wake_trace is not None
+    assert log_lines.one("listening.lapsed")["trace_id"] == wake_trace
+    assert log_lines.one("deadline_handling.ended")["trace_id"] == wake_trace
 
 
 def test_a_pod_that_claimed_a_stream_and_lost_its_connection_leaves_it_to_the_next_claim(
@@ -441,14 +507,16 @@ def test_a_pod_that_claimed_a_stream_and_lost_its_connection_leaves_it_to_the_ne
     async def scenario() -> tuple[bool, bool, list[object]]:
         store_a = a_pod_that_loses_its_connection_after(server, evalshas=1)
         store_b = a_pod(server)
+        raw = FakeAsyncRedis(server=server)
         async with subscribed(store_b) as events:
             await store_b.acknowledged("stream", _ALICE, [STANDING_URI], _ALLOWANCE)
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            await store_a.lapse_due()
-            await store_b.lapse_due()
+            async with lapsing(store_a, every=_EVERY):
+                await eventually(lambda: claimed(raw), seconds=_WAIT_SECONDS)
             still_listed = await store_b.listens_to(_ALICE, STANDING_URI)
             redis_clock.advance(CLAIM_FOR.total_seconds())
-            await store_b.lapse_due()
+            async with lapsing(store_b, every=_EVERY):
+                await eventually(lambda: no_longer_listens(store_b, _ALICE), seconds=_WAIT_SECONDS)
             return (
                 still_listed,
                 await store_b.listens_to(_ALICE, STANDING_URI),
@@ -477,7 +545,7 @@ def test_a_lost_reply_of_acknowledged_raises_yet_the_yes_arrives_and_the_stream_
     lapsed, seen = asyncio.run(scenario())
 
     assert lapsed
-    assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
+    assert without_witnesses(seen) == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
 
 
 def test_a_retry_that_replays_acknowledged_after_a_lost_reply_leaves_the_store_unchanged(
@@ -495,7 +563,7 @@ def test_a_retry_that_replays_acknowledged_after_a_lost_reply_leaves_the_store_u
 
     assert replayed == frozenset()
     assert at_the_end
-    assert seen == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
+    assert without_witnesses(seen) == [Resynced(), _YES, _NO, _AFTER_EVERYTHING]
 
 
 @pytest.mark.parametrize(
@@ -513,25 +581,29 @@ def test_a_new_stream_of_the_same_principal_and_uri_decides_whether_an_old_ones_
 ) -> None:
     async def scenario() -> tuple[bool, list[object]]:
         store_a, store_b = a_pod(server), a_pod(server)
+        raw = FakeAsyncRedis(server=server)
         claims = Deadlines(
             FakeAsyncRedis(server=server),
             key_prefix=f"{_PREFIX}-agents",
             kind="listen",
             claim_for=CLAIM_FOR,
         )
+
+        async def old_stream_gone() -> bool:
+            return not await raw.hexists(key_names(raw)["streams"], "old")
+
         async with subscribed(store_b) as events:
             await store_a.acknowledged("old", _ALICE, [STANDING_URI], _ALLOWANCE)
             redis_clock.advance(_ALLOWANCE.total_seconds())
             if new_stream_comes == "before the claim":
                 await store_a.acknowledged("new", _ALICE, [STANDING_URI], _OPEN)
-                await store_b.lapse_due()
             elif new_stream_comes == "between the claim and the lapse":
                 await claims.claim_due(limit=1)
                 await store_a.acknowledged("new", _ALICE, [STANDING_URI], _OPEN)
                 redis_clock.advance(CLAIM_FOR.total_seconds())
-                await store_b.lapse_due()
-            else:
-                await store_b.lapse_due()
+            async with lapsing(store_b, every=_EVERY):
+                await eventually(old_stream_gone, seconds=_WAIT_SECONDS)
+            if new_stream_comes == "after the lapse":
                 await store_a.acknowledged("new", _ALICE, [STANDING_URI], _OPEN)
             return (
                 await store_b.listens_to(_ALICE, STANDING_URI),
@@ -561,7 +633,7 @@ def test_a_principal_turns_to_no_for_a_uri_only_when_its_last_stream_of_it_lapse
     second, seen = asyncio.run(scenario())
 
     assert second == frozenset({window})
-    assert seen == [
+    assert without_witnesses(seen) == [
         Resynced(),
         _YES,
         ListeningTurn(_ALICE, window, listens=True),
@@ -584,7 +656,12 @@ def test_a_lapsed_stream_leaves_no_key_and_no_member_whatever_its_principal_and_
             await store.acknowledged("stream", principal, [uri], _ALLOWANCE)
             written = sorted(key.decode() for key in await raw.keys("*"))
             redis_clock.advance(_ALLOWANCE.total_seconds())
-            await store.lapse_due()
+
+            async def nothing_left() -> bool:
+                return not await raw.keys("*")
+
+            async with lapsing(store, every=_EVERY):
+                await eventually(nothing_left, seconds=_WAIT_SECONDS)
             return (
                 await delivered_up_to(store, events, _AFTER_EVERYTHING),
                 written,
@@ -615,7 +692,6 @@ def test_a_lapsed_stream_leaves_no_key_and_no_member_whatever_its_principal_and_
         pytest.param(lambda store: store.ended("s", _ALLOWANCE), id="ended"),
         pytest.param(lambda store: store.listens_to(_ALICE, STANDING_URI), id="listens_to"),
         pytest.param(lambda store: store.listeners(STANDING_URI), id="listeners"),
-        pytest.param(lambda store: store.lapse_due(), id="lapse_due"),
     ],
 )
 def test_a_failing_store_raises_place_store_error_from_every_call_of_the_record(
@@ -627,136 +703,3 @@ def test_a_failing_store_raises_place_store_error_from_every_call_of_the_record(
 
     with pytest.raises(PlaceStoreError):
         asyncio.run(failing_call)
-
-
-_RECORD = json.dumps([json.dumps([_ALICE.iss, _ALICE.sub]), [STANDING_URI]])
-_FAR_FUTURE_MS = 10**15
-
-
-def key_names(raw: FakeAsyncRedis) -> dict[str, str]:
-    """The keys of the record by role: tandem's three, then the record's own two."""
-    deadlines = Deadlines(raw, key_prefix=f"{_PREFIX}-agents", kind="listen", claim_for=CLAIM_FOR)
-    return {
-        "due": deadlines.keys.due,
-        "claimed": deadlines.keys.claimed,
-        "claim": deadlines.keys.claim,
-        "listens": f"{_PREFIX}-agents:v1:listens",
-        "streams": f"{_PREFIX}-agents:v1:streams",
-    }
-
-
-async def seed_a_stream_in_every_key(raw: FakeAsyncRedis, *, recorded: bool) -> None:
-    """``held`` waits, is claimed and keeps a claim token at once, so a write a script makes before
-    it fails shows as a change."""
-    names = key_names(raw)
-    await raw.zadd(names["due"], {"held": _FAR_FUTURE_MS, "other": _FAR_FUTURE_MS})
-    await raw.zadd(names["claimed"], {"held": _FAR_FUTURE_MS})
-    await raw.hset(names["claim"], "held", "claimer")
-    await raw.zadd(names["listens"], {f"{STANDING_URI}\n[]\nother": 0})
-    await raw.hset(names["streams"], "other", _RECORD)
-    if recorded:
-        await raw.hset(names["streams"], "held", _RECORD)
-
-
-async def replace_with_a_string(raw: FakeAsyncRedis, key: str) -> None:
-    await raw.delete(key)
-    await raw.set(key, "not a collection")
-
-
-_RECORD_KEYS = ("due", "claimed", "claim", "listens", "streams")
-
-
-@pytest.mark.parametrize(
-    ("call", "recorded", "wrong_key"),
-    [
-        pytest.param(call, recorded, key, id=f"{name} with a wrong {key}")
-        for name, call, recorded, keys in [
-            (
-                "acknowledged",
-                lambda store: store.acknowledged("held", _ALICE, [STANDING_URI], _OPEN),
-                False,
-                _RECORD_KEYS,
-            ),
-            (
-                "ended",
-                lambda store: store.ended("held", _ALLOWANCE),
-                True,
-                _RECORD_KEYS[:3] + ("streams",),
-            ),
-        ]
-        for key in keys
-    ],
-)
-def test_acknowledged_and_ended_refuse_a_key_of_the_wrong_type_before_they_write_anything(
-    server: FakeServer,
-    redis_clock: RedisClock,
-    call: Callable[[RedisPlaceStore], Awaitable[object]],
-    recorded: bool,
-    wrong_key: str,
-) -> None:
-    async def scenario() -> tuple[dict[str, object], dict[str, object], list[Event]]:
-        raw = FakeAsyncRedis(server=server)
-        store = a_pod(server)
-        await seed_a_stream_in_every_key(raw, recorded=recorded)
-        await replace_with_a_string(raw, key_names(raw)[wrong_key])
-        before = await namespace_of(raw, _PREFIX)
-        async with subscribed(store) as events:
-            with pytest.raises(PlaceStoreError):
-                await call(store)
-            seen = await delivered_up_to(store, events, _AFTER_EVERYTHING)
-        return before, await namespace_of(raw, _PREFIX), seen
-
-    before, after, seen = asyncio.run(scenario())
-
-    assert after == before
-    assert seen == [Resynced(), _AFTER_EVERYTHING]
-
-
-@pytest.mark.parametrize(
-    "damage",
-    [
-        pytest.param(
-            lambda raw: replace_with_a_string(raw, key_names(raw)["listens"]), id="listens"
-        ),
-        pytest.param(
-            lambda raw: replace_with_a_string(raw, key_names(raw)["streams"]), id="streams"
-        ),
-        pytest.param(lambda raw: record_held(raw, "5"), id="a record that is a number"),
-        pytest.param(
-            lambda raw: record_held(raw, json.dumps(["5", [STANDING_URI]])),
-            id="a principal text that is a number",
-        ),
-    ],
-)
-def test_a_lapse_that_cannot_read_the_record_writes_nothing_counts_the_failure_and_keeps_its_claim(
-    server: FakeServer,
-    redis_clock: RedisClock,
-    damage: Callable[[FakeAsyncRedis], Awaitable[None]],
-) -> None:
-    async def scenario() -> tuple[tuple[object, object], list[Event], object, LapseRun]:
-        raw = FakeAsyncRedis(server=server)
-        client = FakeAsyncRedis(server=server)
-        store = RedisPlaceStore(client, key_prefix=_PREFIX)
-        around_scripts = snapshots_around_evalsha(client, lambda: namespace_of(raw, _PREFIX))
-        async with subscribed(store) as events:
-            await store.acknowledged("held", _ALICE, [STANDING_URI], _ALLOWANCE)
-            await delivered_up_to(store, events, _BEFORE_THE_LAPSE)
-            await damage(raw)
-            redis_clock.advance(_ALLOWANCE.total_seconds())
-            run = await store.lapse_due()
-            seen = await delivered_up_to(store, events, _AFTER_THE_LAPSE)
-            claimed = await raw.zrange(key_names(raw)["claimed"], 0, -1)
-            return around_scripts[-1], seen, claimed, run
-
-    (before, after), seen, claimed, run = asyncio.run(scenario())
-
-    assert after == before
-    assert seen == [Resynced(), _YES, _BEFORE_THE_LAPSE, _AFTER_THE_LAPSE]
-    assert claimed == [b"held"]
-    assert run.turns == ()
-    assert (run.stream_count, run.failed_count) == (0, 1)
-    assert run.last_error_type is not None
-
-
-async def record_held(raw: FakeAsyncRedis, record: str) -> None:
-    await raw.hset(key_names(raw)["streams"], "held", record)

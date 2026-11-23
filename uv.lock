@@ -569,7 +569,7 @@ requires-dist = [
     { name = "overnightworks-logline", marker = "extra == 'mcp-client'", specifier = ">=0.4,<2" },
     { name = "overnightworks-logline", marker = "extra == 'mcp-server'", specifier = ">=0.4,<2" },
     { name = "overnightworks-logline", marker = "extra == 'voice'", specifier = ">=0.4,<2" },
-    { name = "overnightworks-tandem", marker = "extra == 'redis'", specifier = ">=0.12.1,<0.17" },
+    { name = "overnightworks-tandem", marker = "extra == 'redis'", specifier = ">=0.16,<0.17" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = "==1.1.414" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1,<10" },
