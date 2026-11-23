@@ -59,14 +59,15 @@ flowchart TB
 ## Building blocks
 
 - The **base** depends on `pydantic` and `ruamel.yaml` only: `agent_file` (the agent-file reader),
-  `tools` (the tool contract and the one owner that turns a record into a tool's input schema),
-  `figure_vocabulary` (figure's gestures, framings and moods, generated from the pinned figure release, so
-  figure alone decides what an agent can show), `turn` (the turn's vocabulary, the size bounds and
-  the failure codes), `turn_events`, `config`, the `backend` port and `member` (the records an
-  app and an agent say to each other about a member, the place window and the place view) with
-  `member_presentation` (an agent's looks, figure and voices) and `member_place` (a place's
-  reference and the URIs of its window and view), and `calling` (the decisions of calling and
-  sending away an agent, pure, on facts the app supplies).
+  `front_matter` (the YAML front matter the agent file and a skill share), `skills` (an app's skills
+  as SEP-2640 defines them), `tools` (the tool contract and the one owner that turns a record into a
+  tool's input schema), `figure_vocabulary` (figure's gestures, framings and moods, generated from
+  the pinned figure release, so figure alone decides what an agent can show), `turn` (the turn's
+  vocabulary, the size bounds and the failure codes), `turn_events`, `config`, the `backend` port
+  and `member` (the records an app and an agent say to each other about a member, the place window
+  and the place view) with `member_presentation` (an agent's looks, figure and voices) and
+  `member_place` (a place's reference and the URIs of its window and view), and `calling` (the
+  decisions of calling and sending away an agent, pure, on facts the app supplies).
 - The **`backend` extra** adds `httpx2` for `backend.gateway.GatewayBackend`, the port's one
   implementation, and `backend.fake_gateway`, its test transport.
 - The **`mcp-server` extra** adds `anyio` and the official MCP SDK for `agents.mcp_server`, a thin
@@ -152,6 +153,11 @@ section; tools and MCP handlers are ports. Nothing defaults; a malformed value f
   the inviter's page and at most makes an agent accept an unrelated place; the state is either a
   closed outcome (`StopOutcome`) or a running turn (`thinking`), which is no outcome; both affect
   only how the member is shown.
+- *A skill is an app's own text and widens no grant.* It counts as much as the app's tool
+  descriptions and no more: the runner tags it with its origin and ranks it no higher than other
+  context, ignores `allowed-tools` as SEP-2640's "No implicit permission grants" requires, and
+  reads `metadata.tools` only as a selection, intersected with that app's `tools/list` of the
+  moment; a deferred tool was already callable, so loading one grants nothing.
 - *A runner reads an app's resource records ignoring unknown keys; an app reads every caller's
   arguments strictly.* A runner serves only apps its host chose, so a key such an app adds is no
   attack and an optional field need not wait for the runner; a person's agent is untrusted and a
@@ -185,6 +191,10 @@ that layer, and `quality / verdict` holds the import contracts and size and clon
 
 ## Not chosen
 
+- The implicit skill in the person front: every pin would need it, and the reader still would for
+  older pins. An MCP client in the library: one caller, and a second copy of the runner's session
+  rules. `serverInfo.name` as the implicit skill's name: it is the same for every app of this
+  library, and SEP-2640 forbids it as a server's identity.
 - A service between app and gateway: a hop and a second place for keys. Reopens if several apps
   need a budget or policy the gateway cannot hold.
 - A capability front that verifies run tokens minted elsewhere: the host's gate authenticates the

@@ -57,10 +57,12 @@ source_modules =
     agents.config
     agents.errors
     agents.figure_vocabulary
+    agents.front_matter
     agents.member
     agents.member_place
     agents.member_presentation
     agents.mcp_wire
+    agents.skills
     agents.tools
     agents.turn
     agents.turn_events
@@ -93,10 +95,12 @@ source_modules =
     agents.config
     agents.errors
     agents.figure_vocabulary
+    agents.front_matter
     agents.member
     agents.member_place
     agents.member_presentation
     agents.mcp_wire
+    agents.skills
     agents.tools
     agents.turn
     agents.turn_events
@@ -120,10 +124,12 @@ source_modules =
     agents.config
     agents.errors
     agents.figure_vocabulary
+    agents.front_matter
     agents.member
     agents.member_place
     agents.member_presentation
     agents.mcp_wire
+    agents.skills
     agents.tools
     agents.turn
     agents.turn_events
@@ -151,10 +157,12 @@ source_modules =
     agents.config
     agents.errors
     agents.figure_vocabulary
+    agents.front_matter
     agents.member
     agents.member_place
     agents.member_presentation
     agents.mcp_wire
+    agents.skills
     agents.tools
     agents.turn
     agents.turn_events

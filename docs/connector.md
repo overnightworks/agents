@@ -2,7 +2,7 @@
 
 For the developer of an app that runs agent turns through `agents`: the turn an
 app starts, the agent files it ships, the tools it declares, the gateway backend, the MCP
-person front and the voice loop. The standard path is that the app serves its member's standing as MCP resources and
+person front, the skills it reads and the voice loop. The standard path is that the app serves its member's standing as MCP resources and
 announces a change through the standard's subscriptions; [the standard path](#the-standard-path)
 says what a host wires and what a runner relies on. Each rule names the test that proves it. The
 docstrings of `agent_file`, `tools`, `turn`, `backend` and `mcp_server` are exact where this file is
@@ -698,6 +698,78 @@ The front sets no level on any logger: the SDK's server loggers follow the host'
 `test_running_leaves_the_level_of_every_sdk_logger_as_the_host_set_it` proves it. The front's own logger names only
 the tool and the exception's class
 (`test_no_credential_marker_reaches_any_log_under_debug_or_normal_logging`).
+
+## Reading an app's skills
+
+`agents.skills` reads an app's skills as SEP-2640 (the MCP skills extension, Final) defines them,
+so a runner needs no parser of its own. An app declares them with the
+`io.modelcontextprotocol/skills` extension (`SKILLS_EXTENSION`) in its discover answer and serves
+`skills/list` and `skills/get` (`SKILLS_LIST_METHOD`, `SKILLS_GET_METHOD`). The module does no
+I/O: the runner sends the requests with its own typed `Request` subclasses and passes
+`SkillListing` and `SkillAnswer` as the `result_type` of `send_request`, which validates the
+result itself.
+
+**What a listing must hold.** A listing validates with unknown keys ignored at every level
+(`ttlMs`, `cacheScope`, `_meta`, `resultType`), and SEP's own examples pass
+(`test_the_published_listing_validates_and_keeps_each_entrys_frontmatter`,
+`test_the_published_answer_validates`, `test_an_entry_at_a_github_uri_validates`,
+`test_unknown_keys_at_every_level_are_ignored_and_the_next_cursor_is_kept`). `next_cursor` is the
+result's `nextCursor`: a runner passes it back until it is absent, since "an entry is atomic". An
+entry that breaks a rule fails the listing whole, and the error's location names the entry
+(`test_an_entry_breaking_a_rule_fails_the_whole_listing_naming_the_entry`): the Agent Skills
+rules for `name` (1 to 64 characters of `a-z`, `0-9` and single hyphens, none at either end; the
+specification says "unicode lowercase alphanumeric", the module narrows it to ASCII),
+`description` (1 to 1024), `compatibility` (at most 500) and `metadata` (string keys, string
+values); "the final `<skill-path>` segment of the entry's uri MUST equal `frontmatter.name`", and
+the uri ends in `/SKILL.md` under any scheme; `resources` is "an array or `dynamic`", and the array
+lists the skill file exactly once with a digest of `sha256:` and 64 lowercase hex characters and a
+size of zero or more. A runner treats an app whose listing fails as having no skills until the app
+fixes it. `frontmatter` stays as the app sent it, so `license` and the rest are kept.
+`allowed-tools` is read by nothing: "No implicit permission grants".
+
+**What reading one skill proves.** The runner fetches a skill's `SKILL.md` only when it loads the
+skill ("Hosts MUST NOT retrieve a skill's files ahead of need") and encodes a text content as
+UTF-8 before `read_skill(server, entry, content)`. The function returns the `Skill` or raises
+`SkillRefused` with the reason, and nothing of the file is loaded then: a `dynamic` entry
+(`DYNAMIC`; "hosts MAY decline"), a length that differs from the entry's `size`
+(`SIZE_MISMATCH`), a digest that differs (`DIGEST_MISMATCH`), and front matter that is not UTF-8
+YAML or differs from the entry's `frontmatter` "field-by-field" in value, in JSON type (`true`
+against `1`, `1` against `1.0`, a date against a string) or by a node an alias shares
+(`FRONTMATTER_MISMATCH`)
+(`test_a_file_that_is_not_what_its_entry_promised_is_refused`). The skill's body is the Markdown
+after the front matter, trimmed as `load_agent` trims a prompt.
+
+**Its identity.** A `Skill` is keyed on `identity`, the host's label for the server and the
+entry's uri, never on the name alone: "Hosts MUST NOT assume name uniqueness" and "MUST NOT key
+any of these on the uri alone". The label must identify exactly one server, as the runner's own
+configuration does; the name can repeat across servers.
+
+**Its tools.** `metadata.tools` lists the tools a skill uses as tool names separated by single
+spaces (`Skill.tools`, `()` when absent); an empty name, a repeat or a gap fails the entry
+(`test_a_verified_file_becomes_a_skill_keyed_on_the_label_and_uri_with_its_tools`, and the
+`tools-` rows of the entry test). The runner reads them only as a selection, intersected with
+that app's `tools/list` of the moment, so a name the app no longer serves loads nothing.
+
+**The implicit skill.** An app whose discover answer declares no skills extension still has one
+skill, `implicit_skill(server, url, instructions, tools, description)`: the app's instructions as
+its body, its tools in `tools/list` order and the runner's description. An empty listing from an
+app that does declare the extension is no such proof ("Hosts MUST NOT treat an empty or partial
+listing as proof that a server has no skills"). The name derives from the host of the app's MCP
+URL, so every runner gives an app the same name without a mapping: lowercase, each run of
+characters outside `a-z0-9` one hyphen, hyphens stripped at both ends, cut to 64 characters and
+stripped again (`https://Notes.Example.org:8443/mcp` gives `notes-example-org`)
+(`test_the_implicit_skill_is_named_from_the_urls_host`,
+`test_a_long_host_is_cut_to_a_valid_name_without_a_trailing_hyphen`). The name reaches the model,
+and two servers on one host that differ only in port or path derive one name, which SEP allows;
+only the label keeps their keys apart. The uri, `skill://<name>/SKILL.md`, is a key and is never
+read, since the app serves no such resource. A URL without a host, a host with no a-z0-9
+character, a repeated tool, an empty description or an empty label raises `ValueError`, and no
+message echoes the URL, which may carry userinfo
+(`test_an_implicit_skill_without_a_host_a_label_or_a_description_is_refused_without_the_url`).
+
+**What the runner does.** It tags each skill with its origin, ignores `allowed-tools`, intersects
+`metadata.tools` as above and offers a skill's text no more weight than the app's tool
+descriptions ([Trust](ARCHITECTURE.md#crosscutting-concepts)).
 
 ## The member module
 
