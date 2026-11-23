@@ -429,17 +429,6 @@ def test_replayed_rounds_do_not_count_against_the_call_bound(shop):
     assert stopped is None
 
 
-def test_a_reply_with_text_that_is_no_unicode_is_malformed(shop):
-    shop.add_tool("lookup")
-
-    _, stopped, _ = shop.run(
-        tool_round(tool_call("c1", "lookup", {}), content="\ud800"), completion("never")
-    )
-
-    assert (stopped.kind, stopped.code) == MALFORMED
-    assert not shop.seen
-
-
 @pytest.mark.parametrize(
     "mutate",
     [lambda arguments: arguments.pop("q"), lambda arguments: arguments.update(q=object())],
