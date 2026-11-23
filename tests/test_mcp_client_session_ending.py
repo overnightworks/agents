@@ -176,7 +176,7 @@ async def test_answers_landing_after_an_unrequested_cancellation_stay_the_errors
 ) -> None:
     echo = late_answer(echoes=echoes)
 
-    with pytest.raises(BaseException) as caught:  # noqa: PT011 - one error or a group of them
+    with pytest.raises(ExceptionGroup if echoes > 1 else echo) as caught:
         await raises_in_the_body(gate, bearer, asyncio.CancelledError())
 
     assert [type(leaf) for leaf in _leaves(caught.value)] == [echo] * echoes
