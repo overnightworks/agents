@@ -207,8 +207,10 @@ class GatewayBackend(AgentBackend):
         """The window and the prices per token of ``model``: one ``GET`` with the app's key.
 
         An answer with no one price record for it raises ``ModelPricesError``, any other failure
-        ``TurnStopped``, as for a turn.
+        ``TurnStopped``, as for a turn; after ``aclose`` it raises ``RuntimeError``.
         """
+        if self._closed:
+            raise RuntimeError("the gateway backend is closed")
         try:
             return await self._read_prices(model)
         except _GatewayStop as stopped:
