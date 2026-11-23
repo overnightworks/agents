@@ -770,8 +770,10 @@ An accept may name the agent's looks, `looks` as a list of `FigureLook(kind, url
 `VideoLook(kind, name)`, first choice first; its 3D figure, `figure` as `FigureRef(url, sha256, gestures)`;
 and the voices it would speak with, `voices` as a list of voice names, the persona's order of
 preference with the first choice first; all are optional, and an accept without them dumps without
-their keys. The record checks only their form: `url` is an absolute `https` address with a host and
-no user part, query or fragment, `sha256` is 64 lowercase hexadecimal characters, `voices` is the
+their keys. The record checks only their form: `url` is an absolute `https` address with a host, no user
+part, query or fragment, no whitespace, backslash or other non-printable character, and none of
+`%`, `"`, `<`, `>`, `^`, `` ` ``, `{`, `|` or `}` in the host; a port is a number from 0 to 65535 or
+empty; `sha256` is 64 lowercase hexadecimal characters; `voices` is the
 `Voices` type, 1 to 8 names, none twice (a host types its own voice list with it), each 1 to 64
 ASCII letters of either case, digits, `.`, `_` or `-`, and `looks` is the `Looks` type (a host types
 its own look list with it): at least one `Look`, told by `kind`, at most one `FigureLook` and no
@@ -797,7 +799,8 @@ rest ([CALLING-41](calling.md)):
 - `room`, on a `FigureLook` only, is an `HttpsFileRef(url, sha256)`, the agent's own room, left out
   of the JSON when unset; `FigureRef`, so the old `figure`, has none. The app treats it as it treats
   the figure and hands its bytes to figure's `room` mount option, whose room check judges them; a
-  room that is refused shows none and the accept stands ([CALLING-52](calling.md)).
+  well-formed room that is refused shows none and the accept stands; a malformed one refuses the
+  accept's arguments ([CALLING-52](calling.md)).
 - It passes the voices to its speech service unchanged and in order; the library folds no case and
   picks no voice, and the speech service picks the voice that speaks each sentence. A name that
   service does not offer is refused there, and the app answers with the refusal it already has; the
