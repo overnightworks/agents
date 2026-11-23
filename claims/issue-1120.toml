@@ -1,8 +1,0 @@
-claim_id = "2aa923ff37234efdb7a826ea0b41052f"
-agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
-role = "builder"
-base = "8e5618f7d7d336001303038ca19f004049728b74"
-branch = "claude/issue-1120-member-session-core"
-scope = [".aco/ahead-of-caller.toml", ".github/workflows/ci.yml", ".importlinter", "README.md", "docs/ARCHITECTURE.md", "docs/connector.md", "pyproject.toml", "src/agents/backend/gateway.py", "src/agents/http_client.py", "src/agents/mcp_client/__init__.py", "src/agents/mcp_client/session.py", "src/agents/member_outcomes.py", "tests/support", "tests/test_backend_gateway.py", "tests/test_http_client.py", "tests/test_mcp_client_session.py", "tests/test_mcp_client_session_ending.py", "tests/test_member_outcomes.py", "uv.lock"]
-opened_commit = "6878e18fd1c7d4bae02a7928176f7e88a67b9b22"
-whole_reason = "The session core with its pure failure vocabulary, the HTTP policy it shares with the gateway and the ported tests with their scripted gate prove one boundary only together."
