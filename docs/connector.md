@@ -523,14 +523,16 @@ cache-read, five-minute and one-hour write prices of their `model_info`, and a s
 |---|---|
 | the gateway lists no entry named `model` | `ModelPricesError`, reason `model_not_listed` |
 | entries of that name that differ in any read value | `ModelPricesError`, reason `entries_differ` |
-| a missing (null or 0) input, output, cache-read or five-minute write price | `ModelPricesError`, reason `base_price_missing` |
+| a missing (null, absent or 0) input, output, cache-read or five-minute write price | `ModelPricesError`, reason `base_price_missing` |
 | a refusal, a failing gateway, a lost connection, an unusable key, the deadline | `TurnStopped`, as for a turn |
 | an answer that is not the list of entries, or an entry without its window | `TurnStopped`, `failed: provider_error`, detail `malformed_reply` |
 
-`ModelPricesError` is raised from a frame that holds neither the key nor the reply. In a host's
+`ModelPricesError` and its reasons (`ModelPricesFailure`) are in `agents.backend.model_prices`. It is
+raised from a frame that holds neither the key nor the reply. In a host's
 proof, `backend.fake_gateway.model_info(model_entry(name, prices))` is the scripted answer; a price
-field named in `unpriced=` is written as the gateway writes a missing one. Proved by
-`tests/test_backend_model_prices.py` and the `model prices` cases of
+field named in `unpriced=` is written as the gateway writes a missing one, and a field named in
+`absent=` (a price or `context_window_tokens`) has no key. A price that is not a finite number is a
+malformed reply. Proved by `tests/test_backend_model_prices.py` and the `model prices` cases of
 `tests/test_backend_gateway_request_lines.py`.
 
 ### The log
