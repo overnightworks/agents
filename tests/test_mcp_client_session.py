@@ -58,7 +58,6 @@ from tests.support.member_session_support import (
     LIMIT_SECONDS,
     ROOM,
     SUBJECT,
-    a_line,
     a_window,
     answering,
     opened,
@@ -78,6 +77,7 @@ from tests.support.scripted_gate import (
 
 pytestmark = pytest.mark.anyio
 
+from tests.support.voice_lines import a_line
 
 # What the session reads.
 
@@ -124,7 +124,12 @@ async def test_a_window_with_an_act_line_is_read_with_the_mark_kept(
 ) -> None:
     stands(
         app,
-        **{window_uri(ROOM): a_window(a_line(1, "took a card", act=True), a_line(2, "good luck"))},
+        **{
+            window_uri(ROOM): a_window(
+                a_line(1, "took a card", spoken=False, act=True),
+                a_line(2, "good luck", spoken=False),
+            )
+        },
     )
 
     async with opened(gate, bearer) as session:
@@ -141,7 +146,7 @@ async def test_a_window_with_a_voice_state_a_cut_line_and_people_talking_over_hi
     app: MemberApp, gate: ScriptedGate, bearer: SecretStr, place: PlaceRef
 ) -> None:
     window = a_window(
-        a_line(1, "heard", spoken=True, cut=True),
+        a_line(1, "heard", cut=True),
         talked_over=TalkedOver(
             id="talk-1", playing=True, speech=(PartialSpeech(name="Ada", text="but"),)
         ),

@@ -66,11 +66,6 @@ def a_window(*entries: PlaceEntry, **fields: Any) -> PlaceWindow:
     )
 
 
-def a_line(seq: int, text: str, **fields: Any) -> PlaceEntry:
-    fields = {"name": "Ada", "own": False, "spoken": False, "cut": False} | fields
-    return PlaceEntry(seq=seq, kind="message", text=text, **fields)
-
-
 async def reads_the_standing(gate: ScriptedGate, bearer: SecretStr) -> None:
     async with opened(gate, bearer) as session:
         await session.read_standing()
