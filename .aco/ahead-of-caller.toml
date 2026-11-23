@@ -97,3 +97,8 @@ reason = "The runner's skill requests; personas#394 S8 reads each app's skills t
 path = "src/agents/mcp_client/skills.py"
 item = "overnightworks/personas#394"
 reason = "list_skills and get_skill over an SDK session; personas#394 S8a sends them from its app session until #1115 moves the session in."
+
+[[code]]
+path = "src/agents/member_outcomes.py"
+item = "overnightworks/personas#426"
+reason = "The failures and codes of a member call; personas#426 (#1115 S4) subclasses them and reads their codes, and skat#856 and hopin#1140 catch them."
