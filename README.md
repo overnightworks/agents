@@ -31,7 +31,7 @@ not on PyPI either: a host using one of them pins it by git tag itself
 the extra declares), calls `logline.configure` once and ignores `overnightworks-*` in its
 Dependabot entry. The library writes its steps as logline lines and sends the host's `traceparent`
 to its gateway; `docs/connector.md` ("The log") lists them. The `redis` extra names
-`overnightworks-tandem` by range only as well (tag v0.13.0, which writes logline lines too): the host pins the tag itself.
+`overnightworks-tandem` by range only as well, and writes logline lines too: the host pins a tag inside that range itself.
 
 ## Use
 
