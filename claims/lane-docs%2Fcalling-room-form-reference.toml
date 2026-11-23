@@ -1,0 +1,7 @@
+claim_id = "fcc3ac14e74d4397bdd203cd758f4498"
+agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
+role = "builder"
+base = "ce00b3d2b12ae5b2201ff486a2067bd4cd4b2213"
+branch = "docs/calling-room-form-reference"
+scope = ["docs/calling.md", "docs/connector.md"]
+opened_commit = "ff61dc4c3ca0bf5c10d60f570e81b97923982f4f"
