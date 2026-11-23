@@ -308,6 +308,8 @@ _OTHER_ROW: JsonValue = [
         pytest.param(
             a_skill_entry(frontmatter={"compatibility": "c" * 501}), id="compatibility-501"
         ),
+        pytest.param(a_skill_entry(frontmatter={"compatibility": None}), id="compatibility-null"),
+        pytest.param(a_skill_entry(frontmatter={"metadata": None}), id="metadata-null"),
         pytest.param(a_skill_entry(frontmatter={"metadata": {"k": 1}}), id="metadata-not-a-string"),
         pytest.param(a_skill_entry(frontmatter={"metadata": {"tools": ""}}), id="tools-empty"),
         pytest.param(a_skill_entry(frontmatter={"metadata": {"tools": "a  b"}}), id="tools-gap"),

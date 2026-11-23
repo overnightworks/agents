@@ -96,7 +96,10 @@ class SkillFrontmatter(_Record):
         return () if listed is None else tuple(listed.split(" "))
 
     @model_validator(mode="after")
-    def _refuse_malformed_tools(self) -> Self:
+    def _refuse_malformed_optional_fields(self) -> Self:
+        for field in ("compatibility", "metadata"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} must be left out, not null")
         tools = self.tools
         if not all(_TOOL_NAME.fullmatch(tool) for tool in tools):
             raise ValueError("metadata.tools must be tool names separated by single spaces")
