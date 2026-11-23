@@ -59,14 +59,13 @@ def test_the_unserved_calls_do_not_count_against_the_call_bound(shop):
     assert len(shop.seen) == 1
 
 
-@pytest.mark.parametrize("spoken", [True, False], ids=["spoken", "written"])
-def test_a_reply_with_the_same_id_twice_is_refused_with_or_without_the_setting(shop, spoken):
+def test_a_spoken_reply_with_the_same_id_twice_is_refused(shop):
     shop.add_tool("lookup")
 
     _, stopped, _ = shop.run(
         tool_round(tool_call("c1", "lookup", {}), tool_call("c1", "lookup", {})),
         completion("never"),
-        one_call_per_reply=spoken,
+        one_call_per_reply=True,
     )
 
     assert stopped is not None

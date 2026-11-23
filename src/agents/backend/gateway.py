@@ -214,7 +214,9 @@ class GatewayBackend(AgentBackend):
             body = bounded(request_body(request, messages, user), _limit_exceeded)
             opened = partial(self._post, _COMPLETIONS_PATH, body, key)
             started_at = self._now()
-            streamed = _streamed_round(opened, offered, deadline, request.one_call_per_reply)
+            streamed = _streamed_round(
+                opened, offered, progress.call_ids, deadline, request.one_call_per_reply
+            )
             async with contextlib.aclosing(streamed) as parts:
                 while isinstance(part := await anext(parts), str):
                     yield AssistantTextEvent(text=part)
@@ -372,12 +374,14 @@ class _Round:
     """One judged reply: the answer when the model stopped, else the calls it asked for.
 
     ``served`` is the prefix of ``calls`` the turn runs; the rest reach the model as not run.
+    ``calls_not_run`` counts them when one call per reply split the round, else it is None.
     """
 
     text: str
     calls: tuple[RequestedCall, ...]
     message: Message | None
     served: tuple[RequestedCall, ...] = ()
+    calls_not_run: int | None = None
     usage: TurnUsage | None = None
 
 
@@ -390,13 +394,10 @@ class _Progress:
     call_ids: set[str] = field(default_factory=set[str])
 
     def admit(self, calls: tuple[RequestedCall, ...], served: tuple[RequestedCall, ...]) -> None:
-        ids = {call.id for call in calls}
-        if not ids.isdisjoint(self.call_ids):
-            raise _malformed_reply()
         if self.calls + len(served) > self.max_tool_calls:
             raise _limit_exceeded()
         self.calls += len(served)
-        self.call_ids |= ids
+        self.call_ids |= {call.id for call in calls}
 
 
 async def _before[Result](deadline: float, step: Awaitable[Result]) -> Result:
@@ -567,6 +568,7 @@ def _add_usage(step: StepTimer, usage: TurnUsage | None) -> None:
 async def _streamed_round(
     open_request: Callable[[StepTimer], contextlib.AbstractAsyncContextManager[httpx2.Response]],
     offered: frozenset[str],
+    earlier_call_ids: set[str],
     deadline: float,
     one_call_per_reply: bool,
 ) -> AsyncGenerator[str | _Round, None]:
@@ -598,9 +600,9 @@ async def _streamed_round(
             raise failure
         _add_usage(step, completed[0].usage)
         await _read_to_the_end(chunks)
-        judged = _judged(completed[0], offered, one_call_per_reply)
-        if one_call_per_reply and judged.calls:
-            step.add(calls_not_run=len(judged.calls) - len(judged.served))
+        judged = _judged(completed[0], offered, earlier_call_ids, one_call_per_reply)
+        if judged.calls_not_run is not None:
+            step.add(calls_not_run=judged.calls_not_run)
     yield judged
 
 
@@ -622,10 +624,17 @@ async def _read_to_the_end(chunks: AsyncIterator[bytes]) -> None:
                     return
 
 
-def _judged(streamed: StreamedRound, offered: frozenset[str], one_call_per_reply: bool) -> _Round:
+def _judged(
+    streamed: StreamedRound,
+    offered: frozenset[str],
+    earlier_call_ids: set[str],
+    one_call_per_reply: bool,
+) -> _Round:
     try:
         if streamed.finish_reason == "tool_calls":
-            return _calls_of(streamed.message, offered, streamed.usage, one_call_per_reply)
+            return _calls_of(
+                streamed.message, offered, earlier_call_ids, streamed.usage, one_call_per_reply
+            )
         if streamed.finish_reason == "stop":
             return _answer_of(streamed.message["content"], streamed.usage)
     except _UNREADABLE_REPLY:
@@ -663,6 +672,7 @@ def _answer_of(text: str | None, usage: TurnUsage | None) -> _Round:
 def _calls_of(
     message: AssembledMessage,
     offered: frozenset[str],
+    earlier_call_ids: set[str],
     usage: TurnUsage | None,
     one_call_per_reply: bool,
 ) -> _Round:
@@ -671,7 +681,7 @@ def _calls_of(
     if not raw_calls:
         raise _malformed_reply()
     calls: list[RequestedCall] = []
-    seen_ids: set[str] = set()
+    seen_ids = set(earlier_call_ids)
     for raw in raw_calls:
         function = raw["function"]
         name, call_id = function["name"], raw["id"]
@@ -685,8 +695,15 @@ def _calls_of(
         "content": message["content"],
         "tool_calls": raw_calls,
     }
-    served = calls[:1] if one_call_per_reply else calls
-    return _Round(text="", calls=tuple(calls), message=reply, served=tuple(served), usage=usage)
+    served, calls_not_run = (calls[:1], len(calls) - 1) if one_call_per_reply else (calls, None)
+    return _Round(
+        text="",
+        calls=tuple(calls),
+        message=reply,
+        served=tuple(served),
+        calls_not_run=calls_not_run,
+        usage=usage,
+    )
 
 
 def _malformed_reply() -> TurnStopped:
