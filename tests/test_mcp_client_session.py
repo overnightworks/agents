@@ -7,6 +7,7 @@ other request through to the library's own front.
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from http import HTTPStatus
 from typing import Any
@@ -655,18 +656,10 @@ async def test_a_jsonrpc_error_that_is_no_refused_revision_is_an_unusable_answer
     ["a refused call", "an answer in no shape", "a cut connection", "an unknown bearer"],
 )
 async def test_no_bearer_is_in_any_failure_or_in_the_session(
-    app: MemberApp, gate: ScriptedGate, bearer: SecretStr, arrangement: str
+    app: MemberApp, gate: ScriptedGate, bearer: SecretStr, script: Handler | None
 ) -> None:
     stands(app)
-    token = bearer.get_secret_value()
-    shown: list[str] = []
-    if arrangement == "a refused call":
-        gate.script(READ, answering(HTTPStatus.SERVICE_UNAVAILABLE))
-    elif arrangement == "an answer in no shape":
-        gate.script(READ, lambda reply: reply.raw_result({"contents": 7}))
-    elif arrangement == "a cut connection":
-        gate.script(READ, cuts)
-    else:
+    if script is None:
         bearer = SecretStr(secrets.token_urlsafe(24))
         token = bearer.get_secret_value()
 

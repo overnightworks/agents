@@ -64,6 +64,8 @@ READ_SECONDS: Final = 2 * LISTEN_BOUND_SECONDS
 """Twice the bound an app puts on a stream: the runner cuts a stream that outlasts it."""
 _MEDIA_TYPE: Final = re.compile(r"[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*")
 """A media type as a log line may carry it: type and subtype of token characters, no parameters."""
+_SDK_MEDIA_TYPES: Final = frozenset({"application/json", "text/event-stream"})
+"""The media types of an answer the SDK reads a result from."""
 _TRANSPORT_ERROR_CODES: Final = frozenset({CONNECTION_CLOSED, REQUEST_TIMEOUT})
 """What the SDK answers for a connection that broke or a request that timed out."""
 _LATE_ANSWER_ERRORS: Final = (anyio.BrokenResourceError, anyio.ClosedResourceError)
@@ -138,6 +140,23 @@ class _BearerAuth(httpx2.Auth):
             )
         if (call := _CALL_ANSWER.get()) is not None:
             call.answer = self.last_answer
+        if response.status_code < HTTPStatus.BAD_REQUEST:
+            _withhold_diagnostics(response)
+
+
+def _withhold_diagnostics(response: httpx2.Response) -> None:
+    """Hands the SDK no redirect to follow and no media type it would write into a log line.
+
+    The SDK follows a redirect that stays on the app's origin whatever the client's policy says, and
+    resends the request with its bearer; the policy is that none is followed. It also logs a
+    content type it does not know at error level, in full, and the app chose that text. Only a
+    media type it reads an answer from stays, so a redirect is no answer and an unknown media type
+    names itself in no log line.
+    """
+    response.next_request = None
+    media_type = response.headers.get("content-type", "").partition(";")[0].strip().lower()
+    if response.status_code >= HTTPStatus.MULTIPLE_CHOICES or media_type not in _SDK_MEDIA_TYPES:
+        response.headers.pop("content-type", None)
 
 
 def _method_of(request: httpx2.Request) -> str | None:
