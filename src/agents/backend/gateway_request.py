@@ -12,9 +12,14 @@ from typing import Final, Literal, NotRequired, Required, TypedDict
 from agents.agent_file import TurnRequest
 from agents.backend import TurnStopped
 from agents.backend.streamed_round import AssembledToolCall
-from agents.tools import JsonObject
-from agents.turn import MAX_EVENT_BYTES, TOOL_IMAGE_MEDIA_TYPE, written_base64
-from agents.turn_events import ToolResultEvent
+from agents.tools import JsonObject, ToolDeclaration
+from agents.turn import (
+    MAX_EVENT_BYTES,
+    TOOL_IMAGE_MEDIA_TYPE,
+    RoundCall,
+    ToolRound,
+    written_base64,
+)
 
 MAX_REQUEST_BYTES: Final = 4 * MAX_EVENT_BYTES
 # The chat format has no error flag on a tool message, so the text carries it to the model.
@@ -35,9 +40,14 @@ class _ImagePart(TypedDict):
     image_url: _ImageUrl
 
 
+class _ReferencePart(TypedDict):
+    type: Literal["tool_reference"]
+    tool_name: str
+
+
 class Message(TypedDict):
     role: Required[str]
-    content: NotRequired[str | list[_ImagePart | _TextPart] | None]
+    content: NotRequired[str | list[_ImagePart | _TextPart | _ReferencePart] | None]
     tool_call_id: NotRequired[str]
     tool_calls: NotRequired[list[AssembledToolCall]]
 
@@ -51,6 +61,7 @@ class _FunctionSpec(TypedDict):
 class _FunctionTool(TypedDict):
     type: str
     function: _FunctionSpec
+    defer_loading: NotRequired[bool]
 
 
 class _PictureBody(TypedDict):
@@ -75,22 +86,66 @@ class _Body(TypedDict):
 
 def opening_messages(request: TurnRequest) -> list[Message]:
     messages: list[Message] = [{"role": "system", "content": request.turn.system}]
-    messages += [
-        Message(role=message.role.value, content=message.text) for message in request.turn.messages
-    ]
+    for message in request.turn.messages:
+        if isinstance(message, ToolRound):
+            messages += round_messages(message)
+        else:
+            messages.append(Message(role=message.role.value, content=message.text))
     return messages
 
 
-def result_message(result: ToolResultEvent) -> Message:
-    text = _ERROR_PREFIX + result.content if result.is_error else result.content
-    if result.image is None:
-        return {"role": "tool", "tool_call_id": result.tool_use_id, "content": text}
+def round_messages(tool_round: ToolRound) -> list[Message]:
+    """The one rendering of a tool round, for the turn that runs it and for its replay."""
+    call_message: Message = {
+        "role": "assistant",
+        "content": tool_round.text,
+        "tool_calls": [
+            {
+                "id": call.call_id,
+                "type": "function",
+                "function": {
+                    "name": call.tool,
+                    "arguments": call.arguments,
+                },
+            }
+            for call in tool_round.calls
+        ],
+    }
+    return [call_message, *(_result_message(call) for call in tool_round.calls)]
+
+
+def _result_message(call: RoundCall) -> Message:
+    if call.loads:
+        references: list[_ImagePart | _TextPart | _ReferencePart] = [
+            {"type": "tool_reference", "tool_name": name} for name in call.loads
+        ]
+        return {"role": "tool", "tool_call_id": call.call_id, "content": references}
+    text = _ERROR_PREFIX + call.result if call.is_error else call.result
+    if call.image is None:
+        return {"role": "tool", "tool_call_id": call.call_id, "content": text}
     # a text part the provider would refuse as blank is left out; the image goes first
-    url = f"data:{TOOL_IMAGE_MEDIA_TYPE};base64,{written_base64(result.image.content)}"
-    parts: list[_ImagePart | _TextPart] = [{"type": "image_url", "image_url": {"url": url}}]
+    url = f"data:{TOOL_IMAGE_MEDIA_TYPE};base64,{written_base64(call.image.content)}"
+    parts: list[_ImagePart | _TextPart | _ReferencePart] = [
+        {"type": "image_url", "image_url": {"url": url}}
+    ]
     if text.strip():
         parts.append({"type": "text", "text": text})
-    return {"role": "tool", "tool_call_id": result.tool_use_id, "content": parts}
+    return {"role": "tool", "tool_call_id": call.call_id, "content": parts}
+
+
+def _tool_entry(tool: ToolDeclaration, *, deferred: bool) -> _FunctionTool:
+    # ``effect`` is for the client, so the projection names its fields.
+    entry: _FunctionTool = {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+        },
+    }
+    if deferred:
+        entry["defer_loading"] = True
+    return entry
 
 
 def request_body(request: TurnRequest, messages: list[Message], user: str) -> str:
@@ -102,23 +157,15 @@ def request_body(request: TurnRequest, messages: list[Message], user: str) -> st
         "stream_options": {"include_usage": True},
     }
     if request.tools:
-        # ``effect`` is for the client, so the projection names its fields.
         body["tools"] = [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
-            }
+            _tool_entry(tool, deferred=tool.name in request.deferred_tools)
             for tool in request.tools
         ]
     return json.dumps(body)
 
 
 def picture_body(request: TurnRequest, size: str, user: str) -> str:
-    prompt = f"{request.turn.system}\n\n{request.turn.messages[0].text}"
+    prompt = f"{request.turn.system}\n\n{request.turn.conversation[0].text}"
     body: _PictureBody = {
         "model": request.model,
         "prompt": prompt,

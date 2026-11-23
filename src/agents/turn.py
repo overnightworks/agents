@@ -25,6 +25,8 @@ from pydantic import (
     Field,
     JsonValue,
     PlainSerializer,
+    TypeAdapter,
+    ValidationError,
     model_validator,
 )
 
@@ -153,6 +155,20 @@ def _refuse_lone_surrogates(text: str) -> None:
 
 JsonObject = Annotated[dict[str, JsonValue], AfterValidator(_refuse_non_json_object)]
 """The one decider of a JSON object on the wire: one that survives a round trip unchanged."""
+
+_JSON_OBJECT: Final = TypeAdapter(JsonObject)
+
+
+def _refuse_non_object_text(text: str) -> str:
+    try:
+        _JSON_OBJECT.validate_json(text)
+    except ValidationError as error:
+        raise ValueError("tool arguments are not a JSON object") from error
+    return text
+
+
+ToolArgumentsText = Annotated[str, AfterValidator(_refuse_non_object_text)]
+"""A call's arguments as the model spelled them: the text of a ``JsonObject``, kept as sent."""
 
 
 def loaded_json(text: str | bytes) -> JsonValue:
@@ -297,15 +313,80 @@ class TurnMessage(StrictModel):
     text: UnicodeText
 
 
+def refuse_unrenderable_loads(
+    *, content: str, is_error: bool, image: ToolImage | None, loads: tuple[str, ...]
+) -> None:
+    """The one decider of an answer that loads tools: references alone, once each.
+
+    An answer that loads carries no text, no image and no error, because the references are
+    all its message holds. Raises ``ValueError``.
+    """
+    if not loads:
+        return
+    if len(set(loads)) != len(loads):
+        raise ValueError("loads names a tool twice")
+    if content.strip() or is_error or image is not None:
+        raise ValueError("an answer that loads tools is references alone: no text, error or image")
+
+
+class RoundCall(StrictModel):
+    """One call of a tool round with the answer the model was shown.
+
+    ``loads`` names the deferred tools the answer loads; it comes with no text, error or image.
+    """
+
+    call_id: NonEmptyUnicodeText
+    tool: NonEmptyUnicodeText
+    arguments: ToolArgumentsText
+    result: UnicodeText
+    is_error: bool = False
+    image: ToolImage | None = None
+    loads: tuple[NonEmptyUnicodeText, ...] = ()
+
+    @model_validator(mode="after")
+    def _hold_loads_to_references_alone(self) -> RoundCall:
+        refuse_unrenderable_loads(
+            content=self.result, is_error=self.is_error, image=self.image, loads=self.loads
+        )
+        return self
+
+
+class ToolRound(StrictModel):
+    """One model reply that asked for tools: its text and every call, in reply order.
+
+    A call a backend did not run, because it served one call per reply, holds the answer the
+    model was shown: an error that says so.
+    """
+
+    text: NonEmptyUnicodeText | None = None
+    calls: tuple[RoundCall, ...] = Field(min_length=1)
+
+
 class Turn(StrictModel):
     """The conversation a run answers: the system prompt and the messages so far.
 
-    It names no provider, model, route, user or MCP endpoint: the backend
+    A ``ToolRound`` is a finished turn's tool round, recorded from ``FinalEvent.tool_rounds`` and
+    replayed in its place. It names no provider, model, route, user or MCP endpoint: the backend
     decides those from the caller's identity and the app's configuration.
     """
 
     system: UnicodeText
-    messages: list[TurnMessage] = Field(min_length=1)
+    messages: list[TurnMessage | ToolRound] = Field(min_length=1)
+
+    @property
+    def rounds(self) -> tuple[ToolRound, ...]:
+        return tuple(message for message in self.messages if isinstance(message, ToolRound))
+
+    @property
+    def conversation(self) -> tuple[TurnMessage, ...]:
+        return tuple(message for message in self.messages if isinstance(message, TurnMessage))
+
+    @model_validator(mode="after")
+    def _refuse_a_call_id_used_twice(self) -> Turn:
+        call_ids = [call.call_id for each in self.rounds for call in each.calls]
+        if len(set(call_ids)) != len(call_ids):
+            raise ValueError("a call id appears twice across the tool rounds")
+        return self
 
 
 TokenCount = Annotated[int, Field(ge=0)]

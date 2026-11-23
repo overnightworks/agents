@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import re
+from collections.abc import Sequence
 from importlib.resources.abc import Traversable
 from typing import Annotated, Final, Self
 
@@ -39,6 +40,7 @@ from agents.turn import (
     AgentRoles,
     GatewayModelName,
     ModelKind,
+    ToolRound,
     Turn,
     TurnMessage,
     TurnRole,
@@ -118,9 +120,13 @@ class TurnRequest(BaseModel):
 
     ``max_tool_calls`` is ``None`` exactly when the agent has no tools. ``one_call_per_reply``
     asks a backend to serve one tool call per model reply; without tools it holds nothing.
+
+    ``deferred_tools`` names tools of ``tools`` sent without their definition loaded, not every
+    tool; an answer loads one by naming it in ``loads``, so every recorded round's ``loads`` names
+    only deferred tools. Deferral needs a gateway model that honours it.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, revalidate_instances="always")
 
     agent: AgentName
     turn: Turn
@@ -131,10 +137,23 @@ class TurnRequest(BaseModel):
     max_tool_calls: PositiveInt | None
     picture_size: PictureSize | None = None
     one_call_per_reply: bool = False
+    deferred_tools: frozenset[str] = frozenset()
 
     @model_validator(mode="after")
     def _pair_tools_with_their_call_bound(self) -> Self:
         _refuse_unpaired_call_bound(self.tools, self.max_tool_calls)
+        return self
+
+    @model_validator(mode="after")
+    def _defer_some_tools_and_load_only_deferred_ones(self) -> Self:
+        offered = frozenset(tool.name for tool in self.tools)
+        if not self.deferred_tools <= offered:
+            raise ValueError("deferred_tools names a tool that is not in tools")
+        if offered and self.deferred_tools == offered:
+            raise ValueError("deferred_tools names every tool; the model needs one loaded")
+        loaded = {name for each in self.turn.rounds for call in each.calls for name in call.loads}
+        if not loaded <= self.deferred_tools:
+            raise ValueError("a tool round loads a tool that is not in deferred_tools")
         return self
 
     @model_validator(mode="after")
@@ -144,7 +163,11 @@ class TurnRequest(BaseModel):
         if self.tools:
             raise ValueError("a picture request selects no tools")
         messages = self.turn.messages
-        if len(messages) != 1 or messages[0].role is not TurnRole.USER:
+        if (
+            len(messages) != 1
+            or self.turn.rounds
+            or self.turn.conversation[0].role is not TurnRole.USER
+        ):
             raise ValueError("a picture request holds exactly one user message")
         return self
 
@@ -191,7 +214,7 @@ class AgentDefinition(BaseModel):
 
     def request(
         self,
-        messages: list[TurnMessage],
+        messages: Sequence[TurnMessage | ToolRound],
         *,
         model: GatewayModelName | None = None,
         appended_system: str | None = None,
@@ -207,7 +230,7 @@ class AgentDefinition(BaseModel):
         system = self.prompt if appended_system is None else f"{self.prompt}\n\n{appended_system}"
         request = TurnRequest(
             agent=self.name,
-            turn=Turn(system=system, messages=messages),
+            turn=Turn(system=system, messages=list(messages)),
             roles=self.roles,
             tools=self.tools,
             model=self.model if model is None else model,

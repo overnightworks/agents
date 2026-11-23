@@ -7,6 +7,7 @@ the call and not the turn. This module is the one owner of that bound; it writes
 
 from __future__ import annotations
 
+import copy
 import logging
 from dataclasses import dataclass
 from typing import Final
@@ -15,7 +16,7 @@ from logline import StepTimer
 
 from agents.backend import TurnPerson, TurnStopKind, TurnStopped
 from agents.tools import HandToolHandler, JsonObject, ToolOutcome
-from agents.turn import ToolRefusal, is_within_event_bound
+from agents.turn import ToolRefusal, is_within_event_bound, refuse_unrenderable_loads
 from agents.turn_events import ToolResultEvent
 
 __all__ = ["RequestedCall", "serve"]
@@ -30,12 +31,19 @@ class RequestedCall:
     id: str
     name: str
     arguments: JsonObject
+    arguments_text: str
 
 
 async def serve(
-    handler: HandToolHandler, person: TurnPerson, call: RequestedCall
+    handler: HandToolHandler,
+    person: TurnPerson,
+    call: RequestedCall,
+    loadable: frozenset[str],
 ) -> ToolResultEvent:
     """Run one handler; an outcome that is no valid result event is a host defect like a raise.
+
+    ``loadable`` is the request's deferred tools: an outcome that loads another tool, or that
+    loads beside text, an error or an image, is such a defect.
 
     The one raise that is no defect is ``TurnStopped``: the handler ends the turn, so it passes.
     A refusing stop is the call's ``refused`` line, a failing one its ``failed`` line with the
@@ -46,7 +54,7 @@ async def serve(
             "tool_call.ended", _LOGGER, tool_name=call.name, tool_call_id=call.id
         ) as step:
             step.handled()
-            served = await _run(step, handler, person, call)
+            served = await _run(step, handler, person, call, loadable)
     except Exception:  # a handler is the app's code; its failure is a host defect
         return _failed_event(call, _HANDLER_FAILED_TEXT)
     if isinstance(served, TurnStopped):
@@ -55,29 +63,42 @@ async def serve(
 
 
 async def _run(
-    step: StepTimer, handler: HandToolHandler, person: TurnPerson, call: RequestedCall
+    step: StepTimer,
+    handler: HandToolHandler,
+    person: TurnPerson,
+    call: RequestedCall,
+    loadable: frozenset[str],
 ) -> ToolResultEvent | TurnStopped:
     """The result, or a stop handed back so the line closes before it is raised."""
     try:
-        outcome = await handler(person.principal, call.arguments)
+        # the round is recorded from the model's arguments, which a handler cannot change
+        outcome = await handler(person.principal, copy.deepcopy(call.arguments))
     except TurnStopped as stopped:
         if stopped.kind is TurnStopKind.REFUSED:
             step.refuse(stopped.code.value)
         else:
             step.fail(stopped.code.value)
         return stopped
-    return _result_event(step, call, outcome)
+    return _result_event(step, call, outcome, loadable)
 
 
-def _result_event(step: StepTimer, call: RequestedCall, outcome: ToolOutcome) -> ToolResultEvent:
+def _result_event(
+    step: StepTimer, call: RequestedCall, outcome: ToolOutcome, loadable: frozenset[str]
+) -> ToolResultEvent:
     event = ToolResultEvent.model_validate(
         {
             "tool_use_id": call.id,
             "content": outcome.content,
             "is_error": outcome.is_error,
             "image": outcome.image,
+            "loads": outcome.loads,
         },
         strict=True,
+    )
+    if not loadable.issuperset(event.loads):
+        raise ValueError("a tool answer loads a tool that is not deferred")
+    refuse_unrenderable_loads(
+        content=event.content, is_error=event.is_error, image=event.image, loads=event.loads
     )
     if not is_within_event_bound(event.content, event.image):
         step.refuse(ToolRefusal.RESULT_TOO_LARGE)

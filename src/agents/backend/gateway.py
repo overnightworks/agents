@@ -48,12 +48,11 @@ from agents.backend import (
 )
 from agents.backend.gateway_request import (
     MAX_REQUEST_BYTES,
-    Message,
     bounded,
     opening_messages,
     picture_body,
     request_body,
-    result_message,
+    round_messages,
 )
 from agents.backend.streamed_round import (
     AssembledMessage,
@@ -74,9 +73,12 @@ from agents.turn import (
     MAX_EVENT_BYTES,
     MAX_RUN_FILES_BYTES,
     FailureCode,
+    NonEmptyUnicodeText,
     RejectionCode,
+    RoundCall,
     RoundUsage,
     RunFile,
+    ToolRound,
     TurnUsage,
     base64_length,
     loaded_json,
@@ -110,6 +112,8 @@ _UNREADABLE_REPLY: Final = (
     RecursionError,
 )
 _ARGUMENTS: Final = TypeAdapter(JsonObject)
+_CALL_ID: Final = TypeAdapter(NonEmptyUnicodeText)
+_ROUND_TEXT: Final = TypeAdapter(NonEmptyUnicodeText | None)
 _NOT_RUN_CONTENT: Final = "not run: one call per reply"
 
 
@@ -196,6 +200,7 @@ class GatewayBackend(AgentBackend):
     async def _turn(
         self, request: TurnRequest, person: TurnPerson
     ) -> AsyncGenerator[TurnEvent, None]:
+        request = TurnRequest.model_validate(request)
         tools = self._declared_tools(request)
         if person.role not in request.roles:
             raise _GatewayStop(TurnStopKind.REFUSED, RejectionCode.FORBIDDEN)
@@ -203,12 +208,16 @@ class GatewayBackend(AgentBackend):
         if request.picture_size is not None:
             yield await self._picture(request, request.picture_size, person, deadline)
             return
-        progress = _Progress(request.max_tool_calls or 0)
+        progress = _Progress(
+            request.max_tool_calls or 0,
+            call_ids={call.call_id for each in request.turn.rounds for call in each.calls},
+        )
         key = await _before(deadline, self._authorise(person))
-        offered = frozenset(tools)
+        offered, loadable = frozenset(tools), request.deferred_tools
         messages = opening_messages(request)
         user = person_fingerprint(person.principal)
         rounds: list[RoundUsage] = []
+        tool_rounds: list[ToolRound] = []
         while True:
             _refuse_after(deadline)
             body = bounded(request_body(request, messages, user), _limit_exceeded)
@@ -222,20 +231,25 @@ class GatewayBackend(AgentBackend):
                     yield AssistantTextEvent(text=part)
                 reply = part
             rounds.append(RoundUsage(started_at=started_at, usage=reply.usage))
-            if reply.message is None:
-                yield FinalEvent(text=reply.text, usage=_summed(rounds), rounds=tuple(rounds))
+            if not reply.calls:
+                yield FinalEvent(
+                    text=reply.text,
+                    usage=_summed(rounds),
+                    rounds=tuple(rounds),
+                    tool_rounds=tuple(tool_rounds),
+                )
                 return
             progress.admit(reply.calls, reply.served)
-            messages.append(reply.message)
+            results: list[ToolResultEvent] = []
             for call in reply.served:
                 yield ToolCallEvent(tool_use_id=call.id, name=call.name, input=call.arguments)
                 _refuse_after(deadline)
                 handler = self._tools[call.name].handler
-                result = await _before(deadline, serve(handler, person, call))
-                messages.append(result_message(result))
+                result = await _before(deadline, serve(handler, person, call, loadable))
+                results.append(result)
                 yield result
-            unserved = reply.calls[len(reply.served) :]
-            messages += [result_message(_not_run(call)) for call in unserved]
+            tool_rounds.append(_tool_round(reply, results))
+            messages += round_messages(tool_rounds[-1])
 
     def _declared_tools(self, request: TurnRequest) -> dict[str, ToolDeclaration]:
         tools = {declaration.name: declaration for declaration in request.tools}
@@ -373,13 +387,13 @@ def _client(
 class _Round:
     """One judged reply: the answer when the model stopped, else the calls it asked for.
 
-    ``served`` is the prefix of ``calls`` the turn runs; the rest reach the model as not run.
-    ``calls_not_run`` counts them when one call per reply split the round, else it is None.
+    ``text`` is the answer, or the text that came with the calls. ``served`` is the prefix of
+    ``calls`` the turn runs; the rest reach the model as not run. ``calls_not_run`` counts them
+    when one call per reply split the round, else it is None.
     """
 
     text: str
     calls: tuple[RequestedCall, ...]
-    message: Message | None
     served: tuple[RequestedCall, ...] = ()
     calls_not_run: int | None = None
     usage: TurnUsage | None = None
@@ -424,6 +438,26 @@ def _limit_exceeded() -> TurnStopped:
 
 def _not_run(call: RequestedCall) -> ToolResultEvent:
     return ToolResultEvent(tool_use_id=call.id, content=_NOT_RUN_CONTENT, is_error=True)
+
+
+def _tool_round(reply: _Round, results: list[ToolResultEvent]) -> ToolRound:
+    """The round whole: each call with the answer the model is shown, the not run ones included."""
+    answers = [*results, *(_not_run(call) for call in reply.calls[len(reply.served) :])]
+    return ToolRound(
+        text=reply.text or None,
+        calls=tuple(
+            RoundCall(
+                call_id=call.id,
+                tool=call.name,
+                arguments=call.arguments_text,
+                result=answer.content,
+                is_error=answer.is_error,
+                image=answer.image,
+                loads=answer.loads,
+            )
+            for call, answer in zip(reply.calls, answers, strict=True)
+        ),
+    )
 
 
 def _summed(rounds: list[RoundUsage]) -> TurnUsage | None:
@@ -666,7 +700,7 @@ async def _picture_of(response: httpx2.Response) -> RunFile:
 def _answer_of(text: str | None, usage: TurnUsage | None) -> _Round:
     if text is None or not text.strip():
         raise _malformed_reply()
-    return _Round(text=text, calls=(), message=None, usage=usage)
+    return _Round(text=text, calls=(), usage=usage)
 
 
 def _calls_of(
@@ -684,22 +718,20 @@ def _calls_of(
     seen_ids = set(earlier_call_ids)
     for raw in raw_calls:
         function = raw["function"]
-        name, call_id = function["name"], raw["id"]
-        if name not in offered or not call_id or call_id in seen_ids:
+        name, call_id = function["name"], _CALL_ID.validate_python(raw["id"])
+        if name not in offered or call_id in seen_ids:
             raise _malformed_reply()
         seen_ids.add(call_id)
-        arguments = _ARGUMENTS.validate_json(function["arguments"])
-        calls.append(RequestedCall(id=call_id, name=name, arguments=arguments))
-    reply: Message = {
-        "role": "assistant",
-        "content": message["content"],
-        "tool_calls": raw_calls,
-    }
+        text = function["arguments"]
+        calls.append(
+            RequestedCall(
+                id=call_id, name=name, arguments=_ARGUMENTS.validate_json(text), arguments_text=text
+            )
+        )
     served, calls_not_run = (calls[:1], len(calls) - 1) if one_call_per_reply else (calls, None)
     return _Round(
-        text="",
+        text=_ROUND_TEXT.validate_python(message["content"]) or "",
         calls=tuple(calls),
-        message=reply,
         served=tuple(served),
         calls_not_run=calls_not_run,
         usage=usage,
