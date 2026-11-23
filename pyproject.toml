@@ -29,7 +29,7 @@ mcp-client = [
 ]
 redis = [
     "overnightworks-agents[mcp-server]",
-    "overnightworks-tandem>=0.12.1,<0.17",
+    "overnightworks-tandem>=0.16,<0.17",
 ]
 voice = [
     "overnightworks-logline>=0.4,<2",

@@ -12,10 +12,9 @@ from collections.abc import AsyncGenerator, Callable, Collection
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Final
+from typing import Final, NoReturn
 
 from agents.mcp_server.place_store import (
-    LapseRun,
     ListeningTurn,
     PlaceSignal,
     PlaceStoreError,
@@ -135,17 +134,13 @@ class InMemoryPlaceStore:
     async def listeners(self, uri: str) -> frozenset[Principal]:  # NOSONAR(S7503)
         return self._listeners(uri)
 
-    async def lapse_due(self) -> LapseRun:  # NOSONAR(S7503)
-        now = asyncio.get_running_loop().time()
-        due = [name for name, record in self._streams.items() if record.due <= now]
-        turns: list[ListeningTurn] = []
-        for stream in due:
-            record = self._streams.pop(stream)
-            for uri in sorted(record.uris):
-                if record.principal not in self._listeners(uri):
-                    turns.append(ListeningTurn(record.principal, uri, listens=False))
-                    self._broadcast(turns[-1])
-        return LapseRun(turns=tuple(turns), stream_count=len(due))
+    async def serve_stream_lapses(
+        self, lapsed: Callable[[ListeningTurn], None], *, every: timedelta
+    ) -> NoReturn:
+        while True:
+            await asyncio.sleep(every.total_seconds())
+            for turn in self._lapse_due():
+                lapsed(turn)
 
     def resubscribe(self) -> None:
         for follower in self._followers:
@@ -160,6 +155,17 @@ class InMemoryPlaceStore:
 
     def release_signals(self) -> None:
         self._released.set()
+
+    def _lapse_due(self) -> list[ListeningTurn]:
+        now = asyncio.get_running_loop().time()
+        turns: list[ListeningTurn] = []
+        for stream in [name for name, record in self._streams.items() if record.due <= now]:
+            record = self._streams.pop(stream)
+            for uri in sorted(record.uris):
+                if record.principal not in self._listeners(uri):
+                    turns.append(ListeningTurn(record.principal, uri, listens=False))
+                    self._broadcast(turns[-1])
+        return turns
 
     def _listeners(self, uri: str) -> frozenset[Principal]:
         return frozenset(r.principal for r in self._streams.values() if uri in r.uris)

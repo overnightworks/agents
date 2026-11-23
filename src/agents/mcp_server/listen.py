@@ -15,7 +15,7 @@ every pulse against ``MemberResources.current`` when the pulse is drained, queue
 so a removal ends delivery during an open stream.
 
 Whether a principal listens lives in the place store, not in a pod: a stream that honored a URI is
-recorded there with a deadline, and every pod's lapse poll turns an ended stream's answer to no.
+recorded there with a deadline, and every pod's lapse service turns an ended stream's answer to no.
 """
 
 from __future__ import annotations
@@ -30,7 +30,6 @@ from typing import Any, Final
 from uuid import uuid4
 
 import anyio
-from logline import StepTimer, unit_trace
 from mcp.server.context import ServerRequestContext
 from mcp.shared.subscriptions import (
     SUBSCRIPTION_ID_META_KEY,
@@ -50,7 +49,6 @@ from mcp_types import (
 
 from agents.mcp_server.asgi import LISTEN_METHOD, LOGGER_NAME
 from agents.mcp_server.place_store import (
-    LapseRun,
     ListeningTurn,
     PlaceSignal,
     PlaceStore,
@@ -165,7 +163,7 @@ class ResourceChanges:
     Every call of the store is one timed line (``place_publish.ended``,
     ``listen_acknowledgement.ended``, ``listen_end.ended``, ``listening_lookup.ended``,
     ``listeners_lookup.ended``); ``listening.opened`` is written once by the pod whose
-    acknowledgement turned a URI to yes and ``listening.lapsed`` once by the pod whose lapse run
+    acknowledgement turned a URI to yes and ``listening.lapsed`` once by the pod whose lapse
     turned it to no. No line carries a URI or content.
     """
 
@@ -218,7 +216,9 @@ class ResourceChanges:
 
     @property
     def dead(self) -> bool:
-        """Whether the subscription failed for good: no change arrives any more."""
+        """Whether the front is dead: the subscription failed for good, so that no change arrives
+        any more, or the lapse service ended unexpectedly, so that no lapse turns an answer to no
+        any more."""
         return self._dead
 
     @asynccontextmanager
@@ -229,10 +229,12 @@ class ResourceChanges:
         and raises ``PlaceStoreError`` if it is refused or not confirmed by then. A failure after
         it writes ``place_subscription.failed`` with the type of the cause, ends every open stream
         and turns ``dead``; the block stays entered. The subscription runs outside the SDK
-        manager's task group, so its failure never reaches one. A task lapses the streams of the
-        place store that ended, about every ``LAPSE_POLL_SECONDS``; it runs until the block ends and
-        writes ``listen_lapse.ended`` only for a run that lapsed or failed a stream. A failure of
-        one poll, whatever it is, is written by type once per streak, and the next poll goes on.
+        manager's task group, so its failure never reaches one. A task serves the place store's
+        lapses, about every ``LAPSE_POLL_SECONDS``, until the block ends; the store rides out its
+        own outages and refusals. An exception that is no failure of the store ends the task with
+        one ``listen_lapse_service.stopped`` error line, is not retried, and turns ``dead`` like a
+        subscription that failed for good: a pod whose lapses stopped would answer ``listens_to``
+        yes for streams that are gone.
 
         The exit waits for the ends of listens still in flight, each capped at ``_END_CAP_SECONDS``.
         A second cancellation stops that wait at once, and a stream whose end is then not recorded
@@ -244,7 +246,7 @@ class ResourceChanges:
             on_failed=self._die,
             ready_within=_SUBSCRIPTION_READY_WITHIN,
         ):
-            lapsing = asyncio.create_task(self._lapse_ended_streams())
+            lapsing = asyncio.create_task(self._serve_lapses())
             try:
                 yield
             finally:
@@ -253,35 +255,22 @@ class ResourceChanges:
                 if self._ending:
                     await asyncio.wait(tuple(self._ending))
 
-    async def _lapse_ended_streams(self) -> None:
-        failed_run_count = 0
-        while True:
-            await asyncio.sleep(LAPSE_POLL_SECONDS)
-            with unit_trace(None):
-                failed_run_count = await self._lapse_run(failed_run_count)
-
-    async def _lapse_run(self, failed_run_count: int) -> int:
-        """One lapse run in the trace it runs under; returns the length of the failed streak."""
-        step = StepTimer("listen_lapse.ended", _LOG)
-        step.handled()
+    async def _serve_lapses(self) -> None:
         try:
-            run = await self._store.lapse_due()
+            await self._store.serve_stream_lapses(
+                self._lapsed, every=timedelta(seconds=LAPSE_POLL_SECONDS)
+            )
         except Exception as failure:
-            step.add(last_error_type=failure_type(failure))
-            step.fail("store_failed")
-            return _ended_when_first_failure(step, failed_run_count)
-        for turn in run.turns:
-            _LOG.info("listening.lapsed", extra={"sub": turn.principal.sub})
-        if run.failed_count:
-            step.add(**_lapse_counts(run), last_error_type=run.last_error_type)
-            step.fail("lapse_failed")
-            return _ended_when_first_failure(step, failed_run_count)
-        if failed_run_count:
-            _LOG.info("listen_lapse.resumed", extra={"failed_run_count": failed_run_count})
-        if run.stream_count:
-            step.add(**_lapse_counts(run))
-            step.end()
-        return 0
+            _LOG.error(
+                "listen_lapse_service.stopped",
+                extra={"error_type": failure_type(failure)},
+                exc_info=failure,
+            )
+            self._turn_dead()
+
+    @staticmethod
+    def _lapsed(turn: ListeningTurn) -> None:
+        _LOG.info("listening.lapsed", extra={"sub": turn.principal.sub})
 
     def _resubscribed(self) -> None:
         self._resync()
@@ -314,8 +303,11 @@ class ResourceChanges:
         return sum(len(streams) for streams in self._streams.values())
 
     def _die(self, failure: Exception) -> None:
-        self._dead = True
         _LOG.error("place_subscription.failed", extra={"error_type": failure_type(failure)})
+        self._turn_dead()
+
+    def _turn_dead(self) -> None:
+        self._dead = True
         for streams in self._streams.values():
             for stream in streams:
                 stream.end()
@@ -423,22 +415,6 @@ def _call_host(name: str, call: Callable[[], None]) -> None:
         _LOG.error(
             "host_callback.failed", extra={"callback": name, "error_type": failure_type(failure)}
         )
-
-
-def _lapse_counts(run: LapseRun) -> dict[str, int]:
-    return {
-        "stream_count": run.stream_count,
-        "turn_count": len(run.turns),
-        "failed_count": run.failed_count,
-    }
-
-
-def _ended_when_first_failure(step: StepTimer, failed_run_count: int) -> int:
-    """Writes the run's line only for the first failed run of a streak; returns the streak's
-    length including this run."""
-    if not failed_run_count:
-        step.end()
-    return failed_run_count + 1
 
 
 def _wanted(uri: str, honored: Collection[str]) -> bool:

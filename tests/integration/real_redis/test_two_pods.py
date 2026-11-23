@@ -29,7 +29,7 @@ from tandem.keys import deadline_keys
 
 from agents.mcp_server import ResourceChanges
 from agents.mcp_server.listen import LAPSE_POLL_SECONDS
-from agents.mcp_server.place_store import LapseRun, ListeningTurn, ResourceChange
+from agents.mcp_server.place_store import ListeningTurn, ResourceChange
 from agents.mcp_server.redis_place_store import CLAIM_FOR, RedisPlaceStore
 from agents.mcp_wire import MCP_ENDPOINT_PATH
 from agents.member import LISTEN_ALLOWANCE_SECONDS, LISTEN_BOUND_SECONDS, STANDING_URI
@@ -37,6 +37,7 @@ from agents.turn import Principal
 from tests.support.faulty_redis import EvalshaStopsAfter
 from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import a_member, member_scope, rpc_body
+from tests.support.place_store_support import lapsing
 from tests.support.real_redis_pod import (
     LISTENERS_PATH,
     LISTENING_CHANGES_PATH,
@@ -45,7 +46,15 @@ from tests.support.real_redis_pod import (
     WRITES_KEY,
     WRITTEN_MEMBER,
 )
-from tests.support.real_redis_pods import POD_A_USER, PREFIX, WAIT_SECONDS, Pod, wait_until
+from tests.support.real_redis_pods import (
+    POD_A_PASSWORD,
+    POD_A_USER,
+    PREFIX,
+    WAIT_SECONDS,
+    Pod,
+    as_user,
+    wait_until,
+)
 from tests.support.redis_listen_support import (
     UNUSUAL_PRINCIPALS,
     UNUSUAL_URIS,
@@ -67,6 +76,7 @@ _OPEN = timedelta(seconds=LISTEN_BOUND_SECONDS + LISTEN_ALLOWANCE_SECONDS)
 _FIRST_BARRIER = ResourceChange(a_member("bob"), STANDING_URI, "first")
 _SECOND_BARRIER = ResourceChange(a_member("bob"), STANDING_URI, "second")
 _SECONDS_PAST_THE_CLAIM = 10
+_EVERY = timedelta(milliseconds=100)
 
 
 def request_of(body: bytes, *, traceparent: str | None = None) -> tuple[bytes, dict[str, str]]:
@@ -283,10 +293,11 @@ def test_two_pods_following_one_store_write_one_opened_line_and_one_lapsed_line(
 
     assert [line["sub"] for line in log_lines.of("listening.opened")] == [WRITTEN_MEMBER.sub]
     assert [line["sub"] for line in log_lines.of("listening.lapsed")] == [WRITTEN_MEMBER.sub]
-    assert len(log_lines.of("listen_lapse.ended")) == 1
+    handled = log_lines.of("deadline_handling.ended")
+    assert [line["deadline_kind"] for line in handled] == ["listen"]
 
 
-def test_the_no_a_lapse_run_wakes_is_heard_in_the_trace_of_that_run(
+def test_the_no_a_lapse_wakes_is_heard_in_the_trace_of_its_handling(
     redis_url: str, log_lines: LogLines
 ) -> None:
     traces_heard_by_a: list[str | None] = []
@@ -319,38 +330,45 @@ def test_the_no_a_lapse_run_wakes_is_heard_in_the_trace_of_that_run(
 
     asyncio.run(scenario())
 
-    run_trace = log_lines.one("listen_lapse.ended")["trace_id"]
-    assert run_trace
-    assert set(traces_heard_by_a) == {run_trace}
-    assert set(traces_heard_by_b) == {run_trace}
+    handling_trace = log_lines.one("deadline_handling.ended")["trace_id"]
+    assert handling_trace
+    assert set(traces_heard_by_a) == {handling_trace}
+    assert set(traces_heard_by_b) == {handling_trace}
 
 
 def test_a_claim_its_pod_cannot_finish_is_lapsed_by_another_pod_once_the_claim_ran_out(
     redis_url: str, admin: Redis
 ) -> None:
+    claimed_key = deadline_keys(f"{PREFIX}-agents", "listen").claimed
+
     async def scenario() -> tuple[object, ...]:
         store_b = a_store(redis_url)
         store_a = RedisPlaceStore(
             EvalshaStopsAfter(redis_url, evalshas_that_return=1), key_prefix=PREFIX
         )
+
+        async def claimed_by_a() -> bool:
+            return admin.zscore(claimed_key, "stream") is not None
+
+        async def lapsed() -> bool:
+            return not await store_b.listeners(STANDING_URI)
+
         async with subscribed(store_b) as events:
             await store_b.acknowledged("stream", WRITTEN_MEMBER, [STANDING_URI], _OPEN)
             await store_b.ended("stream", timedelta(0))
-            await store_a.lapse_due()
-            await store_b.lapse_due()
-            listed_while_claimed = await store_b.listeners(STANDING_URI)
-            before = await delivered_up_to(store_b, events, _FIRST_BARRIER)
-
-            async def lapsed() -> bool:
-                await store_b.lapse_due()
-                return not await store_b.listeners(STANDING_URI)
-
-            await eventually(lapsed, seconds=CLAIM_FOR.total_seconds() + _SECONDS_PAST_THE_CLAIM)
-            return (
-                listed_while_claimed,
-                before,
-                await delivered_up_to(store_b, events, _SECOND_BARRIER),
-            )
+            async with lapsing(store_a, every=_EVERY):
+                await eventually(claimed_by_a, seconds=WAIT_SECONDS)
+                async with lapsing(store_b, every=_EVERY):
+                    listed_while_claimed = await store_b.listeners(STANDING_URI)
+                    before = await delivered_up_to(store_b, events, _FIRST_BARRIER)
+                    await eventually(
+                        lapsed, seconds=CLAIM_FOR.total_seconds() + _SECONDS_PAST_THE_CLAIM
+                    )
+                    return (
+                        listed_while_claimed,
+                        before,
+                        await delivered_up_to(store_b, events, _SECOND_BARRIER),
+                    )
 
     listed_while_claimed, before, after = asyncio.run(scenario())
 
@@ -359,7 +377,6 @@ def test_a_claim_its_pod_cannot_finish_is_lapsed_by_another_pod_once_the_claim_r
     assert listed_while_claimed == frozenset({WRITTEN_MEMBER})
     assert before == [Resynced(), yes, _FIRST_BARRIER]
     assert after == [Resynced(), yes, _FIRST_BARRIER, no, _SECOND_BARRIER]
-    assert admin.keys("*") == []
 
 
 @pytest.mark.parametrize("principal", UNUSUAL_PRINCIPALS)
@@ -369,9 +386,14 @@ def test_a_lapsed_stream_leaves_no_member_whatever_its_principal_and_uri_hold(
 ) -> None:
     async def scenario() -> tuple[list[object], bool, frozenset[Principal]]:
         store = a_store(redis_url)
+
+        async def nothing_left() -> bool:
+            return not admin.keys("*")
+
         async with subscribed(store) as events:
             await store.acknowledged("stream", principal, [uri], timedelta(0))
-            await store.lapse_due()
+            async with lapsing(store, every=_EVERY):
+                await eventually(nothing_left, seconds=WAIT_SECONDS)
             return (
                 await delivered_up_to(store, events, _FIRST_BARRIER),
                 await store.listens_to(principal, uri),
@@ -399,45 +421,92 @@ def test_a_lapsed_stream_leaves_no_member_whatever_its_principal_and_uri_hold(
         ),
     ],
 )
-def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_counts_the_failure(
-    redis_url: str, admin: Redis, record: str
+def test_a_lapse_on_a_record_that_does_not_decode_writes_nothing_and_keeps_its_claim(
+    redis_url: str, admin: Redis, log_lines: LogLines, record: str
 ) -> None:
     """``cjson.decode`` raises on text that is no JSON; the fake Redis raises a Python error there
     that no real server shows."""
     alice = a_member("alice")
+    claimed_key = deadline_keys(f"{PREFIX}-agents", "listen").claimed
 
-    async def scenario() -> tuple[tuple[object, object], list[object], LapseRun]:
+    async def scenario() -> tuple[list[tuple[object, object]], list[object], list[ListeningTurn]]:
         client = AsyncRedis.from_url(redis_url)
         watcher = AsyncRedis.from_url(redis_url)
         around_scripts = snapshots_around_evalsha(client, lambda: namespace_of(watcher, PREFIX))
         store = RedisPlaceStore(client, key_prefix=PREFIX)
+
+        async def handling_failed() -> bool:
+            return any(
+                line["outcome"] == "failed" for line in log_lines.of("deadline_handling.ended")
+            )
+
         async with subscribed(store) as events:
             await store.acknowledged("held", alice, [STANDING_URI], timedelta(milliseconds=1))
             await delivered_up_to(store, events, _FIRST_BARRIER)
             admin.hset(f"{PREFIX}-agents:v1:streams", "held", record)
-
-            runs: list[LapseRun] = []
-
-            async def claimed() -> bool:
-                runs.append(await store.lapse_due())
-                return bool(
-                    admin.zscore(deadline_keys(f"{PREFIX}-agents", "listen").claimed, "held")
-                )
-
-            await eventually(claimed, seconds=WAIT_SECONDS)
+            scripts_before = len(around_scripts)
+            async with lapsing(store, every=_EVERY) as turns:
+                await eventually(handling_failed, seconds=WAIT_SECONDS)
+            scripts_run = around_scripts[scripts_before:]
             return (
-                around_scripts[-1],
+                scripts_run,
                 await delivered_up_to(store, events, _SECOND_BARRIER),
-                runs[-1],
+                list(turns),
             )
 
-    (before, after), seen, run = asyncio.run(scenario())
+    scripts_run, seen, turns = asyncio.run(scenario())
 
-    assert after == before
+    assert len(scripts_run) > 1
+    assert len([run for run in scripts_run if run[0] != run[1]]) == 1
     assert seen == [
         Resynced(),
         ListeningTurn(alice, STANDING_URI, listens=True),
         _FIRST_BARRIER,
         _SECOND_BARRIER,
     ]
-    assert (run.turns, run.stream_count, run.failed_count) == ((), 0, 1)
+    assert turns == []
+    assert admin.zscore(claimed_key, "held") is not None
+
+
+def test_a_pod_whose_user_is_refused_keeps_serving_and_the_other_pod_lapses(
+    redis_url: str, admin: Redis, pod_a_user: str, log_lines: LogLines
+) -> None:
+    heard_by_a: list[bool] = []
+    heard_by_b: list[bool] = []
+
+    def heard_by(listens_list: list[bool]) -> Callable[[Principal, str, bool], None]:
+        def heard(_principal: Principal, _uri: str, listens: bool) -> None:
+            listens_list.append(listens)
+
+        return heard
+
+    async def scenario() -> bool:
+        store_a = RedisPlaceStore(
+            AsyncRedis.from_url(as_user(redis_url, pod_a_user, POD_A_PASSWORD)), key_prefix=PREFIX
+        )
+        pod_a = ResourceChanges(store_a, listening_changed=heard_by(heard_by_a))
+        pod_b = ResourceChanges(a_store(redis_url), listening_changed=heard_by(heard_by_b))
+
+        async def both_heard_the_no() -> bool:
+            return False in heard_by_a and False in heard_by_b
+
+        async def recovered() -> bool:
+            return any("failed_run_count" in line for line in log_lines.of("deadline_round.ended"))
+
+        window = LISTEN_ALLOWANCE_SECONDS + CLAIM_FOR.total_seconds() + LAPSE_POLL_SECONDS + 5
+        async with pod_a.following():
+            admin.acl_setuser(pod_a_user, commands=["-evalsha"])
+            async with pod_b.following():
+                async with pod_b.opened(WRITTEN_MEMBER) as stream:
+                    await pod_b.acknowledged(WRITTEN_MEMBER, stream, [STANDING_URI], tools=False)
+                await eventually(both_heard_the_no, seconds=window)
+                dead = pod_a.dead
+                admin.acl_setuser(pod_a_user, commands=["+evalsha"])
+                await eventually(recovered, seconds=window)
+        return dead
+
+    dead = asyncio.run(scenario())
+
+    assert dead is False
+    assert [line["sub"] for line in log_lines.of("listening.lapsed")] == [WRITTEN_MEMBER.sub]
+    assert [line["outcome"] for line in log_lines.of("deadline_round.ended")][0] == "failed"

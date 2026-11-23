@@ -17,7 +17,6 @@ from agents.mcp_server.person import (
     ResolvePerson,
 )
 from agents.mcp_server.place_store import (
-    LapseRun,
     LeaseRenewal,
     LeaseRoster,
     LeaseStanding,
@@ -34,7 +33,6 @@ from agents.mcp_server.routes import RouteProfileError, RouteTools, route_tools
 __all__ = [
     "Heard",
     "InMemoryPlaceStore",
-    "LapseRun",
     "LeaseRenewal",
     "LeaseRoster",
     "LeaseStanding",

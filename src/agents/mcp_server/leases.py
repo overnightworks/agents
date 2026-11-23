@@ -21,15 +21,12 @@ from agents.mcp_server.place_store import (
     LeaseRenewal,
     LeaseRoster,
     LeaseStanding,
-    PlaceStoreError,
     failure_type,
 )
 from agents.member import MemberFacts
 from agents.turn import Principal
 
 _LOG: Final = logging.getLogger(LOGGER_NAME)
-
-LAPSE_RESTART_SECONDS: Final = 5
 
 
 class MemberLeases:
@@ -50,7 +47,6 @@ class MemberLeases:
     ) -> None:
         self._store = store
         self._lease_ended = lease_ended
-        self._failed_run_count = 0
 
     async def renew(self, principal: Principal, facts: MemberFacts) -> LeaseRenewal:
         """Keeps the principal's lease and ``facts`` for another ``LEASE_SECONDS``. Async, so a
@@ -98,13 +94,12 @@ class MemberLeases:
         """The lapse service as a task of its own, for as long as the block runs; the host enters
         it once in its lifespan, on every pod.
 
-        A failure of the service never ends it silently: the first of a streak is written by type
-        (``lease_lapse_service.failed``, a warning), and the service serves again after
-        ``LAPSE_RESTART_SECONDS``. A streak ends when a restarted service ran longer than that
-        without failing; ``lease_lapse_service.resumed`` then writes its ``failed_run_count``.
-        The block's exit cancels the service and waits for it, so a handler still running is cut and
-        its lapse returns after the store's claim has run out.
-        There is no readiness signal: a failing service is only written.
+        The service rides out an outage or a refusal of the store (tandem's ``lapse_round.ended``
+        line tells of it) and is never restarted: an exception that is no failure of the store ends
+        it with one ``lease_lapse_service.stopped`` error line with its traceback. The block's exit
+        cancels the service and waits for it, so a handler still running is cut and its lapse
+        returns after the store's claim has run out.
+        There is no readiness signal: a stopped service is only written.
         """
         service = asyncio.create_task(self._serve())
         try:
@@ -114,36 +109,15 @@ class MemberLeases:
             await asyncio.wait((service,))
 
     async def _serve(self) -> None:
-        loop = asyncio.get_running_loop()
-        while True:
-            resumption = (
-                loop.call_later(LAPSE_RESTART_SECONDS, self._log_resumed)
-                if self._failed_run_count
-                else None
+        try:
+            await self._store.serve_lapses(self._lapsed)
+        except Exception as failure:
+            _LOG.error(
+                "lease_lapse_service.stopped",
+                extra={"error_type": failure_type(failure)},
+                exc_info=failure,
             )
-            try:
-                await self._store.serve_lapses(self._lapsed)
-            except Exception as failure:
-                if not self._failed_run_count:
-                    self._log_failure(failure)
-                self._failed_run_count += 1
-            finally:
-                if resumption is not None:
-                    resumption.cancel()
-            await asyncio.sleep(LAPSE_RESTART_SECONDS)
-
-    def _log_resumed(self) -> None:
-        _LOG.info("lease_lapse_service.resumed", extra={"failed_run_count": self._failed_run_count})
-        self._failed_run_count = 0
 
     async def _lapsed(self, principal: Principal, generation: str) -> None:
         _LOG.info("member_lease.lapsed", extra={"sub": principal.sub})
         await self._lease_ended(principal, generation)
-
-    @staticmethod
-    def _log_failure(failure: Exception) -> None:
-        _LOG.warning(
-            "lease_lapse_service.failed",
-            extra={"error_type": failure_type(failure)},
-            exc_info=None if isinstance(failure, PlaceStoreError) else failure,
-        )
