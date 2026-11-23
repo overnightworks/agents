@@ -513,7 +513,7 @@ when it has none; a failed line is a WARNING, because the turn reports the stop 
 | 422 with the `budget_exceeded` error type | `refused`, `budget_spent`, INFO |
 | another 4xx | `failed`, `gateway_refused`, with the `status` |
 | 5xx, or an error event in a 200 stream | `failed`, `gateway_failed` |
-| a reply that is no round or picture, or a round that is not whole (a name not offered, an empty call id, a call id named twice) | `failed`, `malformed_reply` |
+| a reply that is no round or picture, or a round that is not whole (a name not offered, an empty call id, a call id named twice or used in an earlier round) | `failed`, `malformed_reply` |
 | a connection refused or lost | `failed`, `connection_failed`, with no `status` unless one came before |
 | the turn's deadline | `failed`, `limit_exceeded` |
 | the host's close | `cancelled` |

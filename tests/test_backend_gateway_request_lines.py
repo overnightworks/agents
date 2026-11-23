@@ -257,6 +257,22 @@ def test_a_reply_that_names_one_call_id_twice_is_a_failed_line_without_calls_not
     assert "calls_not_run" not in line
 
 
+def test_a_round_that_reuses_a_call_id_of_an_earlier_round_is_a_failed_line_without_calls_not_run(
+    shop, log_lines
+):
+    shop.add_tool("lookup")
+
+    shop.run(
+        tool_round(tool_call("c1", "lookup", {}), tool_call("c2", "lookup", {})),
+        tool_round(tool_call("c1", "lookup", {})),
+        one_call_per_reply=True,
+    )
+
+    _, reused = log_lines.of(MODEL_REQUEST)
+    assert (reused["outcome"], reused["reason"]) == ("failed", "malformed_reply")
+    assert "calls_not_run" not in reused
+
+
 def test_an_error_event_is_a_gateway_failed_line_that_carries_none_of_the_event(
     scenario, log_lines
 ):

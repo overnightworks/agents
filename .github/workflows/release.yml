@@ -23,7 +23,7 @@ jobs:
       checks: read
       contents: read
       pull-requests: read
-    uses: overnightworks/quality/.github/workflows/release-gate.yml@7d1fccfcbfa984ab086ba059237ef3b263b0df09 # v0.23.1
+    uses: overnightworks/quality/.github/workflows/release-gate.yml@0cff5e74b3a9b106490723264468271a23d5579d # v0.24.0
     with:
       version: ${{ inputs.version }}
 
@@ -114,7 +114,7 @@ jobs:
     needs: [gate, build]
     permissions:
       contents: write
-    uses: overnightworks/quality/.github/workflows/release-tag.yml@7d1fccfcbfa984ab086ba059237ef3b263b0df09 # v0.23.1
+    uses: overnightworks/quality/.github/workflows/release-tag.yml@0cff5e74b3a9b106490723264468271a23d5579d # v0.24.0
     with:
       version: ${{ inputs.version }}
       commit: ${{ needs.gate.outputs.commit }}
