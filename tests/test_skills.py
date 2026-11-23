@@ -372,6 +372,9 @@ def test_an_entry_breaking_a_rule_fails_the_whole_listing_naming_the_entry(
         pytest.param(
             "https://xn--bcher-kva.example/mcp", "x", "xn-bcher-kva-example", id="punycode"
         ),
+        pytest.param(
+            "https://-.notes.example.org./mcp", "x", "notes-example-org", id="hyphens-at-either-end"
+        ),
     ],
 )
 def test_the_implicit_skill_is_named_from_the_urls_host(
@@ -400,12 +403,6 @@ def test_a_long_host_is_cut_to_a_valid_name_without_a_trailing_hyphen(
     assert len(skill.name) == length
     assert not skill.name.endswith("-")
     SkillEntry.model_validate(a_skill_entry(name=skill.name))
-
-
-def test_hyphens_at_either_end_of_the_host_are_stripped() -> None:
-    skill = implicit_skill(SERVER, "https://-.notes.example.org./mcp", None, [], SKILL_DESCRIPTION)
-
-    assert skill.name == "notes-example-org"
 
 
 @pytest.mark.parametrize(
