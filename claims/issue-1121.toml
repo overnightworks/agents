@@ -1,7 +1,0 @@
-claim_id = "1527b15846f841e5852fc7e60bb9fe5b"
-agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
-role = "builder"
-base = "3cdde307ade7f8c0910412cfd476e214510a6a54"
-branch = "claude/issue-1121-quality-v0-25-0"
-scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", ".github/workflows/release.yml"]
-opened_commit = "e8ddf6f87f290200664eaf64fa5db5643b81b872"
