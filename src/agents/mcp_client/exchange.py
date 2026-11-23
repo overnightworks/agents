@@ -31,7 +31,8 @@ from agents.member_outcomes import jsonrpc_code
 
 _MEDIA_TYPE: Final = re.compile(r"[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*")
 """A media type as a log line may carry it: type and subtype of token characters, no parameters."""
-_SDK_MEDIA_TYPES: Final = frozenset({"application/json", "text/event-stream"})
+_JSON_MEDIA_TYPE: Final = "application/json"
+_SDK_MEDIA_TYPES: Final = frozenset({_JSON_MEDIA_TYPE, "text/event-stream"})
 """The media types of an answer the SDK reads a result from."""
 
 
@@ -116,7 +117,7 @@ async def _strand_an_answer_to_no_request(
     for ever; the id is the only thing that tells such an answer from the call's own, and the SDK
     decides whether two ids are one (``coerce_request_id``), so this does the same.
     """
-    if (call := CALL_ANSWER.get()) is None or _media_type_of(response) != "application/json":
+    if (call := CALL_ANSWER.get()) is None or _media_type_of(response) != _JSON_MEDIA_TYPE:
         return
     asked = _message_of(request)
     if not isinstance(asked, JSONRPCRequest):
@@ -173,7 +174,7 @@ async def _answer_code_of(response: httpx2.Response) -> str | None:
     parses as one.
     """
     media_type = _media_type_of(response)
-    if media_type == "application/json":
+    if media_type == _JSON_MEDIA_TYPE:
         try:
             await response.aread()
             message = jsonrpc_message_adapter.validate_json(response.content, by_name=False)
