@@ -1,8 +1,0 @@
-claim_id = "d1d140c0294e4ac4b6d4dd304fa852b9"
-agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
-role = "builder"
-base = "99f410c8f3a8b36cb7c674f2bc081fc996d2bf2d"
-branch = "claude/issue-1090-round-reuse-line"
-scope = ["docs/connector.md", "src/agents/backend/gateway.py", "tests/test_backend_gateway_one_call.py", "tests/test_backend_gateway_request_lines.py"]
-opened_commit = "5e3b637c2efe8b02ccb03f2b448c286a5a9107e4"
-whole_reason = "One judgement owns a round's wholeness, its line and the doc row that names it."
