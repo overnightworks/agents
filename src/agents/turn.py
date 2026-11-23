@@ -443,8 +443,8 @@ class RoundUsage(StrictModel):
     usage: TurnUsage | None
 
 
-TokenPrice = Annotated[float, Field(ge=0)]
-PositivePrice = Annotated[float, Field(gt=0)]
+TokenPrice = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+PositivePrice = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 
 class PriceStep(StrictModel):

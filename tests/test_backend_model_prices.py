@@ -199,6 +199,17 @@ def test_a_window_the_answer_leaves_out_is_a_malformed_reply(scenario):
     assert (stopped.kind, stopped.code) == (TurnStopKind.FAILED, FailureCode.PROVIDER_ERROR)
 
 
+@pytest.mark.parametrize("price", ["1e400", "NaN"], ids=["infinite", "nan"])
+def test_a_price_that_is_no_finite_number_is_a_malformed_reply(scenario, price):
+    body = json.dumps({"data": [model_entry(MODEL, a_model_prices())]}).replace(
+        "2e-06", price, 1
+    )
+
+    _, stopped, _ = priced(scenario, Reply(body=body.encode()))
+
+    assert (stopped.kind, stopped.code) == (TurnStopKind.FAILED, FailureCode.PROVIDER_ERROR)
+
+
 def test_a_lost_connection_is_provider_unavailable(scenario):
     backend = GatewayBackend(
         scenario.config(), transport=FailingTransport(httpx2.ConnectError("x"))
