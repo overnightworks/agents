@@ -3,6 +3,6 @@ agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
 role = "builder"
 base = "06acffed12936f295b68fbd993e2a0c5900f7388"
 branch = "claude/issue-1086-model-prices-from-gateway"
-scope = [".aco/ahead-of-caller.toml", "docs/connector.md", "src/agents/backend/fake_gateway.py", "src/agents/backend/gateway.py", "src/agents/backend/model_prices.py", "src/agents/turn.py", "tests/test_backend_model_prices.py"]
+scope = [".aco/ahead-of-caller.toml", ".importlinter", "docs/connector.md", "src/agents/backend/fake_gateway.py", "src/agents/backend/gateway.py", "src/agents/backend/model_prices.py", "src/agents/turn.py", "tests/support/gateway_turn_support.py", "tests/test_backend_gateway_request_lines.py", "tests/test_backend_model_prices.py"]
 opened_commit = "46682d1303978c2e1470a86341c574f1e5b45b6c"
 whole_reason = "A model's window and its prices, read from their owner, are one price record."
