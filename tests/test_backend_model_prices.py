@@ -239,8 +239,9 @@ def test_a_closed_backend_raises_before_any_request(scenario):
         await backend.aclose()
         await backend.model_prices(MODEL)
 
+    read = closed_read()
     with pytest.raises(RuntimeError) as raised:
-        gateway_turn_support.in_virtual_time(closed_read())
+        gateway_turn_support.in_virtual_time(read)
 
     frames = [frame for frame, _ in traceback.walk_tb(raised.value.__traceback__)]
     held = [value for frame in frames for value in frame.f_locals.values()]
