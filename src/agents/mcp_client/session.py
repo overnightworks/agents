@@ -286,8 +286,8 @@ def _failure_of(error: BaseException, answered: _HttpAnswer | None) -> CallFailu
 
 
 def _settled(
-    leaf: BaseException, from_body: set[int], auth: _BearerAuth, *, beside_no_echo: bool
-) -> BaseException:
+    leaf: Exception, from_body: set[int], auth: _BearerAuth, *, beside_no_echo: bool
+) -> Exception:
     """A failure or a leaf the caller's body raised stays as it was; an error of a call becomes its
     failure.
 
@@ -306,10 +306,10 @@ def _settled(
     return leaf
 
 
-def _leaves_of(error: BaseException) -> Iterator[BaseException]:
+def _leaves_of(error: Exception) -> Iterator[Exception]:
     """The errors an exception group holds, however deep; any other error is its own leaf."""
-    if isinstance(error, BaseExceptionGroup):
-        for inner in cast("BaseExceptionGroup[BaseException]", error).exceptions:
+    if isinstance(error, ExceptionGroup):
+        for inner in cast("ExceptionGroup[Exception]", error).exceptions:
             yield from _leaves_of(inner)
     else:
         yield error
@@ -327,7 +327,7 @@ def _folded(
     auth: _BearerAuth,
     *,
     cancelled_in_body: bool,
-) -> CallFailure | asyncio.CancelledError | ExceptionGroup[Exception] | BaseException:
+) -> Exception | asyncio.CancelledError:
     """What a session that ended in ``error`` raises.
 
     The SDK's task groups wrap what is raised inside them, so every leaf is looked at: a failure of
@@ -349,7 +349,7 @@ def _folded(
     leaves = [_settled(leaf, from_body_ids, auth, beside_no_echo=beside_no_echo) for leaf in found]
     if len(leaves) == 1:
         return leaves[0]
-    return ExceptionGroup("the session failed", cast("list[Exception]", leaves))
+    return ExceptionGroup("the session failed", leaves)
 
 
 @asynccontextmanager
