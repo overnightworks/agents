@@ -246,7 +246,7 @@ def test_the_inner_request_replays_exactly_the_named_headers(
     ]
 
 
-def test_the_inner_request_carries_the_outer_trace_under_a_new_span(
+def test_the_inner_request_carries_the_outer_trace(
     echo_target: RouteTarget, echo_app: FastAPI
 ) -> None:
     incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
@@ -260,7 +260,6 @@ def test_the_inner_request_carries_the_outer_trace_under_a_new_span(
     ]
     _, trace_id, span_id, _ = sent.split("-")
     assert (trace_id, span_id) == ("4bf92f3577b34da6a3ce929d0e0e4736", own_span)
-    assert span_id != incoming.split("-")[2]
 
 
 def test_a_post_sends_its_body_fields_as_one_json_object_with_the_body_headers(

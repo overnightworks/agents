@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.14"
 
 [[package]]
@@ -574,14 +574,14 @@ provides-extras = ["backend", "mcp-server", "redis", "voice", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "overnightworks-logline", git = "https://github.com/overnightworks/logline?tag=v1.0.0" },
+    { name = "overnightworks-logline", git = "https://github.com/overnightworks/logline?tag=v1.9.0" },
     { name = "overnightworks-tandem", git = "https://github.com/overnightworks/tandem?tag=v0.13.1" },
 ]
 
 [[package]]
 name = "overnightworks-logline"
-version = "1.0.0"
-source = { git = "https://github.com/overnightworks/logline?tag=v1.0.0#e37b04d720e444db42892fe84ae57e43a8e8e816" }
+version = "1.9.0"
+source = { git = "https://github.com/overnightworks/logline?tag=v1.9.0#cca495315f8fb25dae85851592a2c42376052c58" }
 dependencies = [
     { name = "opentelemetry-api" },
     { name = "structlog" },
