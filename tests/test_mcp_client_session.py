@@ -7,10 +7,7 @@ other request through to the library's own front.
 from __future__ import annotations
 
 import asyncio
-import logging
 import secrets
-from collections.abc import Iterator
-from contextlib import contextmanager
 from http import HTTPStatus
 from typing import Any
 
@@ -64,6 +61,7 @@ from tests.support.member_session_support import (
     SUBJECT,
     a_window,
     answering,
+    logged_outside_the_wire_trace,
     opened,
     reads_the_standing,
     reads_the_window,
@@ -680,7 +678,7 @@ async def test_a_jsonrpc_error_that_is_no_refused_revision_is_an_unusable_answer
 # What leaves a session of the bearer.
 
 
-async def test_a_content_type_that_reflects_the_bearer_reaches_no_log_line_of_the_sdk(
+async def test_a_content_type_that_reflects_the_bearer_reaches_no_log_line_but_the_wire_trace(
     app: MemberApp, gate: ScriptedGate, caplog: pytest.LogCaptureFixture
 ) -> None:
     stands(app)
@@ -689,23 +687,10 @@ async def test_a_content_type_that_reflects_the_bearer_reaches_no_log_line_of_th
     reflected = f"application/{bearer.get_secret_value()}"
     gate.script(READ, lambda reply: reply.body(HTTPStatus.OK, reflected, b"{}"))
 
-    with without_the_wire_trace_of_the_http_library():
-        with pytest.raises(UnusableAnswer):
-            await reads_the_standing(gate, bearer)
+    with pytest.raises(UnusableAnswer):
+        await reads_the_standing(gate, bearer)
 
-    assert bearer.get_secret_value() not in caplog.text
-
-
-@contextmanager
-def without_the_wire_trace_of_the_http_library() -> Iterator[None]:
-    """The library traces response headers at DEBUG before the auth flow sees them."""
-    wire = logging.getLogger("httpcore2")
-    before = wire.level
-    wire.setLevel(logging.INFO)
-    try:
-        yield
-    finally:
-        wire.setLevel(before)
+    assert bearer.get_secret_value() not in logged_outside_the_wire_trace(caplog)
 
 
 @pytest.mark.parametrize(

@@ -49,6 +49,9 @@ def app() -> MemberApp:
     return MemberApp()
 
 
+WIRE_TRACE_LOGGER = "httpcore2.http11"
+
+
 @pytest.fixture
 async def gate(app: MemberApp, caplog: pytest.LogCaptureFixture) -> AsyncIterator[ScriptedGate]:
     async with served(app, caplog) as gate:
@@ -67,7 +70,19 @@ async def served(app: MemberApp, caplog: pytest.LogCaptureFixture) -> AsyncItera
     gate = ScriptedGate(app)
     async with gate.serving():
         yield gate
-    assert not [shown for shown in gate.presented - {""} if shown in caplog.text]
+    logged = logged_outside_the_wire_trace(caplog)
+    assert not [shown for shown in gate.presented - {""} if shown in logged]
+
+
+def logged_outside_the_wire_trace(caplog: pytest.LogCaptureFixture) -> str:
+    """Every captured record but the HTTP library's trace of the response headers.
+
+    That trace shows only what the app echoes, and a host's logger setting is deliberate,
+    so the library does not silence it.
+    """
+    return "\n".join(
+        record.getMessage() for record in caplog.records if record.name != WIRE_TRACE_LOGGER
+    )
 
 
 def a_bearer_let_in(gate: ScriptedGate) -> SecretStr:
