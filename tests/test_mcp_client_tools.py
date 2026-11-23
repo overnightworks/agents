@@ -12,12 +12,14 @@ import pytest
 from mcp_types import ListToolsResult, Tool, ToolAnnotations
 from pydantic import SecretStr
 
+from agents.mcp_client import MemberSession
+from agents.mcp_server import ResourceChanges
 from agents.member import MEMBER_TOOL_ARGUMENTS, SPEAK_TOOL
 from agents.member_outcomes import INVALID_ANSWER_CODE, StatusFailure, UnusableAnswer
 from agents.tools import ToolEffect, ToolOutcome
 from agents.turn import TOOL_IMAGE_MEDIA_TYPE
 from tests.support import member_session_support
-from tests.support.mcp_server_support import MemberApp
+from tests.support.mcp_server_support import MemberApp, ToolOffer
 from tests.support.member_session_support import MemberTools, opened, served
 from tests.support.member_wire import speak_wire
 from tests.support.scripted_gate import CALL, LIST_TOOLS, GateReply, ScriptedGate
@@ -28,6 +30,7 @@ pytestmark = pytest.mark.anyio
 anyio_backend = member_session_support.anyio_backend
 app = member_session_support.app
 bearer = member_session_support.bearer
+changes = member_session_support.changes
 
 
 @pytest.fixture
@@ -214,3 +217,38 @@ async def test_an_invoked_tool_the_app_refuses_is_a_failure(
             await session.invoke(SPEAK_TOOL, speak_wire())
 
     assert failure.value.status == HTTPStatus.SERVICE_UNAVAILABLE
+
+
+async def refused_as(session: MemberSession, name: str) -> HTTPStatus | bool:
+    """The status the app answered when ``invoke`` raised, else whether the outcome is an error."""
+    try:
+        outcome = await session.invoke(name, {})
+    except StatusFailure as failure:
+        return failure.status
+    return outcome.is_error
+
+
+@pytest.mark.parametrize(
+    ("name", "refusal"),
+    [
+        pytest.param("tool-the-app-never-declared", HTTPStatus.BAD_REQUEST, id="undeclared"),
+        pytest.param(SPEAK_TOOL, True, id="declared-but-not-offered"),
+    ],
+)
+async def test_an_invoked_tool_outside_the_offer_is_a_status_failure_only_when_undeclared(
+    app: MemberApp,
+    changes: ResourceChanges,
+    tools: MemberTools,
+    caplog: pytest.LogCaptureFixture,
+    name: str,
+    refusal: HTTPStatus | bool,
+) -> None:
+    async with served(
+        app, caplog, tools=tools.served(), changes=changes, offered_tools=ToolOffer()
+    ) as gate:
+        subject_bearer = member_session_support.a_bearer_let_in(gate)
+        async with opened(gate, subject_bearer) as session:
+            refused = await refused_as(session, name)
+
+    assert refused == refusal
+    assert not tools.calls

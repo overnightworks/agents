@@ -764,7 +764,9 @@ type: `, with no information of the app; the client leaves it, since silencing i
 changing a host's logger levels, which a library never touches. No bearer is in any representation,
 message or log line of the client; the HTTP library's own trace of response headers shows what an
 app echoes, and an app that echoes the bearer into a 200 body that is no JSON-RPC finds it in the
-SDK's `mcp.client.streamable_http` ERROR record and in the answer's exception chain.
+SDK's `mcp.client.streamable_http` ERROR record, which quotes a short body whole and cuts a long one
+in the middle, and in the answer's exception chain, in the suppressed `__context__` and not in the
+default traceback.
 
 ## Reading an app's skills
 
