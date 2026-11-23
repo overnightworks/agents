@@ -204,7 +204,10 @@ figure draws behind a figure look in every framing. In `agents`, "room" in a loo
 **CALLING-41.** An accept may carry `looks` (`agents.member`), the agent's looks, at least one,
 first choice first: a figure look `{kind: "figure", url, sha256, gestures, room}` or a video look `{kind:
 "video", name}`, the name 1 to 64 ASCII letters of either case, digits, `.`, `_` or `-`. At most one
-look is a figure and no video name stands twice. The record checks only that form. The app decides
+look is a figure and no video name stands twice. A figure's, a clip's and a room's `url` is an
+absolute `https` address with a host and no user part, query, fragment, whitespace or backslash, and
+no `%` or other forbidden character in the host; a port is allowed. Its `sha256` is 64 lowercase
+hexadecimal characters. The record checks only that form. The app decides
 which look it can show and shows the first it can, so a look it cannot show (a kind it does not
 draw, a name its video service does not offer, a look that fails to start) is skipped for the next;
 with none it can show, it shows no look of the accept's and still accepts. The old `figure` of an
@@ -265,7 +268,10 @@ figure draws behind the figure in every framing. The old `figure` and a video lo
 app treats the room as it treats the figure: it fetches from sources it allows and serves only
 bytes whose digest matches, and hands them to figure, whose room check judges them before it draws;
 the app may run the same check before it keeps a room. A room that is refused, fails or does not
-arrive shows none; the figure stays and the accept stands. The room is the agent's for its seat,
+arrive shows none; the figure stays and the accept stands. A room whose `url` or `sha256` breaks the
+form of CALLING-41 is no such room: as for the figure or a clip, the accept's arguments do not fit
+the tool, the tool answers an error that names each failing path and its error type, and the whole
+accept is refused. The soft drop covers a well-formed room. The room is the agent's for its seat,
 the same for everyone at the place.
 
 The rules below hold for every look the app shows; the app, not the library, shows the look.
