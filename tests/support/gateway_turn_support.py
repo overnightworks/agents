@@ -484,6 +484,15 @@ async def _noted() -> ToolOutcome:
     return ToolOutcome("noted", is_error=False)
 
 
+def answering(outcome: ToolOutcome) -> Callable[[], Awaitable[ToolOutcome]]:
+    """The ``answer`` of a shop tool that always returns ``outcome``."""
+
+    async def answer() -> ToolOutcome:
+        return outcome
+
+    return answer
+
+
 def a_tool_request(
     tools: list[HandTool],
     max_tool_calls: int,

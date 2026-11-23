@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 import pytest
 
@@ -15,8 +16,6 @@ from agents.turn import (
     FailureCode,
     ToolRound,
     Turn,
-    TurnMessage,
-    TurnRole,
 )
 from agents.turn_events import FinalEvent, ToolResultEvent
 from tests.support import gateway_turn_support
@@ -28,6 +27,7 @@ from tests.support.gateway_turn_support import (
     a_round_call,
     a_tool_request,
     a_tool_round,
+    answering,
     sent,
 )
 from tests.support.log_lines import log_lines
@@ -40,22 +40,12 @@ MALFORMED = (TurnStopKind.FAILED, FailureCode.PROVIDER_ERROR)
 NOT_RUN = "not run: one call per reply"
 
 
-def a_loading_answer(*names: str):
-    async def answer() -> ToolOutcome:
-        return ToolOutcome("", is_error=False, loads=names)
-
-    return answer
-
-
-def a_loader_shop(shop, *, loads: tuple[str, ...] = ("hidden",)):
-    """A shop with a loader tool that loads ``loads``, and one deferred tool, ``hidden``."""
-    shop.add_tool("loader", answer=a_loading_answer(*loads))
+def a_loader_shop(shop):
+    """A shop with a loader tool that loads ``hidden``, and that one deferred tool."""
+    shop.add_tool("loader", answer=answering(ToolOutcome("", is_error=False, loads=("hidden",))))
     shop.add_tool(
         "hidden", parameters={"type": "object", "properties": {"mode": {"type": "string"}}}
     )
-    for name in loads:
-        if name != "hidden":
-            shop.add_tool(name)
 
 
 def tool_messages(gateway, index: int) -> list[dict]:
@@ -288,10 +278,7 @@ def test_a_loading_answer_reaches_the_next_round_and_the_host(shop):
 def test_a_loading_answer_that_breaks_a_rule_is_a_failed_call_and_the_turn_goes_on(
     shop, log_lines, outcome
 ):
-    async def answer() -> ToolOutcome:
-        return outcome
-
-    shop.add_tool("loader", answer=answer)
+    shop.add_tool("loader", answer=answering(outcome))
     shop.add_tool("hidden")
 
     events, stopped, gateway = shop.run(
@@ -320,12 +307,7 @@ def test_a_call_to_a_deferred_tool_nothing_loaded_is_served_like_any_offered_too
 def a_second_turn(shop, first_events, *, deferred):
     """The next turn of the conversation: what the first recorded, the reply and a new message."""
     final = first_events[-1]
-    history = [
-        TurnMessage(role=TurnRole.USER, text="Hi"),
-        *final.tool_rounds,
-        TurnMessage(role=TurnRole.ASSISTANT, text=final.text),
-        TurnMessage(role=TurnRole.USER, text="Again"),
-    ]
+    history = a_history(*final.tool_rounds, after=final.text)
     return shop.run(completion("ok"), history=history, deferred=deferred)
 
 
@@ -337,71 +319,80 @@ def assert_replay_is_byte_equal(first: tuple, second_gateway) -> None:
     assert json.dumps(replayed) == last_sent
 
 
-def a_failing_answer():
-    async def answer() -> ToolOutcome:
-        return ToolOutcome("broken", is_error=True)
+@dataclass(frozen=True)
+class ReplayCase:
+    """A turn to replay: the replies it gets, the tools it defers and the options it runs with."""
 
-    return answer
-
-
-def a_seeing_answer():
-    async def answer() -> ToolOutcome:
-        return ToolOutcome("seen", is_error=False, image=a_tool_image())
-
-    return answer
-
-
-@pytest.mark.parametrize(
-    "case",
-    ["two-calls", "one-call-per-reply", "error-and-image", "loading"],
-)
-def test_the_recorded_rounds_replay_byte_equal_to_what_the_turn_sent(shop, case):
+    replies: tuple
     deferred: tuple[str, ...] = ()
-    options: dict = {}
-    if case == "two-calls":
-        shop.add_tool("lookup")
-        replies = [
-            tool_round(
-                tool_call("a", "lookup", {"q": "x"}),
-                tool_call("b", "lookup", {}),
-                content="Looking",
-            ),
-            completion("Done."),
-        ]
-    elif case == "one-call-per-reply":
-        shop.add_tool("lookup")
-        calls = [tool_call(f"c{n}", "lookup", {}) for n in range(3)]
-        replies = [tool_round(*calls), completion("Done.")]
-        options = {"one_call_per_reply": True}
-    elif case == "error-and-image":
-        shop.add_tool("failing", answer=a_failing_answer())
-        shop.add_tool("seeing", answer=a_seeing_answer())
-        replies = [
-            tool_round(tool_call("a", "failing", {}), tool_call("b", "seeing", {})),
-            completion("Done."),
-        ]
-    else:
-        a_loader_shop(shop)
-        deferred = ("hidden",)
-        replies = [
-            tool_round(tool_call("a", "loader", {})),
-            tool_round(tool_call("b", "hidden", {"mode": "x"})),
-            completion("Done."),
-        ]
+    one_call_per_reply: bool = False
 
-    events, stopped, gateway = shop.run(*replies, deferred=deferred, **options)
+
+def _lookup_two_calls(shop) -> ReplayCase:
+    shop.add_tool("lookup")
+    round_ = tool_round(
+        tool_call("a", "lookup", {"q": "x"}), tool_call("b", "lookup", {}), content="Looking"
+    )
+    return ReplayCase((round_, completion("Done.")))
+
+
+def _lookup_three_calls_one_per_reply(shop) -> ReplayCase:
+    shop.add_tool("lookup")
+    round_ = tool_round(*(tool_call(f"c{n}", "lookup", {}) for n in range(3)))
+    return ReplayCase((round_, completion("Done.")), one_call_per_reply=True)
+
+
+def _an_error_answer_and_an_image_answer(shop) -> ReplayCase:
+    shop.add_tool("failing", answer=answering(ToolOutcome("broken", is_error=True)))
+    image = ToolOutcome("seen", is_error=False, image=a_tool_image())
+    shop.add_tool("seeing", answer=answering(image))
+    round_ = tool_round(tool_call("a", "failing", {}), tool_call("b", "seeing", {}))
+    return ReplayCase((round_, completion("Done.")))
+
+
+def _a_loading_answer_then_the_loaded_tool(shop) -> ReplayCase:
+    a_loader_shop(shop)
+    replies = (
+        tool_round(tool_call("a", "loader", {})),
+        tool_round(tool_call("b", "hidden", {"mode": "x"})),
+        completion("Done."),
+    )
+    return ReplayCase(replies, deferred=("hidden",))
+
+
+REPLAY_CASES = {
+    "two-calls": _lookup_two_calls,
+    "one-call-per-reply": _lookup_three_calls_one_per_reply,
+    "error-and-image": _an_error_answer_and_an_image_answer,
+    "loading": _a_loading_answer_then_the_loaded_tool,
+}
+
+
+@pytest.mark.parametrize("arrange", REPLAY_CASES.values(), ids=REPLAY_CASES.keys())
+def test_the_recorded_rounds_replay_byte_equal_to_what_the_turn_sent(shop, arrange):
+    case = arrange(shop)
+
+    events, stopped, gateway = shop.run(
+        *case.replies, deferred=case.deferred, one_call_per_reply=case.one_call_per_reply
+    )
     assert stopped is None
-    _, second_stopped, second = a_second_turn(shop, events, deferred=deferred)
+    _, second_stopped, second = a_second_turn(shop, events, deferred=case.deferred)
 
     assert second_stopped is None
     assert_replay_is_byte_equal((events, stopped, gateway), second)
-    if case == "one-call-per-reply":
-        (round_,) = events[-1].tool_rounds
-        assert [(call.is_error, call.result) for call in round_.calls] == [
-            (False, "noted"),
-            (True, NOT_RUN),
-            (True, NOT_RUN),
-        ]
+
+
+def test_a_round_split_by_one_call_per_reply_records_the_calls_not_run_as_errors(shop):
+    case = _lookup_three_calls_one_per_reply(shop)
+
+    events, _, _ = shop.run(*case.replies, one_call_per_reply=True)
+
+    (round_,) = events[-1].tool_rounds
+    assert [(call.is_error, call.result) for call in round_.calls] == [
+        (False, "noted"),
+        (True, NOT_RUN),
+        (True, NOT_RUN),
+    ]
 
 
 def test_a_replayed_history_counts_in_the_request_bound(shop):

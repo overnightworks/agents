@@ -55,8 +55,7 @@ id that appears twice across its rounds, and a replayed id that the model reuses
 gateway mints the ids of a turn; a host that writes a round mints ids from `[A-Za-z0-9_-]`, the
 form the route accepts. Deferral and references need a gateway model that honours them: the adapter
 sends them as they are and does not check the model. A call to a deferred tool that no result
-loaded is served like any offered tool. Proved by `tests/test_backend_gateway_rounds.py` and
-`tests/test_agent_file.py`.
+loaded is served like any offered tool. Proved by `tests/test_backend_gateway_rounds.py`.
 
 `person` is a `TurnPerson` (frozen, always a person): `principal` (the verified `(iss, sub)`),
 `role` (the app role) and `groups`, an async callable returning the person's groups. Proved by
