@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 
 import httpx2
 from pydantic import JsonValue
 
+from agents.backend.model_prices import model_info_of
 from agents.tools import JsonObject
+from agents.turn import ModelPrices
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,22 @@ def picture(content: bytes) -> Reply:
     """A 200 image generation that returns these bytes as the one entry's ``b64_json``."""
     entry = {"b64_json": base64.b64encode(content).decode("ascii")}
     return Reply(body=json.dumps({"data": [entry]}).encode())
+
+
+def model_entry(
+    model_name: str, prices: ModelPrices, *, unpriced: Collection[str] = ()
+) -> JsonObject:
+    """One deployment of ``model_name`` in a ``/model/info`` answer, priced as ``prices`` says.
+
+    Each name in ``unpriced`` is a price field of ``ModelPrices`` the entry has no price for,
+    written as the gateway writes a missing price.
+    """
+    return {"model_name": model_name, "model_info": model_info_of(prices, unpriced)}
+
+
+def model_info(*entries: JsonObject) -> Reply:
+    """A 200 answer of ``GET /v1/model/info`` listing these entries."""
+    return Reply(body=json.dumps({"data": list(entries)}).encode())
 
 
 class FakeGateway(httpx2.AsyncBaseTransport):
