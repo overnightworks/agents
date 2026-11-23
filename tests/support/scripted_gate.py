@@ -188,6 +188,16 @@ async def hangs(_reply: GateReply) -> None:
     await asyncio.Event().wait()
 
 
+def hangs_once_entered(entered: asyncio.Event) -> Handler:
+    """An answer that tells a test its request arrived and then never ends."""
+
+    async def hang(reply: GateReply) -> None:
+        entered.set()
+        await hangs(reply)
+
+    return hang
+
+
 async def cuts(reply: GateReply) -> None:
     await reply.cut()
 

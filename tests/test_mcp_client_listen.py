@@ -25,6 +25,7 @@ from tests.support.member_session_support import (
     LIMIT_SECONDS,
     ROOM,
     SUBJECT,
+    cancelled_once_entered,
     opened,
     served,
     stands,
@@ -36,6 +37,7 @@ from tests.support.scripted_gate import (
     GateReply,
     ScriptedGate,
     hangs,
+    hangs_once_entered,
 )
 
 pytestmark = pytest.mark.anyio
@@ -349,17 +351,12 @@ async def test_a_task_cancelled_before_the_acknowledgement_ends_as_the_cancellat
 
     async def opens_and_waits(reply: GateReply) -> None:
         await reply.open_stream()
-        opened_without_acknowledging.set()
-        await hangs(reply)
+        await hangs_once_entered(opened_without_acknowledging)(reply)
 
     gate.script(LISTEN, opens_and_waits)
     task = asyncio.create_task(listens(gate, bearer))
-    async with asyncio.timeout(LIMIT_SECONDS):
-        await opened_without_acknowledging.wait()
-    task.cancel()
 
-    async with asyncio.timeout(LIMIT_SECONDS):
-        (ended,) = await asyncio.gather(task, return_exceptions=True)
+    ended = await cancelled_once_entered(task, opened_without_acknowledging)
 
     assert isinstance(ended, asyncio.CancelledError)
 

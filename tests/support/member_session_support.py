@@ -3,6 +3,7 @@ bearer it lets in, and the records it shows."""
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import secrets
 from collections.abc import AsyncIterator
@@ -204,3 +205,13 @@ def answering(status: HTTPStatus) -> Any:
         await reply.status(status)
 
     return answer
+
+
+async def cancelled_once_entered(task: asyncio.Task[Any], entered: asyncio.Event) -> object:
+    """What the task ends as when it is cancelled once it has entered the step ``entered`` marks."""
+    async with asyncio.timeout(LIMIT_SECONDS):
+        await entered.wait()
+    task.cancel()
+    async with asyncio.timeout(LIMIT_SECONDS):
+        (ended,) = await asyncio.gather(task, return_exceptions=True)
+    return ended

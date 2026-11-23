@@ -21,6 +21,7 @@ from tests.support.mcp_server_support import (
 )
 from tests.support.member_session_support import (
     LIMIT_SECONDS,
+    cancelled_once_entered,
     opened,
     reads_the_standing,
     stands,
@@ -29,9 +30,8 @@ from tests.support.scripted_gate import (
     CALL,
     DISCOVER,
     READ,
-    GateReply,
     ScriptedGate,
-    hangs,
+    hangs_once_entered,
 )
 from tests.support.sdk_transport import (
     ClosingHold,
@@ -164,22 +164,14 @@ async def test_a_task_cancelled_during_a_member_call_ends_as_the_cancellation(
 ) -> None:
     calling = asyncio.Event()
 
-    async def hangs_in_the_call(reply: GateReply) -> None:
-        calling.set()
-        await hangs(reply)
-
     async def invokes() -> None:
         async with opened(gate, bearer) as session:
             await session.invoke("a-tool", {})
 
-    gate.script(CALL, hangs_in_the_call)
+    gate.script(CALL, hangs_once_entered(calling))
     task = asyncio.create_task(invokes())
-    async with asyncio.timeout(LIMIT_SECONDS):
-        await calling.wait()
-    task.cancel()
 
-    async with asyncio.timeout(LIMIT_SECONDS):
-        (ended,) = await asyncio.gather(task, return_exceptions=True)
+    ended = await cancelled_once_entered(task, calling)
 
     assert isinstance(ended, asyncio.CancelledError)
 
@@ -308,19 +300,10 @@ async def test_a_task_cancelled_while_the_session_discovers_ends_as_the_cancella
     gate: ScriptedGate, bearer: SecretStr
 ) -> None:
     discovering = asyncio.Event()
-
-    async def hangs_in_discovery(reply: GateReply) -> None:
-        discovering.set()
-        await hangs(reply)
-
-    gate.script(DISCOVER, hangs_in_discovery)
+    gate.script(DISCOVER, hangs_once_entered(discovering))
     task = asyncio.create_task(reads_the_standing(gate, bearer))
-    async with asyncio.timeout(LIMIT_SECONDS):
-        await discovering.wait()
-    task.cancel()
 
-    async with asyncio.timeout(LIMIT_SECONDS):
-        (ended,) = await asyncio.gather(task, return_exceptions=True)
+    ended = await cancelled_once_entered(task, discovering)
 
     assert isinstance(ended, asyncio.CancelledError)
 
@@ -331,12 +314,8 @@ async def test_a_task_cancelled_while_the_session_closes_ends_as_the_cancellatio
     hold = ClosingHold()
     monkeypatch.setattr("agents.mcp_client.session.streamable_http_client", hold.transport())
     task = asyncio.create_task(reads_the_standing_without_reading(gate, bearer))
-    async with asyncio.timeout(LIMIT_SECONDS):
-        await hold.closing.wait()
-    task.cancel()
 
-    async with asyncio.timeout(LIMIT_SECONDS):
-        (ended,) = await asyncio.gather(task, return_exceptions=True)
+    ended = await cancelled_once_entered(task, hold.closing)
 
     assert isinstance(ended, asyncio.CancelledError)
     assert hold.cancelled.is_set()
