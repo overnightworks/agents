@@ -92,25 +92,15 @@ def test_a_step_the_gateway_lists_unset_is_no_step(scenario):
     assert prices.steps == ()
 
 
+@pytest.mark.parametrize("missing", ["unpriced", "absent"])
 @pytest.mark.parametrize(
-    "unpriced",
+    "field",
     ["input_per_token", "output_per_token", "cache_read_per_token", "cache_write_5m_per_token"],
 )
-def test_a_missing_base_price_is_the_missing_base_price_error(scenario, unpriced):
-    answer = model_info(model_entry(MODEL, a_model_prices(), unpriced=[unpriced]))
-
-    prices, error, _ = priced(scenario, answer)
-
-    assert prices is None
-    assert error.reason is ModelPricesFailure.BASE_PRICE_MISSING
-
-
-@pytest.mark.parametrize(
-    "absent",
-    ["input_per_token", "output_per_token", "cache_read_per_token", "cache_write_5m_per_token"],
-)
-def test_a_base_price_the_entry_has_no_key_for_is_the_missing_base_price_error(scenario, absent):
-    answer = model_info(model_entry(MODEL, a_model_prices(), absent=[absent]))
+def test_a_base_price_with_no_value_or_no_key_is_the_missing_base_price_error(
+    scenario, field, missing
+):
+    answer = model_info(model_entry(MODEL, a_model_prices(), **{missing: [field]}))
 
     prices, error, _ = priced(scenario, answer)
 
