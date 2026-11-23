@@ -726,8 +726,9 @@ stripped again (`https://Notes.Example.org:8443/mcp` gives `notes-example-org`)
 `test_a_long_host_is_cut_to_a_valid_name_without_a_trailing_hyphen`). The name reaches the model,
 and two servers on one host that differ only in port or path derive one name, which SEP allows;
 only the label keeps their keys apart. The uri, `skill://<name>/SKILL.md`, is a key and is never
-read, since the app serves no such resource. A URL without a host, a repeated tool, an empty description or an
-empty label raises `ValueError`, and no message echoes the URL, which may carry userinfo
+read, since the app serves no such resource. A URL without a host, a host with no a-z0-9
+character, a repeated tool, an empty description or an empty label raises `ValueError`, and no
+message echoes the URL, which may carry userinfo
 (`test_an_implicit_skill_without_a_host_a_label_or_a_description_is_refused_without_the_url`).
 
 **What the runner does.** It tags each skill with its origin, ignores `allowed-tools`, intersects
