@@ -724,10 +724,11 @@ the app's protocol revision and yields a `MemberSession`:
   list counter, drops the kept list and counts in `tools_notices()`; the stream, its
   acknowledgement and the body share one deadline;
 - the member tool calls: `accept`, `decline`, `speak`, `continue_speaking`, `stop_speaking` and
-  `set_turn_state`. An error answer is a value: a refusal of the library's record, or
-  `UnrecognisedRefusal` for text that is none (`decline` also answers `DeclineOutcome.NOT_SERVED`
-  for an app that lists no tool to decline with); an answer that is no record of the tool is an
-  `UnusableAnswer`;
+  `set_turn_state`. An error answer is a value: a refusal of the library's record. Only `accept`
+  and `decline` answer `UnrecognisedRefusal` for text that is none (`decline` also answers
+  `DeclineOutcome.NOT_SERVED` for an app that lists no tool to decline with); the other four raise
+  `UnusableAnswer` for an error answer that is no refusal of the library's record or no JSON, as
+  they do for any answer that is no record of the tool;
 - skills: `list_skills(cursor, listed=0)` and `get_skill(uri)`, over the requests of
   [Reading an app's skills](#reading-an-apps-skills).
 
