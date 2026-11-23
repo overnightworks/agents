@@ -21,7 +21,7 @@ from agents.mcp_client import (
     ResourceWake,
     ToolsWake,
 )
-from agents.mcp_server import InMemoryPlaceStore, ResourceChanges
+from agents.mcp_server import ResourceChanges
 from agents.member import STANDING_URI
 from agents.member_outcomes import LISTEN_NOT_HONORED_CODE, Unreachable, UnusableAnswer
 from tests.support import member_session_support
@@ -54,17 +54,8 @@ bearer = member_session_support.bearer
 SHORT_STREAM_SECONDS = 0.3
 
 
-@pytest.fixture
-def changes() -> ResourceChanges:
-    return ResourceChanges(InMemoryPlaceStore())
-
-
-@pytest.fixture
-async def gate(
-    app: MemberApp, changes: ResourceChanges, caplog: pytest.LogCaptureFixture
-) -> AsyncIterator[ScriptedGate]:
-    async with served(app, caplog, changes=changes) as gate:
-        yield gate
+changes = member_session_support.changes
+gate = member_session_support.gate_with_changes
 
 
 async def wake_of(wakes: AsyncIterator[MemberWake]) -> MemberWake:

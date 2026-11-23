@@ -8,14 +8,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 
 import pytest
 from pydantic import SecretStr
 
 from agents.mcp_client import MemberSession, open_member_session
-from agents.mcp_server import InMemoryPlaceStore, ResourceChanges
 from agents.member_outcomes import CallFailure, UnusableAnswer
 from tests.support import member_session_support
 from tests.support.mcp_server_support import MemberApp
@@ -26,7 +25,6 @@ from tests.support.member_session_support import (
     logged_outside_the_wire_trace,
     opened,
     reads_the_standing,
-    served,
     stands,
 )
 from tests.support.scripted_gate import READ, Handler, ScriptedGate, cuts
@@ -38,10 +36,8 @@ app = member_session_support.app
 bearer = member_session_support.bearer
 
 
-@pytest.fixture
-async def gate(app: MemberApp, caplog: pytest.LogCaptureFixture) -> AsyncIterator[ScriptedGate]:
-    async with served(app, caplog, changes=ResourceChanges(InMemoryPlaceStore())) as gate:
-        yield gate
+changes = member_session_support.changes
+gate = member_session_support.gate_with_changes
 
 
 # What leaves a session of the bearer.

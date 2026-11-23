@@ -716,8 +716,9 @@ the app's protocol revision and yields a `MemberSession`:
   more) and `read_discovery` (the app's instructions and whether it declares skills; no request);
 - tools: `declared_tools`, `kept_tools`, `tools_notices` and `invoke(name, arguments)`, whose
   `ToolOutcome` holds the one picture an app answers with, its representation free of any byte. A
-  tool the app does not offer is no outcome: `invoke` raises `StatusFailure` with status 400, which
-  a runner that keeps a tool list reads as the tool not being offered now;
+  name the app never declared is no outcome: `invoke` raises `StatusFailure` with status 400. A
+  declared tool outside the app's current offer returns an error `ToolOutcome`, so a runner that
+  keeps a tool list handles both;
 - `listen()`, an async context manager whose entry returns once the app acknowledged the stream with
   `STANDING_URI` honored, else it raises `UnusableAnswer(listen_not_honored)`. It yields
   `ResourceWake(uri)` and `ToolsWake()` in the order the app sent them. A tools notice moves the

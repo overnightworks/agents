@@ -114,8 +114,8 @@ class AppDiscovery:
 
 
 class MemberSession(Protocol):
-    """What a runner reads of an app and asks of it; each call raises a ``StatusFailure``,
-    ``Unreachable`` or ``UnusableAnswer``.
+    """What a runner reads of an app and asks of it; each call fails with a ``StatusFailure``,
+    ``Unreachable`` or ``UnusableAnswer``, except a transport failure.
 
     A transport failure of a call, such as a request the app leaves unanswered for
     ``stream_seconds``, reaches the call as a bare ``asyncio.CancelledError``; the ``Unreachable``
@@ -167,9 +167,9 @@ class MemberSession(Protocol):
     async def invoke(self, name: str, arguments: JsonObject) -> ToolOutcome:
         """The tool's outcome, an error one included.
 
-        A tool the app does not offer is no outcome: the app answers 400, which raises
-        ``StatusFailure``, so a runner that keeps a tool list treats that status as the tool not
-        being offered now.
+        A name the app never declared is no outcome: the app answers 400, which raises
+        ``StatusFailure``. A declared tool outside the app's current offer returns an error
+        ``ToolOutcome``, so a runner that keeps a tool list handles both.
         """
         ...
 

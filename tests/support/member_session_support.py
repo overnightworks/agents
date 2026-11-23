@@ -15,7 +15,12 @@ import pytest
 from pydantic import SecretStr
 
 from agents.mcp_client import open_member_session
-from agents.mcp_server import PersonRequest, PersonTool
+from agents.mcp_server import (
+    InMemoryPlaceStore,
+    PersonRequest,
+    PersonTool,
+    ResourceChanges,
+)
 from agents.member import (
     MEMBER_TOOL_ARGUMENTS,
     SPEAK_TOOL,
@@ -62,6 +67,19 @@ WIRE_TRACE_LOGGER = "httpcore2.http11"
 @pytest.fixture
 async def gate(app: MemberApp, caplog: pytest.LogCaptureFixture) -> AsyncIterator[ScriptedGate]:
     async with served(app, caplog) as gate:
+        yield gate
+
+
+@pytest.fixture
+def changes() -> ResourceChanges:
+    return ResourceChanges(InMemoryPlaceStore())
+
+
+@pytest.fixture
+async def gate_with_changes(
+    app: MemberApp, changes: ResourceChanges, caplog: pytest.LogCaptureFixture
+) -> AsyncIterator[ScriptedGate]:
+    async with served(app, caplog, changes=changes) as gate:
         yield gate
 
 
