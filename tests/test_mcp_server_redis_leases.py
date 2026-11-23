@@ -1,6 +1,6 @@
 """A member's lease on a fake Redis, whose ``TIME`` a test moves: what a renewal and a read answer,
 when a lease lapses and to whom the lapse goes, and what a fresh namespace holds. The same scripts
-run on a real Redis in ``real_redis``."""
+run on a real Redis in ``tests/e2e``."""
 
 from __future__ import annotations
 
@@ -26,6 +26,8 @@ from tests.support.faulty_redis import FakeEvalshaStopsAfter
 from tests.support.log_lines import LogLines, log_lines
 from tests.support.mcp_server_support import a_member, a_member_facts
 from tests.support.redis_listen_support import UNUSUAL_PRINCIPALS, RedisClock, namespace_of
+
+pytestmark = pytest.mark.integration
 
 redis_clock = redis_listen_support.redis_clock
 log_lines = log_lines

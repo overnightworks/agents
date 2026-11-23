@@ -1180,8 +1180,8 @@ after startup, the front writes `place_subscription.failed`, ends its open liste
 every request with 503 until the pod restarts. So does a lapse service that ends on an exception
 that is no failure of the store: the front writes `listen_lapse_service.stopped` and turns dead,
 because a pod that lapses nothing would answer yes for streams that are gone.
-Proved by `tests/test_mcp_server_place_wake.py`, `tests/test_mcp_server_memory_place_store.py`, `tests/integration/test_redis_place_store.py` and
-the tests of `tests/integration/real_redis`, which `scripts/run_redis_tests.sh` runs.
+Proved by `tests/test_mcp_server_place_wake.py`, `tests/test_mcp_server_memory_place_store.py`, `tests/test_mcp_server_redis_place_store.py` and
+the tests of `tests/e2e`, which `scripts/run_redis_tests.sh` runs.
 
 **The answers.** `resources/list` answers exactly `current`, sorted (a view only beside its
 window, see [a place's view](#the-member-module)), each entry with the URI as its
@@ -1266,8 +1266,8 @@ restart without persistence every answer is no until each runner's next listen, 
 `LISTEN_BOUND_SECONDS` away. When the store fails at a listen's acknowledgement the listen answers
 `-32603` with one fixed text and calls nothing on the request task; the record may still hold the
 stream, which then lapses after the allowance. Proved by `tests/test_mcp_server_listen_liveness.py`,
-`tests/integration/test_redis_place_store.py` and the real-Redis tests of
-`tests/integration/real_redis`.
+`tests/test_mcp_server_redis_place_store.py` and the real-Redis tests of
+`tests/e2e`.
 
 **The tools of the moment.** A host that offers a member only the tools it can use now passes
 `offered_tools=`, an `OfferedTools` (exported by `agents.mcp_server`): `(principal) ->
@@ -1346,8 +1346,8 @@ the lapsed one; a lease that started again meanwhile has another generation and 
 service rides out an outage or a refusal of the store (tandem's LEASE-20, told by its `lapse_round.ended`, LOG-11)
 and is never restarted: an exception that is no failure of the store ends it with one
 `lease_lapse_service.stopped` line with its traceback, and no readiness signal reflects it. The block's exit cancels the service and waits for it. Proved by
-`tests/test_mcp_server_leases.py`, `tests/integration/test_redis_leases.py` and the real-Redis
-cells of `tests/integration/real_redis`: a lease renewed on one pod still holds, with its
+`tests/test_mcp_server_leases.py`, `tests/test_mcp_server_redis_leases.py` and the real-Redis
+cells of `tests/e2e`: a lease renewed on one pod still holds, with its
 generation, on another after the first was killed, and its lapse reaches `lease_ended` once with that
 generation.
 

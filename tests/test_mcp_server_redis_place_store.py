@@ -1,7 +1,7 @@
 """``RedisPlaceStore`` on a fake Redis: the address on the wire, the error mapping and the
 refusals, and the listen record, whose ``TIME`` a test moves: what a store lists after another
 store's listen, when a stream lapses, and what a lost reply, a lost claim or a racing stream leave
-behind. The same scripts run on a real Redis in ``real_redis``."""
+behind. The same scripts run on a real Redis in ``tests/e2e``."""
 
 from __future__ import annotations
 
@@ -58,6 +58,8 @@ from tests.support.redis_listen_support import (
     key_names,
     subscribed,
 )
+
+pytestmark = pytest.mark.integration
 
 redis_clock = redis_listen_support.redis_clock
 server = redis_listen_support.server
