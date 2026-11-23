@@ -45,6 +45,7 @@ from tests.support.gateway_turn_support import (
     server_context,
     without_rounds,
 )
+from tests.support.virtual_time import in_virtual_time
 
 scenario = gateway_turn_support.scenario
 
@@ -479,9 +480,11 @@ class _Silent(httpx2.AsyncBaseTransport):
 
 def test_a_transport_that_never_answers_ends_at_the_limit(scenario):
     silent = _Silent()
-    request = a_request().model_copy(update={"max_duration_seconds": 0.05})
+    request = a_request(max_duration_seconds=1)
 
-    _, stopped = scenario.outcome(GatewayBackend(scenario.config(), transport=silent), request)
+    _, stopped = scenario.outcome(
+        GatewayBackend(scenario.config(), transport=silent), request, virtual_time=True
+    )
 
     assert ending(stopped) == (TurnStopKind.FAILED, FailureCode.LIMIT_EXCEEDED)
     assert silent.cancelled
@@ -494,11 +497,11 @@ def test_a_groups_lookup_that_never_answers_ends_at_the_limit(scenario):
 
     person = TurnPerson(principal=Principal(iss="i", sub="s"), role="user", groups=never)
     gateway = FakeGateway(completion("ok"))
-    request = a_request().model_copy(update={"max_duration_seconds": 0.05})
+    request = a_request(max_duration_seconds=1)
     backend = GatewayBackend(scenario.config(), transport=gateway)
 
-    # A turn that ignores its limit would hang; the outer bound turns that into a failure.
-    _, stopped = asyncio.run(asyncio.wait_for(_turn(backend, request, person), timeout=5))
+    # A turn that ignores its limit finds the virtual loop with nothing to run, which fails loud.
+    _, stopped = in_virtual_time(_turn(backend, request, person))
 
     assert ending(stopped) == (TurnStopKind.FAILED, FailureCode.LIMIT_EXCEEDED)
     assert gateway.requests == []
@@ -714,7 +717,7 @@ TURN_STOPS = {
     ),
     "close_http_error": (lambda: Streamed((A_PIECE,), closes_with=httpx2.ReadError("cut")), 30, 1),
     "close_os_error": (lambda: Streamed((A_PIECE,), closes_with=OSError("cut")), 30, 1),
-    "deadline": (_Silent, 0.05, None),
+    "deadline": (_Silent, 1, None),
 }
 
 
@@ -724,10 +727,10 @@ TURN_STOPS = {
 def test_a_stopped_turn_holds_neither_the_key_nor_the_reply_in_any_frame_or_chained_error(
     scenario, transport, seconds, leaves_after
 ):
-    request = a_request().model_copy(update={"max_duration_seconds": seconds})
+    request = a_request(max_duration_seconds=seconds)
     backend = GatewayBackend(scenario.config(), transport=transport())
 
-    _, stopped = scenario.outcome(backend, request, leaves_after=leaves_after)
+    _, stopped = scenario.outcome(backend, request, leaves_after=leaves_after, virtual_time=True)
 
     assert stopped is not None
     assert _leaks(stopped, scenario.key) == []

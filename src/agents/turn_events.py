@@ -10,7 +10,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from agents.turn import JsonObject, RoundUsage, RunFile, ToolImage, TurnUsage
+from agents.turn import (
+    JsonObject,
+    RoundUsage,
+    RunFile,
+    ToolImage,
+    ToolRound,
+    TurnUsage,
+    UnicodeText,
+)
 
 
 class StreamEvent(BaseModel):
@@ -40,9 +48,10 @@ class ToolCallEvent(StreamEvent):
 class ToolResultEvent(StreamEvent):
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
-    content: str
+    content: UnicodeText
     is_error: bool = False
     image: ToolImage | None = None
+    loads: tuple[str, ...] = ()
 
 
 class FinalEvent(StreamEvent):
@@ -59,6 +68,10 @@ class FinalEvent(StreamEvent):
     ``rounds`` holds each round of a text turn in order, with its start and its own usage, so a
     host can read the last round's prompt tokens and start; ``usage`` is their sum. A picture
     turn has no rounds.
+
+    ``tool_rounds`` holds each tool round of the turn whole, in order: one for each of ``rounds``
+    but the last, which ends the turn. A host records them with ``text`` and replays them as
+    ``Turn.messages``, where they render as this turn sent them.
     """
 
     type: Literal["final"] = "final"
@@ -66,3 +79,4 @@ class FinalEvent(StreamEvent):
     files: tuple[RunFile, ...] = ()
     usage: TurnUsage | None = None
     rounds: tuple[RoundUsage, ...] = ()
+    tool_rounds: tuple[ToolRound, ...] = ()

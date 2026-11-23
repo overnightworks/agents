@@ -29,13 +29,15 @@ from agents.tools import HandTool, JsonObject, ToolDeclaration, ToolEffect, Tool
 from agents.turn import (
     FailureCode,
     Principal,
+    RoundCall,
+    ToolRound,
     Turn,
     TurnMessage,
     TurnRole,
     TurnUsage,
 )
 from agents.turn_events import FinalEvent
-from tests.support.virtual_time import VirtualTimeLoop
+from tests.support.virtual_time import VirtualTimeLoop, in_virtual_time
 
 API_GROUP = "/apps/example"
 GATEWAY_ORIGIN = "http://gateway.test"
@@ -182,9 +184,48 @@ def a_clock(start: datetime | None = None, *, step: timedelta = timedelta(second
 def without_rounds(events: list) -> list:
     """The events with the rounds of a final event left out, for tests of what is not about them."""
     return [
-        event.model_copy(update={"rounds": ()}) if isinstance(event, FinalEvent) else event
+        event.model_copy(update={"rounds": (), "tool_rounds": ()})
+        if isinstance(event, FinalEvent)
+        else event
         for event in events
     ]
+
+
+def a_round_call(
+    call_id: str = "c1",
+    tool: str = "lookup",
+    result: str = "noted",
+    arguments: JsonObject | None = None,
+    **changes,
+) -> RoundCall:
+    return RoundCall(
+        call_id=call_id, tool=tool, arguments=arguments or {}, result=result, **changes
+    )
+
+
+def a_tool_round(*calls: RoundCall, text: str | None = None) -> ToolRound:
+    return ToolRound(text=text, calls=calls or (a_round_call(),))
+
+
+def a_history(*rounds: ToolRound, after: str = "Done.") -> list[TurnMessage | ToolRound]:
+    """A conversation that held these tool rounds: the user's message, the rounds, the reply."""
+    return [
+        TurnMessage(role=TurnRole.USER, text="Hi"),
+        *rounds,
+        TurnMessage(role=TurnRole.ASSISTANT, text=after),
+        TurnMessage(role=TurnRole.USER, text="Again"),
+    ]
+
+
+# Requests that break a deferral rule, for a request built over the tools "a" and "b".
+BAD_DEFERRALS = {
+    "a-name-outside-the-tools": {"deferred": ("c",)},
+    "every-tool": {"deferred": ("a", "b")},
+    "a-round-loading-a-tool-that-is-not-deferred": {
+        "deferred": ("a",),
+        "messages": a_history(a_tool_round(a_round_call(tool="a", result="", loads=("b",)))),
+    },
+}
 
 
 def ending(stopped: TurnStopped | None):
@@ -254,10 +295,9 @@ class Scenario:
         self.outcome(GatewayBackend(self.config(), transport=gateway), person=person)
         return json.loads(gateway.requests[0].content)["user"]
 
-    def outcome(self, backend, request=None, person=None, *, leaves_after=None):
-        return asyncio.run(
-            _turn(backend, request or a_request(), person or self.person()[0], leaves_after)
-        )
+    def outcome(self, backend, request=None, person=None, *, leaves_after=None, virtual_time=False):
+        turn = _turn(backend, request or a_request(), person or self.person()[0], leaves_after)
+        return in_virtual_time(turn) if virtual_time else asyncio.run(turn)
 
 
 @pytest.fixture
@@ -402,18 +442,39 @@ class Shop:
         selected: tuple[str, ...] | None = None,
         late_after: type | None = None,
         one_call_per_reply: bool = False,
+        deferred: tuple[str, ...] = (),
+        history: list[TurnMessage | ToolRound] | None = None,
         now: Callable[[], datetime] | None = None,
         clock_of: Callable[[FakeGateway], Callable[[], datetime]] | None = None,
     ) -> tuple[list, TurnStopped | None, FakeGateway]:
+        chosen = [t for t in self.tools if selected is None or t.declaration.name in selected]
+        request = a_tool_request(
+            chosen,
+            max_tool_calls,
+            one_call_per_reply=one_call_per_reply,
+            deferred=deferred,
+            messages=history,
+        )
         gateway = FakeGateway(*replies)
+        events, stopped = self.run_request(
+            request, gateway, late_after=late_after, now=now, clock_of=clock_of
+        )
+        return events, stopped, gateway
+
+    def run_request(
+        self,
+        request: TurnRequest,
+        gateway: FakeGateway,
+        *,
+        late_after: type | None = None,
+        now: Callable[[], datetime] | None = None,
+        clock_of: Callable[[FakeGateway], Callable[[], datetime]] | None = None,
+    ) -> tuple[list, TurnStopped | None]:
         if clock_of is not None:
             now = clock_of(gateway)
-        chosen = [t for t in self.tools if selected is None or t.declaration.name in selected]
-        request = a_tool_request(chosen, max_tool_calls, one_call_per_reply=one_call_per_reply)
         backend = GatewayBackend(self.config(), tools=self.tools, transport=gateway, now=now)
         with asyncio.Runner(loop_factory=VirtualTimeLoop) as runner:
-            events, stopped = runner.run(shop_turn(backend, request, late_after))
-        return events, stopped, gateway
+            return runner.run(shop_turn(backend, request, late_after))
 
     def config(self) -> AgentConfig:
         return a_gateway_config(self.directory)
@@ -424,17 +485,24 @@ async def _noted() -> ToolOutcome:
 
 
 def a_tool_request(
-    tools: list[HandTool], max_tool_calls: int, *, one_call_per_reply: bool = False
+    tools: list[HandTool],
+    max_tool_calls: int,
+    *,
+    one_call_per_reply: bool = False,
+    deferred: tuple[str, ...] = (),
+    messages: list[TurnMessage | ToolRound] | None = None,
 ) -> TurnRequest:
+    opening: list[TurnMessage | ToolRound] = [TurnMessage(role=TurnRole.USER, text="Hi")]
     return TurnRequest(
         agent="helper",
-        turn=Turn(system="Answer briefly.", messages=[TurnMessage(role=TurnRole.USER, text="Hi")]),
+        turn=Turn(system="Answer briefly.", messages=opening if messages is None else messages),
         roles=["admin", "user"],
         tools=tuple(tool.declaration for tool in tools),
         model="text/standin",
         max_duration_seconds=TURN_BUDGET_SECONDS,
         max_tool_calls=max_tool_calls if tools else None,
         one_call_per_reply=one_call_per_reply,
+        deferred_tools=frozenset(deferred),
     )
 
 
