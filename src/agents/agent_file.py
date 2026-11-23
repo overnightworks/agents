@@ -12,7 +12,6 @@ is a display filter for the app's own UI; the boundary is the gateway's group ch
 
 from __future__ import annotations
 
-import io
 import re
 from collections.abc import Sequence
 from importlib.resources.abc import Traversable
@@ -31,8 +30,8 @@ from pydantic import (
     ValidationError,
     model_validator,
 )
-from ruamel.yaml import YAML, YAMLError
 
+from agents.front_matter import parse_front_matter, split_front_matter
 from agents.tools import ToolDeclaration
 from agents.turn import (
     AgentName,
@@ -48,12 +47,9 @@ from agents.turn import (
 )
 
 _AGENT_FILE_SUFFIX: Final = ".md"
-_FRONT_MATTER_FENCE: Final = "---"
 _AGENT_ROLES: Final = TypeAdapter(AgentRole)
 _AGENT_NAME: Final = TypeAdapter(AgentName)
-_YAML: Final = YAML(typ="safe", pure=True)
 _PICTURE_SIZE: Final = re.compile(r"[1-9]\d*x[1-9]\d*", re.ASCII)
-_DUPLICATE_KEY: Final = re.compile(r'found duplicate key "(.*?)" with value')
 
 
 def _agent_model_kind(*, is_picture: bool) -> ModelKind:
@@ -251,7 +247,11 @@ def load_agent(source: Traversable, declarations: list[ToolDeclaration]) -> Agen
     """
     file_name = source.name
     stem = _checked_stem(file_name)
-    front_matter_text, prompt = _split_file(file_name, _read_text(source, file_name))
+    text = _read_text(source, file_name)
+    try:
+        front_matter_text, prompt = split_front_matter(text)
+    except ValueError as error:
+        raise AgentFileError(f"{file_name}: {error}") from None
     front_matter = _parse_front_matter(file_name, front_matter_text)
     if front_matter.name != stem:
         raise AgentFileError(
@@ -329,48 +329,15 @@ def _read_text(source: Traversable, file_name: str) -> str:
         raise AgentFileError(f"{file_name}: the file is not UTF-8") from error
 
 
-def _split_file(file_name: str, text: str) -> tuple[str, str]:
-    lines = [line.removesuffix("\r") for line in text.split("\n")]
-    if not lines or lines[0] != _FRONT_MATTER_FENCE:
-        raise AgentFileError(
-            f"{file_name}: front matter must open with a {_FRONT_MATTER_FENCE} line"
-        )
-    try:
-        closing = lines.index(_FRONT_MATTER_FENCE, 1)
-    except ValueError as error:
-        raise AgentFileError(
-            f"{file_name}: front matter must close with a {_FRONT_MATTER_FENCE} line"
-        ) from error
-    return "\n".join(lines[1:closing]), _without_surrounding_blank_lines(lines[closing + 1 :])
-
-
-def _without_surrounding_blank_lines(lines: list[str]) -> str:
-    first = next((index for index, line in enumerate(lines) if line.strip()), len(lines))
-    last = next((index for index in reversed(range(len(lines))) if lines[index].strip()), -1)
-    return "\n".join(lines[first : last + 1])
-
-
 def _parse_front_matter(file_name: str, text: str) -> _FrontMatter:
     try:
-        # ruamel's ``load`` leaves its stream parameter untyped, so its type is partly unknown.
-        parsed = _YAML.load(io.StringIO(text))  # pyright: ignore[reportUnknownMemberType]
-    except YAMLError as error:
-        raise AgentFileError(f"{file_name}: {_yaml_problem(error)}") from None
-    if not isinstance(parsed, dict):
-        raise AgentFileError(f"{file_name}: front matter must be a mapping of keys to values")
+        parsed = parse_front_matter(text)
+    except ValueError as error:
+        raise AgentFileError(f"{file_name}: {error}") from None
     try:
         return _FrontMatter.model_validate(parsed)
     except ValidationError as error:
         raise AgentFileError(f"{file_name}: {_first_message(error)}") from None
-
-
-def _yaml_problem(error: YAMLError) -> str:
-    duplicate = _DUPLICATE_KEY.search(str(getattr(error, "problem", None)))
-    if duplicate is not None:
-        return f"{duplicate[1]}: appears twice"
-    mark = getattr(error, "problem_mark", None)
-    where = f" at line {mark.line + 1}" if mark is not None else ""
-    return f"front matter is not valid YAML{where}"
 
 
 def _first_message(error: ValidationError) -> str:
