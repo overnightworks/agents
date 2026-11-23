@@ -364,14 +364,27 @@ def test_the_implicit_skill_is_named_from_the_urls_host(
     assert skill.tools == ("lookup", "save")
 
 
-def test_a_long_host_is_cut_to_a_valid_name_of_64_characters() -> None:
-    host = ".".join(["a" * 20] * 12)
-
+@pytest.mark.parametrize(
+    ("host", "length"),
+    [
+        pytest.param(".".join(["a" * 20] * 12), 64, id="cut-inside-a-label"),
+        pytest.param(".".join(["a" * 63] * 2), 63, id="cut-on-a-hyphen"),
+    ],
+)
+def test_a_long_host_is_cut_to_a_valid_name_without_a_trailing_hyphen(
+    host: str, length: int
+) -> None:
     skill = implicit_skill(SERVER, f"https://{host}/mcp", None, [], SKILL_DESCRIPTION)
 
-    assert len(skill.name) == 64
+    assert len(skill.name) == length
     assert not skill.name.endswith("-")
     SkillEntry.model_validate(a_skill_entry(name=skill.name))
+
+
+def test_hyphens_at_either_end_of_the_host_are_stripped() -> None:
+    skill = implicit_skill(SERVER, "https://-.notes.example.org./mcp", None, [], SKILL_DESCRIPTION)
+
+    assert skill.name == "notes-example-org"
 
 
 @pytest.mark.parametrize(
@@ -381,6 +394,7 @@ def test_a_long_host_is_cut_to_a_valid_name_of_64_characters() -> None:
         pytest.param(
             SERVER, "https://secret-token@[::1/", [], SKILL_DESCRIPTION, id="malformed-host"
         ),
+        pytest.param(SERVER, "https://.../mcp", [], SKILL_DESCRIPTION, id="host-without-a-z0-9"),
         pytest.param(
             SERVER, "https://notes.example.org", ["a", "a"], SKILL_DESCRIPTION, id="repeated-tool"
         ),

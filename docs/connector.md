@@ -723,7 +723,7 @@ URL, so every runner gives an app the same name without a mapping: lowercase, ea
 characters outside `a-z0-9` one hyphen, cut to 64 characters
 (`https://Notes.Example.org:8443/mcp` gives `notes-example-org`)
 (`test_the_implicit_skill_is_named_from_the_urls_host`,
-`test_a_long_host_is_cut_to_a_valid_name_of_64_characters`). The name reaches the model, and two
+`test_a_long_host_is_cut_to_a_valid_name_without_a_trailing_hyphen`). The name reaches the model, and two
 servers on one host that differ only in port or path derive one name, which SEP allows; only the
 label keeps their keys apart. The uri, `skill://<name>/SKILL.md`, is a key and is never read, since
 the app serves no such resource. A URL without a host, a repeated tool, an empty description or an
