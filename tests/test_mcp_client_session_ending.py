@@ -97,8 +97,10 @@ async def raises_after_a_refused_call(
 async def test_a_leaf_the_body_raises_after_a_4xx_reaches_the_caller_unchanged(
     app: MemberApp, gate: ScriptedGate, bearer: SecretStr, own: Exception
 ) -> None:
+    raised = ExceptionGroup("own", [own])
+
     with pytest.raises(type(own)) as caught:
-        await raises_after_a_refused_call(app, gate, bearer, ExceptionGroup("own", [own]))
+        await raises_after_a_refused_call(app, gate, bearer, raised)
 
     assert caught.value is own
 
