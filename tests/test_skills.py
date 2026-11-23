@@ -8,6 +8,7 @@ from pydantic import JsonValue, ValidationError
 from agents.skills import (
     SkillAnswer,
     SkillEntry,
+    SkillFrontmatter,
     SkillIdentity,
     SkillListing,
     SkillRefusal,
@@ -259,6 +260,24 @@ def test_a_file_that_is_not_what_its_entry_promised_is_refused(
         read_skill(SERVER, _entry(wire), content)
 
     assert refused.value.refusal is refusal
+
+
+def test_an_entry_validates_its_front_matter_once_however_often_it_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    validations: list[object] = []
+    validate = SkillFrontmatter.model_validate.__func__  # type: ignore[attr-defined]
+
+    def counting(cls: type[SkillFrontmatter], wire: object) -> SkillFrontmatter:
+        validations.append(wire)
+        return validate(cls, wire)  # type: ignore[no-any-return]
+
+    monkeypatch.setattr(SkillFrontmatter, "model_validate", classmethod(counting))
+
+    entry = _entry(a_skill_entry(_CONTENT))
+    read_skill(SERVER, entry, _CONTENT)
+
+    assert len(validations) == 1
 
 
 def test_unknown_keys_at_every_level_are_ignored_and_the_next_cursor_is_kept() -> None:

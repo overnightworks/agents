@@ -17,6 +17,7 @@ import hashlib
 import re
 from collections.abc import Sequence
 from enum import StrEnum
+from functools import cached_property
 from typing import Annotated, Final, Literal, Self, cast
 from urllib.parse import urlsplit
 
@@ -141,7 +142,7 @@ class SkillEntry(_Record):
     def tools(self) -> tuple[str, ...]:
         return self._frontmatter_view.tools
 
-    @property
+    @cached_property
     def _frontmatter_view(self) -> SkillFrontmatter:
         return SkillFrontmatter.model_validate(self.frontmatter)
 
