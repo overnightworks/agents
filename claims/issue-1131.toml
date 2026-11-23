@@ -3,6 +3,6 @@ agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
 role = "builder"
 base = "1fd066d4ac384205429a73bb1994402687a4e7e0"
 branch = "claude/issue-1131-member-session-surface"
-scope = [".aco/ahead-of-caller.toml", "docs/ARCHITECTURE.md", "docs/connector.md", "src/agents/mcp_client", "src/agents/member_outcomes.py", "tests/support", "tests/test_mcp_client_listen.py", "tests/test_mcp_client_member_calls.py", "tests/test_mcp_client_session.py", "tests/test_mcp_client_session_ending.py", "tests/test_mcp_client_skills.py", "tests/test_mcp_client_tools.py", "tests/test_member_outcomes.py"]
+scope = [".aco/ahead-of-caller.toml", "README.md", "docs/ARCHITECTURE.md", "docs/connector.md", "src/agents/mcp_client", "src/agents/member_outcomes.py", "tests/support", "tests/test_mcp_client_bearer.py", "tests/test_mcp_client_listen.py", "tests/test_mcp_client_member_calls.py", "tests/test_mcp_client_session.py", "tests/test_mcp_client_session_ending.py", "tests/test_mcp_client_session_records.py", "tests/test_mcp_client_skills.py", "tests/test_mcp_client_tools.py", "tests/test_member_outcomes.py"]
 opened_commit = "f1293640c26198d7b1e44e83e0565003ee6589cf"
 whole_reason = "MemberSession's remaining surface ships in one release for the runner's switch, which can use no half of it alone."
