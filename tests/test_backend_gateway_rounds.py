@@ -438,3 +438,25 @@ def test_a_reply_with_text_that_is_no_unicode_is_malformed(shop):
 
     assert (stopped.kind, stopped.code) == MALFORMED
     assert not shop.seen
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [lambda arguments: arguments.pop("q"), lambda arguments: arguments.update(q=object())],
+    ids=["removes-an-argument", "stores-a-value-json-cannot-hold"],
+)
+def test_a_handler_changing_its_arguments_does_not_change_the_round_recorded(shop, mutate):
+    async def mutating() -> ToolOutcome:
+        mutate(shop.seen[-1][2])
+        return ToolOutcome("noted", is_error=False)
+
+    shop.add_tool("lookup", answer=mutating)
+
+    events, stopped, gateway = shop.run(
+        tool_round(tool_call("c1", "lookup", {"q": "x"})), completion("done")
+    )
+
+    assert stopped is None
+    (round_,) = events[-1].tool_rounds
+    assert round_.calls[0].arguments == {"q": "x"}
+    assert sent(gateway, 1)["messages"][-2]["tool_calls"][0]["function"]["arguments"] == '{"q":"x"}'

@@ -7,6 +7,7 @@ the call and not the turn. This module is the one owner of that bound; it writes
 
 from __future__ import annotations
 
+import copy
 import logging
 from dataclasses import dataclass
 from typing import Final
@@ -69,7 +70,8 @@ async def _run(
 ) -> ToolResultEvent | TurnStopped:
     """The result, or a stop handed back so the line closes before it is raised."""
     try:
-        outcome = await handler(person.principal, call.arguments)
+        # the round is recorded from the model's arguments, which a handler cannot change
+        outcome = await handler(person.principal, copy.deepcopy(call.arguments))
     except TurnStopped as stopped:
         if stopped.kind is TurnStopKind.REFUSED:
             step.refuse(stopped.code.value)
