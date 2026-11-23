@@ -9,16 +9,28 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Any
 
-from mcp_types import ErrorData, JSONRPCError
+from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
+from mcp_types import (
+    ErrorData,
+    JSONRPCError,
+    NotificationParams,
+    ResourceUpdatedNotification,
+    ResourceUpdatedNotificationParams,
+    SubscriptionFilter,
+    SubscriptionsAcknowledgedNotification,
+    SubscriptionsAcknowledgedNotificationParams,
+    SubscriptionsListenResult,
+    ToolListChangedNotification,
+)
 from pydantic import BaseModel
 
-from agents.mcp_server import McpPersonFront
+from agents.mcp_server import McpPersonFront, OfferedTools, PersonTool, ResourceChanges
 from agents.mcp_wire import MCP_ENDPOINT_PATH
 from agents.tools import Principal
 from tests.support.mcp_server_support import (
@@ -30,6 +42,9 @@ from tests.support.mcp_server_support import (
 
 DISCOVER = "server/discover"
 READ = "resources/read"
+CALL = "tools/call"
+LIST_TOOLS = "tools/list"
+LISTEN = "subscriptions/listen"
 NO_METHOD = ""
 """The key a request that carries no JSON-RPC message, a stream reconnect, is scripted under."""
 _SUBJECT_KEY = "test.subject"
@@ -102,10 +117,57 @@ class GateReply:
         body = f"{identified}event: message\ndata: {json.dumps(document)}\n\n".encode()
         await self.send({"type": "http.response.body", "body": body, "more_body": True})
 
+    async def acknowledge(self, honored: list[str], *, tools: bool = False) -> None:
+        """Acknowledges the listen stream with these resources, and the tools notice if asked."""
+        notification = SubscriptionsAcknowledgedNotification(
+            params=SubscriptionsAcknowledgedNotificationParams(
+                notifications=SubscriptionFilter(
+                    resource_subscriptions=honored or None, tools_list_changed=tools or None
+                ),
+                _meta=self._stream_meta,
+            )
+        )
+        await self._notify(notification)
+
+    async def pulse(self, uri: str) -> None:
+        """Tells the listener that the resource changed."""
+        notification = ResourceUpdatedNotification(
+            params=ResourceUpdatedNotificationParams(uri=uri, _meta=self._stream_meta)
+        )
+        await self._notify(notification)
+
+    async def tools_notice(self) -> None:
+        """Tells the listener that the app's tools changed."""
+        await self._notify(
+            ToolListChangedNotification(params=NotificationParams(_meta=self._stream_meta))
+        )
+
+    async def complete(self) -> None:
+        """Ends the listen stream the way the app ends it, with its result."""
+        result = SubscriptionsListenResult(_meta=self._stream_meta)
+        await self.event(
+            {
+                "jsonrpc": "2.0",
+                "id": self.rpc.id,
+                "result": result.model_dump(by_alias=True, mode="json", exclude_none=True),
+            }
+        )
+        await self.end()
+
     async def cut(self) -> None:
         """Starts a stream and drops the connection; a cut before the answer starts is a 500."""
         await self.open_stream()
         raise ConnectionCut
+
+    @property
+    def _stream_meta(self) -> dict[str, Any]:
+        return {SUBSCRIPTION_ID_META_KEY: self.rpc.id}
+
+    async def _notify(self, notification: BaseModel) -> None:
+        await self.event(
+            notification.model_dump(by_alias=True, mode="json", exclude_none=True)
+            | {"jsonrpc": "2.0"}
+        )
 
     async def _whole(self, status: HTTPStatus, document: dict[str, Any]) -> None:
         await self._start(status, _JSON)
@@ -159,12 +221,19 @@ class ScriptedGate:
     sets_cookie: str | None = None
     """A cookie every answer, scripted or the front's, sets, as an app behind a router does."""
     url: str = ""
+    tools: Sequence[PersonTool] = ()
+    """The tools the real front serves."""
+    changes: ResourceChanges | None = None
+    """What the real front listens through; none leaves it without ``subscriptions/listen``."""
+    offered_tools: OfferedTools | None = None
 
     def __post_init__(self) -> None:
         self.front = McpPersonFront(
-            [],
+            self.tools,
             resolve_person=lambda scope: Principal(iss=ISSUER, sub=scope[_SUBJECT_KEY]),
             resources=self.app,
+            changes=self.changes,
+            offered_tools=self.offered_tools,
         )
 
     def let_in(self, bearer: str, subject: str) -> None:
