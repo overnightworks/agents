@@ -59,6 +59,7 @@ source_modules =
     agents.figure_vocabulary
     agents.front_matter
     agents.member
+    agents.member_outcomes
     agents.member_place
     agents.member_presentation
     agents.mcp_wire
@@ -97,6 +98,7 @@ source_modules =
     agents.figure_vocabulary
     agents.front_matter
     agents.member
+    agents.member_outcomes
     agents.member_place
     agents.member_presentation
     agents.mcp_wire
@@ -131,6 +133,7 @@ source_modules =
     agents.figure_vocabulary
     agents.front_matter
     agents.member
+    agents.member_outcomes
     agents.member_place
     agents.member_presentation
     agents.mcp_wire
@@ -178,6 +181,7 @@ source_modules =
     agents.figure_vocabulary
     agents.front_matter
     agents.member
+    agents.member_outcomes
     agents.member_place
     agents.member_presentation
     agents.mcp_wire
@@ -186,6 +190,7 @@ source_modules =
     agents.turn
     agents.turn_events
 forbidden_modules =
+    agents.http_client
     httpx2
     httpx
     mcp
@@ -211,6 +216,7 @@ source_modules =
     agents.figure_vocabulary
     agents.front_matter
     agents.member
+    agents.member_outcomes
     agents.member_place
     agents.member_presentation
     agents.mcp_wire
@@ -239,6 +245,7 @@ as_packages = False
 source_modules =
     agents.calling
     agents.member
+    agents.member_outcomes
     agents.member_place
     agents.member_presentation
 forbidden_modules =
@@ -249,6 +256,7 @@ forbidden_modules =
     agents.errors
     agents.mcp_wire
     agents.turn_events
+    agents.http_client
     agents.mcp_client
     agents.mcp_client.**
     agents.mcp_server

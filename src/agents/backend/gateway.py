@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import http.cookiejar
 import logging
 import re
 import ssl
@@ -65,6 +64,7 @@ from agents.backend.streamed_round import (
 )
 from agents.backend.tool_result import RequestedCall, serve
 from agents.config import AgentConfig, ChatGateway
+from agents.http_client import policy_client
 from agents.tools import (
     HandTool,
     JsonObject,
@@ -411,18 +411,9 @@ def _client(
         verify = True
         if gateway.ca_file is not None and transport is None:
             verify = ssl.create_default_context(cafile=str(gateway.ca_file))
-        # The jar allows no domain, so a pooled client stores and sends no cookie across
-        # requests; the deadline is the only timeout.
-        return httpx2.AsyncClient(
-            base_url=gateway.origin,
-            transport=transport,
-            verify=verify,
-            trust_env=False,
-            follow_redirects=False,
-            timeout=None,
-            cookies=http.cookiejar.CookieJar(
-                policy=http.cookiejar.DefaultCookiePolicy(allowed_domains=[])
-            ),
+        # The deadline is the only timeout.
+        return policy_client(
+            base_url=gateway.origin, transport=transport, verify=verify, timeout=None
         )
     except httpx2.InvalidURL, OSError:  # ssl.SSLError is an OSError.
         raise _unavailable(GatewayDetail.CONNECTION_FAILED) from None

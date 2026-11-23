@@ -16,11 +16,20 @@ def a_line(
     kind: str = "person",
     own=False,
     spoken=True,
+    cut=False,
     act=False,
     language: str | None = None,
 ) -> PlaceEntry:
     return PlaceEntry(
-        seq=seq, kind=kind, name=name, text=text, own=own, spoken=spoken, act=act, language=language
+        seq=seq,
+        kind=kind,
+        name=name,
+        text=text,
+        own=own,
+        spoken=spoken,
+        cut=cut,
+        act=act,
+        language=language,
     )
 
 

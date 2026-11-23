@@ -320,6 +320,10 @@ What the client sends for a text turn, and nothing else:
 | Body | exactly `model` (the request's `text/<model>` name), `messages` (the system prompt, then the turn's messages, then the round's calls and results), `user`, `stream` (`true`), `stream_options` (`{"include_usage": true}`, on every round) and, when the agent has tools, `tools` (OpenAI function tools of each declaration's `name`, `description` and `parameters`, and `"defer_loading": true` on each deferred tool); it does not depend on `one_call_per_reply`; no `parallel_tool_calls`, `max_tokens`, `metadata`, `tags`, `fallbacks`, `num_retries`, `mock_response`, `api_key` or cache marker |
 | `user` | `"fp-" + sha256(json.dumps([iss, sub], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()`, 67 characters |
 
+`agents.http_client` owns those three rules, no proxy variable, no redirect and no cookie, and
+builds the gateway's client; `agents.mcp_client`'s member session sends its requests to an app on
+the same client, so the rules hold for a runner's calls to an app too.
+
 Proved by `tests/test_backend_gateway.py`: `test_the_request_is_one_post_with_the_system_prompt_and_the_messages`,
 `test_no_header_beyond_the_transports_own_defaults_is_sent`, `test_no_pinned_absent_field_is_sent`,
 `test_the_proxy_environment_is_ignored`
@@ -328,7 +332,11 @@ and `test_https_is_trusted_through_the_configured_ca_file_alone`; and by `tests/
 `test_a_cookie_the_gateway_sets_is_not_sent_back_over_a_pooled_connection`,
 `test_consecutive_turns_share_one_connection`,
 `test_a_connection_the_gateway_closed_while_idle_still_serves_the_next_turn` and
-`test_closing_the_backend_ends_its_connection_and_refuses_further_turns`.
+`test_closing_the_backend_ends_its_connection_and_refuses_further_turns`; for the member session,
+by `tests/test_mcp_client_session.py`:
+`test_the_proxy_variables_of_the_environment_do_not_reroute_a_request`,
+`test_a_redirect_is_an_unusable_answer_named_by_its_status_and_not_followed` and
+`test_a_cookie_the_app_sets_is_never_sent_back`.
 
 The same values in the same order give the same bytes, and within a turn a round's body begins
 with the round before: its `model`, its `tools` and its messages up to that round's last message

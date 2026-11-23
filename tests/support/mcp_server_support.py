@@ -19,6 +19,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp_types import CLIENT_CAPABILITIES_META_KEY, PROTOCOL_VERSION_META_KEY
 from starlette.applications import Starlette
 from starlette.routing import Route
+from starlette.types import ASGIApp
 
 from agents.mcp_server import McpPersonFront, PersonRequest, PersonTool
 from agents.mcp_wire import MCP_ENDPOINT_PATH, PROTOCOL_VERSION
@@ -286,9 +287,13 @@ async def exchange(front: McpPersonFront, member: Principal, method: str, **para
     return json.loads(b"".join(message.get("body", b"") for message in sent))
 
 
-def served_app(front: McpPersonFront) -> Starlette:
-    """A host's own application: the front on its exact route, entered in the host's lifespan."""
-    return Starlette(routes=[Route(MCP_ENDPOINT_PATH, front)], lifespan=lambda _: front.running())
+def served_app(front: McpPersonFront, gate: ASGIApp | None = None) -> Starlette:
+    """A host's own application: the front, or the ``gate`` the host puts before it, on its exact
+    route, entered in the host's lifespan."""
+    return Starlette(
+        routes=[Route(MCP_ENDPOINT_PATH, front if gate is None else gate)],
+        lifespan=lambda _: front.running(),
+    )
 
 
 @asynccontextmanager
@@ -436,9 +441,21 @@ async def clock_held() -> AsyncIterator[Callable[[], None]]:
     await holding
 
 
-def loopback_server(front: McpPersonFront) -> uvicorn.Server:
+def loopback_server(front: McpPersonFront, gate: ASGIApp | None = None) -> uvicorn.Server:
     """A real uvicorn for ``loopback_client``, for a test that stops it while a client streams."""
-    return uvicorn.Server(uvicorn.Config(served_app(front), log_config=None))
+    return uvicorn.Server(uvicorn.Config(served_app(front, gate), log_config=None))
+
+
+@asynccontextmanager
+async def loopback_origin(server: uvicorn.Server) -> AsyncIterator[str]:
+    """The origin of the server on a pre-bound loopback socket in this loop, until the block."""
+    with socket.socket() as bound:
+        bound.bind(("127.0.0.1", 0))
+        bound.listen()
+        serving = asyncio.create_task(server.serve(sockets=[bound]))
+        yield f"http://127.0.0.1:{bound.getsockname()[1]}"
+        server.should_exit = True
+        await serving
 
 
 @asynccontextmanager
@@ -446,20 +463,15 @@ async def loopback_client(
     server: uvicorn.Server, member: Principal, *, bearer: str | None = None
 ) -> AsyncIterator[Client]:
     """The SDK's ``Client`` against the server on a pre-bound loopback socket in this loop."""
-    with socket.socket() as bound:
-        bound.bind(("127.0.0.1", 0))
-        bound.listen()
-        port = bound.getsockname()[1]
-        serving = asyncio.create_task(server.serve(sockets=[bound]))
+    async with loopback_origin(server) as origin:
         headers = {"x-iss": member.iss, "x-sub": member.sub}
         if bearer is not None:
             headers["authorization"] = f"Bearer {bearer}"
-        url = f"http://127.0.0.1:{port}{MCP_ENDPOINT_PATH}"
         timeout = httpx2.Timeout(30, read=None)
         async with (
             httpx2.AsyncClient(headers=headers, timeout=timeout, trust_env=False) as http,
-            Client(streamable_http_client(url, http_client=http)) as client,
+            Client(
+                streamable_http_client(f"{origin}{MCP_ENDPOINT_PATH}", http_client=http)
+            ) as client,
         ):
             yield client
-        server.should_exit = True
-        await serving
