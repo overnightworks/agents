@@ -1,8 +1,0 @@
-claim_id = "5e561c2427a349298c5567d3b81d0c88"
-agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
-role = "builder"
-base = "d79c18441d0951bc50d9651dae820352a1786f26"
-branch = "claude/issue-1124-implicit-skill-name"
-scope = [".aco/ahead-of-caller.toml", "docs/connector.md", "src/agents/skills.py", "tests/test_skills.py"]
-opened_commit = "bcae98991e5d3b77319803620a468ade8d1a371d"
-whole_reason = "One public function, its one caller in the module, its tests and its document line."
