@@ -564,7 +564,7 @@ async def test_an_app_that_declares_the_room_of_a_look_gets_the_look_with_it(
     ],
     indirect=["tools"],
 )
-async def test_an_app_without_looks_or_the_room_of_a_look_gets_the_accept_without_it_and_it_is_reported(
+async def test_an_app_without_looks_or_a_look_room_gets_the_accept_without_it_and_it_is_reported(
     gate: ScriptedGate,
     bearer: SecretStr,
     tools: MemberTools,
