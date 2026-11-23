@@ -9,8 +9,10 @@ from typing import Any
 
 import anyio
 import pytest
+from mcp_types import ReadResourceResult, TextResourceContents
 from pydantic import SecretStr, ValidationError
 
+from agents.member import STANDING_URI
 from agents.member_outcomes import (
     StatusFailure,
     Unreachable,
@@ -30,6 +32,7 @@ from tests.support.scripted_gate import (
     CALL,
     DISCOVER,
     READ,
+    GateReply,
     ScriptedGate,
     hangs_once_entered,
 )
@@ -157,6 +160,28 @@ async def test_a_request_whose_answer_names_no_request_ends_as_unreachable(
                 await session.read_standing()
             else:
                 await session.invoke("a-tool", {})
+
+
+async def test_an_answer_echoing_the_id_as_text_still_answers_its_request(
+    gate: ScriptedGate, bearer: SecretStr
+) -> None:
+    async def echoes_the_id_as_text(reply: GateReply) -> None:
+        contents = TextResourceContents(
+            uri=STANDING_URI, text='{"standings": []}', mime_type="application/json"
+        )
+        await reply.raw_result(
+            ReadResourceResult(contents=[contents], ttl_ms=0, cache_scope="private").model_dump(
+                by_alias=True, mode="json", exclude_none=True
+            ),
+            answering=str(reply.rpc.id),
+        )
+
+    gate.script(READ, echoes_the_id_as_text)
+
+    async with asyncio.timeout(LIMIT_SECONDS), opened(gate, bearer) as session:
+        standing = await session.read_standing()
+
+    assert standing.standings == ()
 
 
 async def test_a_task_cancelled_during_a_member_call_ends_as_the_cancellation(

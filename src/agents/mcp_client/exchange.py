@@ -17,6 +17,7 @@ from typing import Final, override
 
 import httpx2
 from logline import outgoing_headers
+from mcp.shared.dispatcher import coerce_request_id
 from mcp_types import (
     JSONRPCError,
     JSONRPCMessage,
@@ -111,7 +112,8 @@ async def _strand_an_answer_to_no_request(
     """Ends the call whose complete JSON answer is the answer to no request of its own.
 
     The SDK drops an answer whose id matches no request, and the request it was sent for waits
-    for ever; the id is the only thing that tells such an answer from the call's own.
+    for ever; the id is the only thing that tells such an answer from the call's own, and the SDK
+    decides whether two ids are one (``coerce_request_id``), so this does the same.
     """
     if (call := CALL_ANSWER.get()) is None or _media_type_of(response) != "application/json":
         return
@@ -123,7 +125,9 @@ async def _strand_an_answer_to_no_request(
         answer = jsonrpc_message_adapter.validate_json(response.content, by_name=False)
     except ValidationError:
         return
-    if isinstance(answer, JSONRPCResponse | JSONRPCError) and answer.id != asked.id:
+    if isinstance(answer, JSONRPCResponse | JSONRPCError) and (
+        answer.id is None or coerce_request_id(answer.id) != coerce_request_id(asked.id)
+    ):
         call.strand()
 
 
