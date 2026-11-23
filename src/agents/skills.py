@@ -269,8 +269,9 @@ def implicit_skill(
     """The one skill of an app that declares no skills extension, named from its URL's host.
 
     The name is the host in lowercase with each run of characters outside ``a-z0-9`` made one
-    hyphen, cut to 64 characters; its uri is never read, the app serves no such resource. The body
-    is the app's ``instructions``; the tools are the app's own, in the order it lists them.
+    hyphen, hyphens stripped at both ends, cut to 64 characters and stripped again; its uri is
+    never read, the app serves no such resource. The body is the app's ``instructions``; the tools
+    are the app's own, in the order it lists them.
     Raises ``ValueError`` for a URL without a host, a repeated tool, or an empty label or
     description; no message echoes the URL, which may carry userinfo.
     """
