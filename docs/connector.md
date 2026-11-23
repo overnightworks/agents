@@ -41,8 +41,8 @@ valid), a recorded round's `loads` name that is not deferred, and a picture requ
 `ToolRound`. The backend validates the request again at `run`, so a `model_copy` cannot bypass
 these. `Turn.messages` holds `TurnMessage`s and `ToolRound`s. A `ToolRound` is one model reply
 that asked for tools: its `text` (or none) and its `RoundCall`s in reply order, each with the
-`call_id`, `tool`, `arguments` and the answer the model was shown (`result`, `is_error`, `image`,
-`loads`), the calls one call per reply did not run included as errors with the not-run text.
+`call_id`, `tool`, `arguments` (the JSON text of the object, as the model spelled it) and the
+answer the model was shown (`result`, `is_error`, `image`, `loads`), the calls one call per reply did not run included as errors with the not-run text.
 `FinalEvent.tool_rounds` holds every tool round of the turn, images included. A host records the
 rounds of every finished turn, because leaving one out breaks the cached prefix at the first round
 left out, and replays them as `Turn.messages` before the turn's answer; the next turn then sends
@@ -397,8 +397,8 @@ on. The backend alone holds the rule: the body never asks the provider for it, a
 
 Each round is rendered once, by the same function for the turn and for a replay: an assistant
 message whose `content` is the round's text or `null` and whose `tool_calls` carry each call's
-arguments as compact JSON, then one `tool` message per call in reply order. A loading answer is
-the `tool_reference` parts alone.
+arguments as the text the model sent, then one `tool` message per call in reply order. A loading
+answer is the `tool_reference` parts alone.
 
 For each call, in order: `ToolCallEvent`; `await handler(principal, arguments)`; `ToolResultEvent`.
 Proved by `test_two_calls_in_one_round_run_in_order_each_between_its_events`. A call, or the next

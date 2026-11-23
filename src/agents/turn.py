@@ -25,6 +25,8 @@ from pydantic import (
     Field,
     JsonValue,
     PlainSerializer,
+    TypeAdapter,
+    ValidationError,
     model_validator,
 )
 
@@ -153,6 +155,20 @@ def _refuse_lone_surrogates(text: str) -> None:
 
 JsonObject = Annotated[dict[str, JsonValue], AfterValidator(_refuse_non_json_object)]
 """The one decider of a JSON object on the wire: one that survives a round trip unchanged."""
+
+_JSON_OBJECT: Final = TypeAdapter(JsonObject)
+
+
+def _refuse_non_object_text(text: str) -> str:
+    try:
+        _JSON_OBJECT.validate_json(text)
+    except ValidationError as error:
+        raise ValueError("tool arguments are not a JSON object") from error
+    return text
+
+
+ToolArgumentsText = Annotated[str, AfterValidator(_refuse_non_object_text)]
+"""A call's arguments as the model spelled them: the text of a ``JsonObject``, kept as sent."""
 
 
 def loaded_json(text: str | bytes) -> JsonValue:
@@ -321,7 +337,7 @@ class RoundCall(StrictModel):
 
     call_id: NonEmptyUnicodeText
     tool: NonEmptyUnicodeText
-    arguments: JsonObject
+    arguments: ToolArgumentsText
     result: UnicodeText
     is_error: bool = False
     image: ToolImage | None = None

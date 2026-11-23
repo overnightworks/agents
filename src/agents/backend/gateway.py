@@ -449,7 +449,7 @@ def _tool_round(reply: _Round, results: list[ToolResultEvent]) -> ToolRound:
             RoundCall(
                 call_id=call.id,
                 tool=call.name,
-                arguments=call.arguments,
+                arguments=call.arguments_text,
                 result=answer.content,
                 is_error=answer.is_error,
                 image=answer.image,
@@ -722,8 +722,12 @@ def _calls_of(
         if name not in offered or call_id in seen_ids:
             raise _malformed_reply()
         seen_ids.add(call_id)
-        arguments = _ARGUMENTS.validate_json(function["arguments"])
-        calls.append(RequestedCall(id=call_id, name=name, arguments=arguments))
+        text = function["arguments"]
+        calls.append(
+            RequestedCall(
+                id=call_id, name=name, arguments=_ARGUMENTS.validate_json(text), arguments_text=text
+            )
+        )
     served, calls_not_run = (calls[:1], len(calls) - 1) if one_call_per_reply else (calls, None)
     return _Round(
         text=_ROUND_TEXT.validate_python(message["content"]) or "",

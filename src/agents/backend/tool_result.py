@@ -31,6 +31,7 @@ class RequestedCall:
     id: str
     name: str
     arguments: JsonObject
+    arguments_text: str
 
 
 async def serve(

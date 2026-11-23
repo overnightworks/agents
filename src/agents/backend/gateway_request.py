@@ -105,9 +105,7 @@ def round_messages(tool_round: ToolRound) -> list[Message]:
                 "type": "function",
                 "function": {
                     "name": call.tool,
-                    "arguments": json.dumps(
-                        call.arguments, separators=(",", ":"), ensure_ascii=False
-                    ),
+                    "arguments": call.arguments,
                 },
             }
             for call in tool_round.calls

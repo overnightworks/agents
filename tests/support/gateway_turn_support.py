@@ -195,12 +195,10 @@ def a_round_call(
     call_id: str = "c1",
     tool: str = "lookup",
     result: str = "noted",
-    arguments: JsonObject | None = None,
+    arguments: str = "{}",
     **changes,
 ) -> RoundCall:
-    return RoundCall(
-        call_id=call_id, tool=tool, arguments=arguments or {}, result=result, **changes
-    )
+    return RoundCall(call_id=call_id, tool=tool, arguments=arguments, result=result, **changes)
 
 
 def a_tool_round(*calls: RoundCall, text: str | None = None) -> ToolRound:

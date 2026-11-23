@@ -143,16 +143,30 @@ def test_a_recorded_round_replays_as_one_call_message_and_a_tool_message_per_cal
     ]
 
 
-def test_a_recorded_round_keeps_its_text_and_arguments_compact(shop):
+def test_a_recorded_round_keeps_its_text_and_arguments_as_recorded(shop):
     shop.add_tool("lookup")
-    call = a_round_call(arguments={"q": "é"})
+    call = a_round_call(arguments='{"q": "\\u00e9"}')
     history = a_history(a_tool_round(call, text="Looking"))
 
     _, _, gateway = shop.run(completion("ok"), history=history)
 
     echoed = sent(gateway, 0)["messages"][2]
     assert echoed["content"] == "Looking"
-    assert echoed["tool_calls"][0]["function"]["arguments"] == '{"q":"é"}'
+    assert echoed["tool_calls"][0]["function"]["arguments"] == '{"q": "\\u00e9"}'
+
+
+def test_a_turn_sends_and_records_the_arguments_as_the_model_spelled_them(shop):
+    shop.add_tool("lookup")
+
+    events, _, gateway = shop.run(
+        tool_round(tool_call("c1", "lookup", '{ "q" : "x" }')), completion("done")
+    )
+
+    (round_,) = events[-1].tool_rounds
+    assert round_.calls[0].arguments == '{ "q" : "x" }'
+    assert sent(gateway, 1)["messages"][-2]["tool_calls"][0]["function"]["arguments"] == (
+        '{ "q" : "x" }'
+    )
 
 
 def test_an_error_answer_of_a_recorded_round_carries_the_error_prefix(shop):
@@ -202,8 +216,19 @@ def test_a_loading_answer_renders_as_one_reference_per_name_in_order(shop, count
         {"loads": ("a", "a")},
         {"call_id": ""},
         {"tool": ""},
+        {"arguments": "[1]"},
+        {"arguments": ""},
     ],
-    ids=["text", "image", "error", "repeated-names", "blank-id", "blank-tool"],
+    ids=[
+        "text",
+        "image",
+        "error",
+        "repeated-names",
+        "blank-id",
+        "blank-tool",
+        "arguments-no-object",
+        "arguments-no-json",
+    ],
 )
 def test_a_round_call_that_cannot_render_is_refused(changes):
     with pytest.raises(ValueError):
@@ -438,5 +463,7 @@ def test_a_handler_changing_its_arguments_does_not_change_the_round_recorded(sho
 
     assert stopped is None
     (round_,) = events[-1].tool_rounds
-    assert round_.calls[0].arguments == {"q": "x"}
-    assert sent(gateway, 1)["messages"][-2]["tool_calls"][0]["function"]["arguments"] == '{"q":"x"}'
+    assert round_.calls[0].arguments == '{"q": "x"}'
+    assert sent(gateway, 1)["messages"][-2]["tool_calls"][0]["function"]["arguments"] == (
+        '{"q": "x"}'
+    )
