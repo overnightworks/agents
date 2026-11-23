@@ -29,7 +29,7 @@ mcp-client = [
 ]
 redis = [
     "overnightworks-agents[mcp-server]",
-    "overnightworks-tandem>=0.16,<0.17",
+    "overnightworks-tandem>=0.16,<0.18",
 ]
 voice = [
     "overnightworks-logline>=0.4,<2",
@@ -37,8 +37,8 @@ voice = [
 ]
 dev = [
     "overnightworks-agents[backend,mcp-client,mcp-server,redis,voice]",
-    "fakeredis[lua]>=2.35,<3",
-    "redis>=8.1,<9",
+    "fakeredis[lua]>=2.41,<3",
+    "redis>=8.2,<9",
     "pyright==1.1.414",
     "pytest>=9.1,<10",
     "pytest-cov>=7.1,<8",
@@ -58,7 +58,7 @@ dev = ["overnightworks-logline", "overnightworks-tandem"]
 
 [tool.uv.sources]
 overnightworks-logline = { git = "https://github.com/overnightworks/logline", tag = "v1.9.0", group = "dev" }
-overnightworks-tandem = { git = "https://github.com/overnightworks/tandem", tag = "v0.16.0", group = "dev" }
+overnightworks-tandem = { git = "https://github.com/overnightworks/tandem", tag = "v0.17.0", group = "dev" }
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
