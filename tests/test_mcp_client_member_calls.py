@@ -345,7 +345,7 @@ async def test_a_speak_refused_with_a_code_of_the_record_is_told_by_that_code(
         "a written sentence that failed",
     ],
 )
-async def test_a_speak_answer_that_is_none_of_the_answers_or_refusals_of_the_record_is_an_unusable_answer(
+async def test_a_speak_answer_outside_the_records_is_an_unusable_answer(
     gate: ScriptedGate,
     bearer: SecretStr,
     tools: MemberTools,
@@ -479,7 +479,7 @@ THAT_PREDATE_THE_ARGUMENTS = {
 
 
 @pytest.mark.parametrize("tools", [THAT_PREDATE_THE_ARGUMENTS], indirect=True)
-async def test_optional_arguments_an_app_does_not_declare_are_left_out_and_each_is_reported_once_per_session(
+async def test_undeclared_optional_arguments_are_left_out_and_each_is_reported_once_per_session(
     gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef
 ) -> None:
     left_out: list[ArgumentLeftOut] = []
@@ -564,7 +564,7 @@ async def test_an_app_that_declares_the_room_of_a_look_gets_the_look_with_it(
     ],
     indirect=["tools"],
 )
-async def test_an_app_that_does_not_declare_looks_or_the_room_of_a_look_gets_the_accept_without_it_and_it_is_reported(
+async def test_an_app_without_looks_or_the_room_of_a_look_gets_the_accept_without_it_and_it_is_reported(
     gate: ScriptedGate,
     bearer: SecretStr,
     tools: MemberTools,
