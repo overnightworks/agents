@@ -85,11 +85,15 @@ class ToolDeclaration(BaseModel):
 class ToolOutcome:
     """What a tool answers: the text a model is shown, whether the call failed and, for a tool that
     lets the agent see, the one picture the model reads next to the text.
+
+    ``loads`` names the deferred tools the answer loads. An answer that loads is references
+    alone: no text, no error and no image.
     """
 
     content: str
     is_error: bool
     image: ToolImage | None = None
+    loads: tuple[str, ...] = ()
 
 
 type HandToolHandler = Callable[[Principal, JsonObject], Awaitable[ToolOutcome]]
