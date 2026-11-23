@@ -1,8 +1,0 @@
-claim_id = "7fc2482e56714fbaa80905eceaf9f7ad"
-agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
-role = "builder"
-base = "f7ead605eb005b51ca87d1bc6dabf755df2fdfea"
-branch = "claude/issue-1132-listen-on-serve-due"
-scope = ["docs/ARCHITECTURE.md", "docs/connector.md", "pyproject.toml", "quality/config.toml", "src/agents/mcp_server/__init__.py", "src/agents/mcp_server/leases.py", "src/agents/mcp_server/listen.py", "src/agents/mcp_server/memory_place_store.py", "src/agents/mcp_server/person.py", "src/agents/mcp_server/place_store.py", "src/agents/mcp_server/redis_place_store.py", "tests/integration/real_redis/conftest.py", "tests/integration/real_redis/test_two_pods.py", "tests/integration/test_redis_place_store.py", "tests/integration/test_redis_place_store_record.py", "tests/support/place_store_support.py", "tests/support/redis_listen_support.py", "tests/test_mcp_server_leases.py", "tests/test_mcp_server_listen_liveness.py", "tests/test_mcp_server_memory_place_store.py", "uv.lock"]
-opened_commit = "b27c7b9989ba7a8f2f030dd715461b6d5caaee4c"
-whole_reason = "The port's new serving method, the loops it replaces and the tests and documents that name them change one contract together."
