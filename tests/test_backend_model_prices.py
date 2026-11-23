@@ -191,7 +191,8 @@ def test_a_window_the_answer_leaves_out_is_a_malformed_reply(scenario):
 
 @pytest.mark.parametrize("price", ["1e400", "NaN"], ids=["infinite", "nan"])
 def test_a_price_that_is_no_finite_number_is_a_malformed_reply(scenario, price):
-    body = json.dumps({"data": [model_entry(MODEL, a_model_prices())]}).replace("2e-06", price, 1)
+    entry = model_entry(MODEL, a_model_prices(input_per_token=7e-06))
+    body = json.dumps({"data": [entry]}).replace("7e-06", price, 1)
 
     _, stopped, _ = priced(scenario, Reply(body=body.encode()))
 

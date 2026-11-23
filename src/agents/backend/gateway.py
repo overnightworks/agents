@@ -184,8 +184,7 @@ class GatewayBackend(AgentBackend):
         errors it passed through; a stop the host raised is the same exception, its traceback
         cut of the gateway path's frames, which hold the key, the reply and the call arguments.
         """
-        if self._closed:
-            raise RuntimeError("the gateway backend is closed")
+        self._refuse_when_closed()
         try:
             async with contextlib.aclosing(self._turn(request, person)) as events:
                 async for event in events:
@@ -209,8 +208,7 @@ class GatewayBackend(AgentBackend):
         An answer with no one price record for it raises ``ModelPricesError``, any other failure
         ``TurnStopped``, as for a turn; after ``aclose`` it raises ``RuntimeError``.
         """
-        if self._closed:
-            raise RuntimeError("the gateway backend is closed")
+        self._refuse_when_closed()
         try:
             return await self._read_prices(model)
         except _GatewayStop as stopped:
@@ -329,9 +327,12 @@ class GatewayBackend(AgentBackend):
     ) -> contextlib.AbstractAsyncContextManager[httpx2.Response]:
         return _opened(self._pooled_client(), path, key, step, content=body)
 
-    def _pooled_client(self) -> httpx2.AsyncClient:
+    def _refuse_when_closed(self) -> None:
         if self._closed:
             raise RuntimeError("the gateway backend is closed")
+
+    def _pooled_client(self) -> httpx2.AsyncClient:
+        self._refuse_when_closed()
         if self._pooled is None:
             self._pooled = _client(self._config.gateway, self._transport)
         return self._pooled
