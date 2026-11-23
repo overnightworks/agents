@@ -605,8 +605,7 @@ async def test_an_app_that_answers_no_more_within_the_read_time_is_unreachable(
     gate.script(READ, hangs)
 
     with pytest.raises(Unreachable):
-        async with opened(gate, bearer, stream_seconds=0.3) as session:
-            await session.read_standing()
+        await reads_the_standing(gate, bearer, stream_seconds=0.3)
 
 
 # How the discovery fails.
@@ -706,6 +705,14 @@ def test_the_log_check_reads_a_bearer_that_only_a_logged_exception_holds(
     assert bearer in logged_outside_the_wire_trace(caplog)
 
 
+async def reads_the_standing_showing(
+    gate: ScriptedGate, bearer: SecretStr, shown: list[str]
+) -> None:
+    async with opened(gate, bearer) as session:
+        shown.append(repr(session) + str(session))
+        await session.read_standing()
+
+
 @pytest.mark.parametrize(
     "script",
     [
@@ -725,14 +732,10 @@ async def test_no_bearer_is_in_any_failure_or_in_the_session(
         gate.script(READ, script)
     shown: list[str] = []
 
-    try:
-        async with opened(gate, bearer) as session:
-            shown.append(repr(session) + str(session))
-            await session.read_standing()
-    except CallFailure as failure:
-        shown.append(repr(failure) + str(failure) + repr(failure.__traceback__))
-    else:
-        pytest.fail("the call did not fail")
+    with pytest.raises(CallFailure) as caught:
+        await reads_the_standing_showing(gate, bearer, shown)
+    failure = caught.value
+    shown.append(repr(failure) + str(failure) + repr(failure.__traceback__))
 
     assert bearer.get_secret_value() not in "".join(shown)
     assert shown

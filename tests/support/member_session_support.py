@@ -114,8 +114,8 @@ def a_window(*entries: PlaceEntry, **fields: Any) -> PlaceWindow:
     )
 
 
-async def reads_the_standing(gate: ScriptedGate, bearer: SecretStr) -> None:
-    async with opened(gate, bearer) as session:
+async def reads_the_standing(gate: ScriptedGate, bearer: SecretStr, **keywords: Any) -> None:
+    async with opened(gate, bearer, **keywords) as session:
         await session.read_standing()
 
 
