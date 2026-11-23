@@ -78,11 +78,10 @@ def test_a_request_without_tools_and_without_deferral_sends_no_tools_key(shop):
 def test_a_request_with_bad_deferral_is_refused_when_it_is_built(changes):
     tools = tuple(ToolDeclaration(name=name, description="d", parameters={}) for name in "ab")
     turn = {"turn": Turn(system="s", messages=changes["messages"])} if "messages" in changes else {}
+    deferred = frozenset(changes["deferred"])
 
     with pytest.raises(ValueError):
-        a_request(
-            tools=tools, max_tool_calls=5, deferred_tools=frozenset(changes["deferred"]), **turn
-        )
+        a_request(tools=tools, max_tool_calls=5, deferred_tools=deferred, **turn)
 
 
 def test_a_picture_request_holding_a_tool_round_is_refused():
@@ -103,9 +102,10 @@ def test_a_copied_request_that_breaks_a_rule_is_refused_by_the_run_before_anythi
     if "messages" in changes:
         update["turn"] = Turn(system="Answer briefly.", messages=changes["messages"])
     gateway = FakeGateway(completion("ok"))
+    copied = valid.model_copy(update=update)
 
     with pytest.raises(ValueError):
-        shop.run_request(valid.model_copy(update=update), gateway)
+        shop.run_request(copied, gateway)
 
     assert gateway.requests == []
 
