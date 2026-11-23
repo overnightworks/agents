@@ -1,0 +1,8 @@
+claim_id = "f84231a1d5b745cc83396ebcf1e07d30"
+agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
+role = "builder"
+base = "f11f1adf512c3959e0bb829f80dc6db431092e79"
+branch = "claude/issue-1117-skills-requests"
+scope = [".aco/ahead-of-caller.toml", ".github/workflows/ci.yml", ".importlinter", "AGENTS.md", "README.md", "docs/ARCHITECTURE.md", "docs/connector.md", "pyproject.toml", "src/agents/__init__.py", "src/agents/mcp_client/__init__.py", "src/agents/mcp_client/skills.py", "src/agents/skills.py", "tests/support/skill_support.py", "tests/test_mcp_client_skills.py", "tests/test_skills.py", "uv.lock"]
+opened_commit = "f33975f939d39ca5bb93a17d79f19ad2980f4c44"
+whole_reason = "One new extra with its first module, its import contracts, its CI proof and the documents that name every extra, which only make sense together."
