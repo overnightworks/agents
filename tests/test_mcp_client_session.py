@@ -7,6 +7,7 @@ other request through to the library's own front.
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from http import HTTPStatus
 from typing import Any
@@ -691,6 +692,18 @@ async def test_a_content_type_that_reflects_the_bearer_reaches_no_log_line_but_t
         await reads_the_standing(gate, bearer)
 
     assert bearer.get_secret_value() not in logged_outside_the_wire_trace(caplog)
+
+
+def test_the_log_check_reads_a_bearer_that_only_a_logged_exception_holds(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    bearer = secrets.token_hex(12)
+    try:
+        raise ValueError(bearer)
+    except ValueError:
+        logging.getLogger("agents.test").exception("the call failed")
+
+    assert bearer in logged_outside_the_wire_trace(caplog)
 
 
 @pytest.mark.parametrize(

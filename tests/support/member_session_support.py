@@ -81,7 +81,9 @@ def logged_outside_the_wire_trace(caplog: pytest.LogCaptureFixture) -> str:
     so the library does not silence it.
     """
     return "\n".join(
-        record.getMessage() for record in caplog.records if record.name != WIRE_TRACE_LOGGER
+        caplog.handler.format(record)
+        for record in caplog.records
+        if record.name != WIRE_TRACE_LOGGER
     )
 
 
