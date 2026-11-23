@@ -708,8 +708,8 @@ def test_the_log_check_reads_a_bearer_that_only_a_logged_exception_holds(
 
 @pytest.mark.parametrize(
     "shape",
-    ["", "first-{}\nsecond", "{}\r\nX-Injected: yes", "{}\x00"],
-    ids=["empty", "a newline", "a CR LF", "a control character"],
+    ["", "first-{}\nsecond", "{}\r\nX-Injected: yes", "{}\x00", "{} "],
+    ids=["empty", "a newline", "a CR LF", "a control character", "a trailing space"],
 )
 async def test_a_bearer_that_is_no_header_value_is_refused_before_any_request_and_named_nowhere(
     gate: ScriptedGate, shape: str

@@ -101,9 +101,10 @@ class BearerAuth(httpx2.Auth):
 
 
 def _is_header_value(token: str) -> bool:
-    """Whether the token can be the rest of an ``Authorization`` header: not empty, and no control
-    character, newline included."""
-    return token.isascii() and token.isprintable() and bool(token)
+    """Whether the token can be the rest of an ``Authorization`` header: not empty, no control
+    character (newline included) and no trailing space, which the HTTP library refuses by naming the
+    whole value."""
+    return token.isascii() and token.isprintable() and bool(token) and not token.endswith(" ")
 
 
 async def _strand_an_answer_to_no_request(
