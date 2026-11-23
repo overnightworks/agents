@@ -543,9 +543,7 @@ async def open_member_session(
                 raise
     except Exception as error:
         folded_error = folded(error, raised_in_body, auth, cancelled_in_body=cancelled_in_body)
-        raised = () if raised_in_body is None else leaves_of(raised_in_body)
-        own = [*leaves_of(error), *raised]
-        if not any(folded_error is leaf for leaf in own):
+        if not _is_leaf_of(folded_error, error, raised_in_body):
             raise folded_error from None
         outcome = folded_error
     finally:
@@ -557,6 +555,16 @@ async def open_member_session(
                 raise outcome
             finally:
                 outcome.__context__ = context
+
+
+def _is_leaf_of(
+    folded_error: Exception | asyncio.CancelledError,
+    error: Exception,
+    raised_in_body: Exception | None,
+) -> bool:
+    """Whether the folded error is one of the leaves the session's exit or its body raised."""
+    raised = () if raised_in_body is None else leaves_of(raised_in_body)
+    return any(folded_error is leaf for leaf in (*leaves_of(error), *raised))
 
 
 async def _discover(session: ClientSession, auth: BearerAuth) -> None:
