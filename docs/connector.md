@@ -781,12 +781,9 @@ I/O and holds the params of both requests (`SkillsListParams` with an optional `
 `Request` subclass of its own ([The member client](#the-member-client)). A page that breaks a rule
 is an `UnusableAnswer` whose `entry` is the index of the entry, counting the `listed` entries of
 the pages before. The implicit skill of an app that declares no skills stays the runner's, built
-from `read_discovery()` and `declared_tools()`. The free functions
-`agents.mcp_client.skills.list_skills(session, cursor)` and `get_skill(session, uri)` over an SDK
-`ClientSession` log nothing and catch nothing: an SDK error leaves as the SDK raises it and a result
-that breaks a rule fails as `pydantic.ValidationError`. Paging is the
-runner's: it passes `next_cursor` back until it is absent
-(`test_following_the_next_cursor_yields_every_entry_once_and_stops_when_it_is_absent`).
+from `read_discovery()` and `declared_tools()`. Paging is the runner's: it passes `next_cursor`
+back until it is absent
+(`test_a_listing_is_read_page_by_page_in_the_apps_order`).
 
 **What a listing must hold.** A listing validates with unknown keys ignored at every level
 (`ttlMs`, `cacheScope`, `_meta`, `resultType`), and SEP's own examples pass

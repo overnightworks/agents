@@ -11,7 +11,6 @@ from agents.mcp_client.session import (
     MemberSession,
     open_member_session,
 )
-from agents.mcp_client.skills import get_skill, list_skills
 from agents.mcp_client.wakes import MemberWake, ResourceWake, ToolsWake
 
 __all__ = [
@@ -22,7 +21,5 @@ __all__ = [
     "MemberWake",
     "ResourceWake",
     "ToolsWake",
-    "get_skill",
-    "list_skills",
     "open_member_session",
 ]
