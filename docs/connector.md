@@ -543,6 +543,18 @@ field named in `unpriced=` is written as the gateway writes a missing one, and a
 malformed reply. Proved by `tests/test_backend_model_prices.py` and the `model prices` cases of
 `tests/test_backend_gateway_request_lines.py`.
 
+### Admission without a turn
+
+`await backend.admission(person)` takes a `TurnPerson` and returns `None` when a turn of that person
+would pass the group check, `RejectionCode.NOT_ENABLED` when the person lacks `AgentConfig.api_group`.
+A turn and a picture request decide through the same rule. The call awaits `person.groups()` once,
+runs no turn, opens no connection, reads no key file and writes no log line, so a missing key is
+still reported by a turn and not by this answer; an error `groups()` raises passes through
+unchanged. A host asks it where a person must learn before the click whether the gateway would serve
+them. It is not on the `AgentBackend` port. Proved by `tests/test_backend_gateway.py`:
+`test_admission_answers_for_the_group_without_a_request`, `test_admission_reads_no_key_file`,
+`test_a_refusal_the_groups_lookup_raises_passes_through_admission_unchanged`.
+
 ### The log
 
 The library logs through standard-library loggers named under `agents` and logline's guide
