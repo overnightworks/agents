@@ -11,7 +11,7 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Final, Protocol, override
+from typing import Final, Literal, Protocol, override
 
 import httpx2
 from mcp import ClientSession
@@ -23,12 +23,13 @@ from mcp_types import (
     CallToolResult,
     InputRequiredResult,
     ReadResourceResult,
+    Request,
+    RequestParams,
     TextResourceContents,
 )
 from pydantic import SecretStr, ValidationError
 
 from agents.http_client import policy_client
-from agents.mcp_client import skills as skill_requests
 from agents.mcp_client.arguments import (
     ACCEPT_OPTIONAL,
     SPEAK_OPTIONAL,
@@ -97,7 +98,17 @@ from agents.member_outcomes import (
     UnrecognisedRefusal,
     UnusableAnswer,
 )
-from agents.skills import SKILLS_EXTENSION, Skill, SkillListing, read_skill
+from agents.skills import (
+    SKILLS_EXTENSION,
+    SKILLS_GET_METHOD,
+    SKILLS_LIST_METHOD,
+    Skill,
+    SkillAnswer,
+    SkillListing,
+    SkillsGetParams,
+    SkillsListParams,
+    read_skill,
+)
 from agents.tools import JsonObject, ToolDeclaration, ToolOutcome
 
 CONNECT_SECONDS: Final = 30.0
@@ -232,6 +243,24 @@ class MemberSession(Protocol):
 
 class _UnknownResource(Exception):  # noqa: N818
     """The app shows this member no such resource."""
+
+
+class _ListParams(RequestParams, SkillsListParams):
+    """The params record with the ``_meta`` member the SDK stamps on every request."""
+
+
+class _GetParams(RequestParams, SkillsGetParams):
+    """The params record with the ``_meta`` member the SDK stamps on every request."""
+
+
+class _SkillsListRequest(Request[_ListParams, Literal["skills/list"]]):
+    method: Literal["skills/list"] = SKILLS_LIST_METHOD
+    params: _ListParams
+
+
+class _SkillsGetRequest(Request[_GetParams, Literal["skills/get"]]):
+    method: Literal["skills/get"] = SKILLS_GET_METHOD
+    params: _GetParams
 
 
 class _ValidatingSession(ClientSession):
@@ -420,12 +449,20 @@ class _McpMemberSession:
 
     async def _skills_page(self, cursor: str | None, listed: int) -> SkillListing:
         try:
-            return await skill_requests.list_skills(self.session, cursor)
+            return await self.session.send_request(
+                _SkillsListRequest(params=_ListParams(cursor=cursor)), SkillListing
+            )
         except ValidationError as error:
             raise UnusableAnswer(INVALID_ANSWER_CODE, entry=_listed_index(error, listed)) from None
 
     async def get_skill(self, uri: str) -> Skill:
-        entry = (await self._asked(skill_requests.get_skill(self.session, uri))).skill
+        entry = (
+            await self._asked(
+                self.session.send_request(
+                    _SkillsGetRequest(params=_GetParams(uri=uri)), SkillAnswer
+                )
+            )
+        ).skill
         if entry.uri != uri:
             raise UnusableAnswer(INVALID_ANSWER_CODE)
         result = await self._asked(self._read(entry.uri))
