@@ -1,5 +1,5 @@
 claim_id = "7d22a1d2f2bd4f4ca651e8a5f0bbb821"
-agent = "Claude 84e683ce-9c30-4a2a-a5a9-85ccd0ae27af"
+agent = "Claude f2181006-73a0-4c86-b27c-fbac52b98d1d"
 role = "builder"
 base = "9882cc20fda16fb2449f31d8ec680e4219a8207d"
 branch = "claude/issue-1142-agents-pins-quality-v0-26-0"
