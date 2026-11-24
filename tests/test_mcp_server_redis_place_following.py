@@ -24,6 +24,8 @@ from tests.support.redis_listen_support import (
     subscribed,
 )
 
+pytestmark = pytest.mark.integration
+
 server = redis_listen_support.server
 
 _ALICE = a_member("alice")

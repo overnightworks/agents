@@ -1,6 +1,6 @@
 """``RedisPlaceStore`` on a fake Redis when the listen record is damaged: a call that finds a key of
 the wrong type refuses before it writes anything, and a lapse that cannot read a stream's record
-writes nothing and keeps its claim. The same scripts run on a real Redis in ``real_redis``."""
+writes nothing and keeps its claim. The same scripts run on a real Redis in ``tests/e2e``."""
 
 from __future__ import annotations
 
@@ -32,6 +32,8 @@ from tests.support.redis_listen_support import (
     snapshots_around_evalsha,
     subscribed,
 )
+
+pytestmark = pytest.mark.integration
 
 redis_clock = redis_listen_support.redis_clock
 server = redis_listen_support.server

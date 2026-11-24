@@ -4,7 +4,7 @@
 
 - `uv sync --locked --extra dev`: install the environment; run it before any other command.
 - `uv run pytest -q <test module...>`, or `-k <behaviour>`: the tests that prove a change; needs no live provider. The full suite and the coverage run (`-n auto`) run in CI, not locally.
-- `scripts/run_redis_tests.sh [pytest argument...]`: the tests of `tests/integration/real_redis` (two processes, and one that waits out a claim) against a throwaway Redis; the default suite skips that directory. Run it under `probe-run`.
+- `scripts/run_redis_tests.sh [pytest argument...]`: the tests of `tests/e2e` (two processes, and one that waits out a claim) against a throwaway Redis; the default suite skips that directory. Run it under `probe-run`.
 - `uv run ruff check src tests scripts`: lint `src`, `tests` and `scripts`.
 - `uv run pyright`: type-check `src` and `scripts` in strict mode.
 - `uvx --from "git+https://github.com/overnightworks/quality@<sha>" quality check`: the gate's local check; `<sha>` is the one `.github/workflows/ci.yml` pins for quality's gate.
