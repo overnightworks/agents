@@ -302,11 +302,7 @@ class GatewayBackend(AgentBackend):
         return tools
 
     async def admission(self, person: TurnPerson) -> RejectionCode | None:
-        """``None`` when a turn of ``person`` passes the group check, else ``NOT_ENABLED``.
-
-        Runs no turn, opens no connection and reads no key; an error of ``person.groups()``
-        passes through unchanged.
-        """
+        """``None`` when a turn of ``person`` passes the group check, else ``NOT_ENABLED``."""
         if self._config.api_group in await person.groups():
             return None
         return RejectionCode.NOT_ENABLED
