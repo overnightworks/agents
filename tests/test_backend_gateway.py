@@ -225,9 +225,10 @@ def test_admission_reads_no_key_file(scenario):
 def test_a_refusal_the_groups_lookup_raises_passes_through_admission_unchanged(scenario):
     person, _ = scenario.person(TurnStopped(TurnStopKind.REFUSED, RejectionCode.NOT_ENABLED))
     backend = GatewayBackend(scenario.config(), transport=FakeGateway(completion("ok")))
+    admission = backend.admission(person)
 
     with pytest.raises(TurnStopped) as raised:
-        asyncio.run(backend.admission(person))
+        asyncio.run(admission)
 
     assert ending(raised.value) == (TurnStopKind.REFUSED, RejectionCode.NOT_ENABLED)
 
