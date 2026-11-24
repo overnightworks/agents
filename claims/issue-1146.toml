@@ -1,0 +1,8 @@
+claim_id = "c688ce10cd78419b890e1edbf1035684"
+agent = "Claude f2181006-73a0-4c86-b27c-fbac52b98d1d"
+role = "builder"
+base = "6c3292249796fc8019ac1d78c8fcf4ae79149ca8"
+branch = "claude/issue-1146-s1-s-free-skills-functions-become-privat"
+scope = [".aco/ahead-of-caller.toml", "docs/connector.md", "src/agents/mcp_client/__init__.py", "src/agents/mcp_client/session.py", "src/agents/mcp_client/skills.py", "tests/test_mcp_client_skills.py"]
+opened_commit = "454d0494c79bbad3cf11c84e65094790bbaecd04"
+whole_reason = "the export, its one caller, the tests that import it, the document that names it and the list that tracks it change together or the tree is inconsistent."
