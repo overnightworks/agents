@@ -301,9 +301,16 @@ class GatewayBackend(AgentBackend):
                 raise ValueError(f"tool {name!r} is declared differently than its handler")
         return tools
 
+    async def admission(self, person: TurnPerson) -> RejectionCode | None:
+        """``None`` when a turn of ``person`` passes the group check, else ``NOT_ENABLED``."""
+        if self._config.api_group in await person.groups():
+            return None
+        return RejectionCode.NOT_ENABLED
+
     async def _authorise(self, person: TurnPerson) -> str:
-        if self._config.api_group not in await person.groups():
-            raise _GatewayStop(TurnStopKind.REFUSED, RejectionCode.NOT_ENABLED)
+        refusal = await self.admission(person)
+        if refusal is not None:
+            raise _GatewayStop(TurnStopKind.REFUSED, refusal)
         return _read_key(self._config.gateway.key_file)
 
     async def _picture(
