@@ -1,8 +1,0 @@
-claim_id = "1a008f9e0ac74304ab37437a63c04c01"
-agent = "Claude e7a7ad89-6571-451e-9a4f-1f49048fd383"
-role = "builder"
-base = "bb83db3545a79dc7755ae77326e7024c7cb57f37"
-branch = "claude/issue-1148-the-gateway-client-answers-whether-a-cal"
-scope = ["docs/connector.md", "src/agents/backend/gateway.py", "tests/support/gateway_turn_support.py", "tests/test_backend_gateway.py"]
-opened_commit = "4e6b175774c5bc91ebeac3084fb8035725748e2c"
-whole_reason = "the call, its tests with their builder and the document that describes it land together so the public interface is never undocumented or unproven."
