@@ -110,3 +110,15 @@ what = 'import contract "the client base modules and agents.voice import no logl
 item = "overnightworks/agents#977"
 date = 2026-11-16
 reason = "agents.voice.loop opens the waking line's trace through logline's unit_trace; every other voice module stays a source and forbidden to import logline"
+
+[[spec_citations.implemented]]
+path = "docs/calling.md"
+item = "overnightworks/agents#1142"
+date = 2026-11-23
+reason = "the rules of this contract are implemented by the apps, which cite them in their tests, so no test of this repository does"
+
+[[spec_citations.implemented]]
+path = "docs/hearing.md"
+item = "overnightworks/agents#1142"
+date = 2026-11-23
+reason = "the rules of this contract are implemented by the apps, which cite them in their tests, so no test of this repository does"
