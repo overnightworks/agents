@@ -197,6 +197,42 @@ def test_a_group_the_person_lacks_is_not_enabled_and_sends_nothing(scenario):
     assert (gateway.requests, calls) == ([], [1])
 
 
+@pytest.mark.parametrize(
+    ("groups", "answer"),
+    [
+        pytest.param(None, None, id="a-person-in-the-group-is-admitted"),
+        pytest.param(frozenset({"/apps/other"}), RejectionCode.NOT_ENABLED, id="a-person-outside"),
+    ],
+)
+def test_admission_answers_for_the_group_without_a_request(scenario, groups, answer):
+    gateway = FakeGateway(completion("ok"))
+    person, calls = scenario.person(groups)
+
+    admitted = asyncio.run(GatewayBackend(scenario.config(), transport=gateway).admission(person))
+
+    assert admitted == answer
+    assert (gateway.requests, calls) == ([], [1])
+
+
+def test_admission_reads_no_key_file(scenario):
+    backend = GatewayBackend(scenario.config(), transport=FakeGateway(completion("ok")))
+    (scenario.directory / "key").unlink()
+    person, _ = scenario.person()
+
+    assert asyncio.run(backend.admission(person)) is None
+
+
+def test_a_refusal_the_groups_lookup_raises_passes_through_admission_unchanged(scenario):
+    person, _ = scenario.person(TurnStopped(TurnStopKind.REFUSED, RejectionCode.NOT_ENABLED))
+    backend = GatewayBackend(scenario.config(), transport=FakeGateway(completion("ok")))
+    admission = backend.admission(person)
+
+    with pytest.raises(TurnStopped) as raised:
+        asyncio.run(admission)
+
+    assert ending(raised.value) == (TurnStopKind.REFUSED, RejectionCode.NOT_ENABLED)
+
+
 def test_a_refusal_the_groups_lookup_raises_reaches_the_app_unchanged(scenario):
     gateway = FakeGateway(completion("ok"))
     refusal = TurnStopped(TurnStopKind.REFUSED, RejectionCode.FORBIDDEN)
