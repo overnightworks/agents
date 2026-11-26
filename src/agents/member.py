@@ -6,12 +6,12 @@ place (``PlaceView``), the arguments of accepting and declining an invitation, o
 stopping and continuing in a place and of setting the framing, what accepting, declining and
 setting the framing answer when they refuse, what speaking and stopping answer (a sentence voiced,
 or written as a line when the voice failed), and what the window says when people talk over the
-member (``TalkedOver``), when the member is held by it (``Interrupted``) and whether the member's
-voice at the place has failed (``VoiceState``). ``MemberFacts`` states who a member is, owner and
-name, as a lease keeps them. A runner reads a standing, window or view with
-``member_resource_from_json``, which ignores a key its release does not know. The
-URIs name the resources that serve them; a URI is no credential, so a guessed one yields nothing.
-This module is base, so a runner parses all of it without the ``mcp-server`` extra.
+member (``TalkedOver``), when the member is held by it (``Interrupted``), when it went on by itself
+(``WentOn``) and whether the member's voice at the place has failed (``VoiceState``).
+``MemberFacts`` states who a member is, owner and name, as a lease keeps them. A runner reads a
+standing, window or view with ``member_resource_from_json``, which ignores a key its release does
+not know. The URIs name the resources that serve them; a URI is no credential, so a guessed one
+yields nothing. This module is base, so a runner parses all of it without the ``mcp-server`` extra.
 """
 
 from __future__ import annotations
@@ -77,8 +77,12 @@ from agents.member_speaking import (
     TalkedOver,
     VoiceState,
     VoiceStyle,
+    WentOn,
     Written,
+    has_words,
     hold_place,
+    is_false,
+    is_none,
 )
 from agents.tools import ToolDeclaration, ToolEffect, tool_parameters
 from agents.turn import JsonObject, NonEmptyUnicodeText, StopOutcome, StrictModel, UnicodeText
@@ -161,9 +165,11 @@ __all__ = [
     "VoiceState",
     "VoiceStyle",
     "Voices",
+    "WentOn",
     "Written",
     "framing_tool",
     "gesture_tool",
+    "has_words",
     "hold_place",
     "member_arguments",
     "member_resource_from_json",
@@ -237,24 +243,16 @@ class ParentPlace(StrictModel):
     place: PlaceRef
 
 
-def _is_false(value: bool) -> bool:
-    return not value
-
-
-def _is_none(value: object) -> bool:
-    return value is None
-
-
 class Standing(StrictModel):
     """One place, the member's state there and, exactly when invited, the invitation."""
 
     place: PlaceRef
     state: Annotated[StandingState, Field(strict=False)]
     invitation: Invitation | None = None
-    serves_view: bool = Field(default=False, exclude_if=_is_false)
+    serves_view: bool = Field(default=False, exclude_if=is_false)
     """Whether the app serves this place's ``PlaceView`` beside its window; both URIs are then
     listed among the member's current resources."""
-    parent: ParentPlace | None = Field(default=None, exclude_if=_is_none)
+    parent: ParentPlace | None = Field(default=None, exclude_if=is_none)
     """The place this place lies inside, if another app's place holds it; the app sets it from
     the invitation on and keeps it while the member holds the place."""
 
@@ -282,9 +280,9 @@ class AcceptInvitationArguments(StrictModel):
     place: PlaceRef
     invitation: NonEmptyUnicodeText
     epoch: int = Field(ge=0)
-    looks: Looks | None = Field(default=None, exclude_if=_is_none)
-    figure: FigureRef | None = Field(default=None, exclude_if=_is_none)
-    voices: Voices | None = Field(default=None, exclude_if=_is_none)
+    looks: Looks | None = Field(default=None, exclude_if=is_none)
+    figure: FigureRef | None = Field(default=None, exclude_if=is_none)
+    voices: Voices | None = Field(default=None, exclude_if=is_none)
 
 
 class AcceptInvitationRefusal(StrEnum):
@@ -344,9 +342,9 @@ class SetTurnStateArguments(StrictModel):
 
     place: PlaceRef
     stopped: Annotated[StopOutcome, Field(strict=False)] | None = Field(
-        default=None, exclude_if=_is_none
+        default=None, exclude_if=is_none
     )
-    thinking: bool = Field(default=False, exclude_if=_is_false)
+    thinking: bool = Field(default=False, exclude_if=is_false)
 
     @field_validator("thinking")
     @classmethod
@@ -485,7 +483,7 @@ def framing_tool() -> ToolDeclaration:
 
 OptionalTraceparent = Annotated[
     Annotated[str, StringConstraints(max_length=256)] | None,
-    Field(default=None, exclude_if=_is_none),
+    Field(default=None, exclude_if=is_none),
 ]
 """A W3C ``traceparent`` as an app stores it, left out of the JSON when absent. Only its length is
 bound here: logline's ``unit_trace`` is the one reader and starts a new trace for a value it
@@ -510,10 +508,10 @@ class PlaceEntry(StrictModel):
     text: NonEmptyUnicodeText
     own: bool
     spoken: bool = False
-    cut: bool = Field(default=False, exclude_if=_is_false)
-    act: bool = Field(default=False, exclude_if=_is_false)
-    continues: bool = Field(default=False, exclude_if=_is_false)
-    language: SpokenLanguage | None = Field(default=None, exclude_if=_is_none)
+    cut: bool = Field(default=False, exclude_if=is_false)
+    act: bool = Field(default=False, exclude_if=is_false)
+    continues: bool = Field(default=False, exclude_if=is_false)
+    language: SpokenLanguage | None = Field(default=None, exclude_if=is_none)
     traceparent: OptionalTraceparent
 
     @model_validator(mode="after")
@@ -554,17 +552,20 @@ class PlaceWindow(StrictModel):
     valid, and its ``starts_at`` is the ``seq`` the next line will get. ``talked_over`` is set
     only while people talk over the member; a person's partial and finished line are never both
     in one read. ``interrupted`` is set exactly while the member is held, and leaves in the same
-    change that ends the hold; a new ``generation`` carries none. ``voice_state`` states a failure
-    of the member's voice at the place, for that member there; absent, the app states nothing.
+    change that ends the hold; a new ``generation`` carries none. ``went_on`` names the latest hold
+    of this ``generation`` that ended by itself; it arises in the change that ends that hold and
+    stays until a later one replaces it. ``voice_state`` states a failure of the member's voice at
+    the place, for that member there; absent, the app states nothing.
     """
 
     generation: NonEmptyUnicodeText
     starts_at: int = Field(ge=1)
     entries: tuple[PlaceEntry, ...]
-    talked_over: TalkedOver | None = Field(default=None, exclude_if=_is_none)
-    interrupted: Interrupted | None = Field(default=None, exclude_if=_is_none)
+    talked_over: TalkedOver | None = Field(default=None, exclude_if=is_none)
+    interrupted: Interrupted | None = Field(default=None, exclude_if=is_none)
+    went_on: WentOn | None = Field(default=None, exclude_if=is_none)
     voice_state: Annotated[VoiceState, Field(strict=False)] | None = Field(
-        default=None, exclude_if=_is_none
+        default=None, exclude_if=is_none
     )
 
     @model_validator(mode="after")

@@ -863,8 +863,8 @@ descriptions ([Trust](ARCHITECTURE.md#crosscutting-concepts)).
 ## The member module
 
 `agents.member` exports what an app and an agent say to each other about a member:
-`PlaceRef` (defined in `agents.member_place`, with `STANDING_URI` and the four URI functions, and re-exported here), the speech and hold records (defined in `agents.member_speaking` and re-exported here: the arguments and answers of `speak`, `stop_speaking` and `continue_speaking`, `PartialSpeech`, `TalkedOver`, `Interrupted(id, place)`, the place a hold stopped the member at (`HoldPoint`, `HoldPlace(at, sentence, heard_to)` and `hold_place(sentence, heard_to)`, the one mapping the loop and every app share) and `VoiceState`), `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
-`STANDING_URI`, `member://standing`, answers with), `PlaceWindow(generation, starts_at, entries, talked_over, interrupted, voice_state)`
+`PlaceRef` (defined in `agents.member_place`, with `STANDING_URI` and the four URI functions, and re-exported here), the speech and hold records (defined in `agents.member_speaking` and re-exported here: the arguments and answers of `speak`, `stop_speaking` and `continue_speaking`, `PartialSpeech`, `TalkedOver`, `Interrupted(id, place, wordless)`, `WentOn(id)`, `has_words(text)`, the place a hold stopped the member at (`HoldPoint`, `HoldPlace(at, sentence, heard_to)` and `hold_place(sentence, heard_to)`, the one mapping the loop and every app share) and `VoiceState`), `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
+`STANDING_URI`, `member://standing`, answers with), `PlaceWindow(generation, starts_at, entries, talked_over, interrupted, voice_state, went_on)`
 of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, continues, language, traceparent)`, `LEASE_SECONDS` (120),
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
 `LISTEN_ALLOWANCE_SECONDS` (5), `AcceptInvitationArguments(place, invitation, epoch, looks, figure, voices)` for the tool
@@ -1454,9 +1454,10 @@ change in which `playing` turns false. The `id` is the app's and never repeats w
 absent when the app cannot tell, never estimated from time), or `between_sentences`, when no
 sentence that answered `Spoken` was playing or the playing one played to its end. An app on a release
 before the place leaves it absent. `interrupted` stands exactly while the member is held and leaves in
-the same change that ends the hold. Nothing ends it by itself and no timer runs; the runner decides,
-and without a decision nothing the member held or sends is said, so a `speak` without the id is
-refused `held`. Three tools decide, each naming the id:
+the same change that ends the hold. Nothing ends it by itself but a hold through whose talk-over no
+word was heard (below), and no timer runs; the runner decides, and without a decision nothing the
+member held or sends is said, but the held rest and the queue of a hold that goes on by itself, so a
+`speak` without the id is refused `held`. Three tools decide, each naming the id:
 
 - `CONTINUE_SPEAKING_TOOL`, `continue_speaking`, with `ContinueSpeakingArguments(place,
   interrupted)`: the held sentence's rest plays on from where it stopped, faded back in (from its
@@ -1475,7 +1476,8 @@ refused `held`. Three tools decide, each naming the id:
 
 A person who is already speaking does not hold the member again after a continue or a `speak` with
 the id; a person whose new voice lasts the bound does, with a new `id`. A voice failure does not end
-the hold: the held sentence enters as above and a later continue plays the queue; a voice failure
+the hold: the held sentence enters as above and a later continue, or the hold's going on by itself,
+plays the queue; a voice failure
 while Stopping ends Stopping. A new generation, the member's end, the place's end and the member's
 pause end the hold, and the new window carries no `interrupted`
 ([HEARING-30](hearing.md), [HEARING-9](hearing.md)).
@@ -1483,11 +1485,31 @@ pause end the hold, and the new window carries no `interrupted`
 A runner needs no gate for sending the id: it sends only an id it read from a window's
 `interrupted`, which only an app with the hold writes.
 
+**A hold through whose talk-over no word was heard.** The hold's talk-over is every person of a
+`talked_over` record that stands while the member is Stopping or Held in that hold; a word is a
+letter or a digit (`has_words`), in a partial of such a person or in a line they say while the hold
+stands, also after their partial went. While no word has been heard, `Interrupted.wordless` is true
+from the change that adds `interrupted`; it leaves in the change in which the first word is heard,
+whereupon the runner decides as for any hold, and never returns for that `id`. While it stands the
+app owns the hold's end and a runner starts no decision for it: once no `talked_over` record stands
+and no person the member hears is speaking, the app ends the hold as `continue_speaking` does, in a
+change after the one that added `interrupted`, so `interrupted` leaves, `PlaceWindow.went_on` is
+`WentOn(id)` with the hold's `id`, and the held rest plays from its place, faded back in, then the
+queue. `went_on` names the latest hold of the generation that went on by itself and stays until a
+later one replaces it; a runner tells its next round once per generation and `id`, with the line
+`told_went_on()` of `agents.voice.conversation` (`{"went_on": true}`), and never sends that `id`. A
+tool call with the id that comes anyway acts as in Held. The member's pause, its or the place's end
+and a new generation end such a hold as any hold, with no `went_on`
+([HEARING-30](hearing.md)).
+
 **Rollout order.** Answers and arguments are strict: a runner takes the release before its app
 answers `DroppedSpeaking`, `held` or `not_interrupted`, and an app on an older release refuses a
 `speak` with `interrupted`, so a runner sends it only once its app has shipped the hold. Runners take
 each release first; then apps fill `place`, drop the line of a sentence that not every seat heard a
-word of, and declare what they add later. An app drops that line only in the same change in which it
+word of, and declare what they add later. A runner takes this release before any app sets `wordless`:
+a runner of an older release ignores `wordless` and `went_on` and decides a hold whose record has
+gone, and that decision would race the app's going on by itself, so an app sets `wordless` and goes
+on by itself only once every runner it serves has adopted it. An app drops that line only in the same change in which it
 starts to state `place` on its holds, and only once every runner it serves has adopted this release;
 a runner whose app states no place builds `hold_place(its playing sentence, None)` and tells the
 decision the whole sentence. An absent `place` makes a runner tell the hold as it was without it.
@@ -1500,6 +1522,7 @@ Proved by `tests/test_member.py` (among them
 `test_a_window_reads_its_voice_state_as_sent` and
 `test_a_cut_mark_on_a_written_line_is_refused`,
 `test_a_window_reads_its_hold_back_from_its_json_unchanged`,
+`test_a_window_reads_the_hold_that_went_on_back_from_its_json_unchanged`,
 `test_continue_speaking_arguments_with_a_malformed_field_are_refused` and
 `test_a_stop_answer_reads_stopped_and_dropped_each_as_its_own_record`).
 
@@ -1513,8 +1536,9 @@ Proved by `tests/test_member.py` (among them
   ([HEARING-24 to HEARING-26](hearing.md)).
 - It holds a member talked over for the bound at once, as Stopping and then Held, stops the
   playing sentence at its next word end or lets it finish under the bound, writes `interrupted` with
-  its `place` exactly while it is held, drops nothing and continues nothing by itself, and refuses with
-  `held` and `not_interrupted` ([HEARING-30](hearing.md)). It reads `heard_to` from the word marks
+  its `place` exactly while it is held, drops nothing, and continues by itself only a hold through
+  whose talk-over no word was heard, marked `wordless`, once nobody the member hears speaks, and
+  refuses with `held` and `not_interrupted` ([HEARING-30](hearing.md)). It reads `heard_to` from the word marks
   against the seats' reports, never from the time.
 - It plays one member's sentences in order, each behind that member's previous sentence, and
   answers each at its turn with `Spoken` when it starts to play or `Written`.
@@ -1715,7 +1739,7 @@ await run_voice_loop(
   `SentenceStarted(text)`, `SentenceRefused(text)`,
   `DecisionFailed(kind, code, detail, retry_after_s=...)`, whose `outcome` is the stop's
   `StopOutcome`, `DecisionEnded`, `EchoDropped(text)`, `Held` and `HoldEnded(ending)` with the
-  `HoldEnding` `continued`, `finished`, `stopped`, `answered` or `dropped`.
+  `HoldEnding` `continued`, `finished`, `stopped`, `answered`, `dropped` or `went_on`.
 
 **Being talked over.** The loop holds its answer itself, from the partial speech it is given, and
 reads neither `talked_over` nor `interrupted`, which stay the member wire's hold for a runner
@@ -1731,7 +1755,12 @@ loop does not test partials for echoes, so an echo the app lets through holds th
 sentence that plays.
 
 The talk-over ends once every utterance in it has ended (a person's finished line, or a change
-without that person). Then, once the sound has stopped and the held turn has been read to its end,
+without that person). A talk-over none of whose people's partials and lines held a word (`has_words`,
+also after a person's partial went) opens no decision: once the sound has stopped and the newest
+`PartialsChanged` is empty, the loop reports `HoldEnded(went_on)` and goes on with what the hold
+holds, with no wait for the held turn's reading, and the next decision opens over the line
+`told_went_on()`, `{"went_on": true}`, which `HOLD_RULES` explains. A fresh utterance holds again. For
+a talk-over that held a word, once the sound has stopped and the held turn has been read to its end,
 tool rounds included, so that no two decisions overlap, one more decision opens over every line
 heard since, a finished line of the interjection among them, and the hold line, one JSON object
 `{"held": ...}` that `told_hold(place, unsaid)` builds and `HOLD_RULES` explains to the model. It
@@ -1774,14 +1803,19 @@ Woke  [StayedSilent|ReplyUnreadable]*  SentenceStarted*      the answer
   [SentenceRefused]                                           a refused resume or play
   (Held ... HoldEnded)*                                       a newer talk-over
   DecisionEnded                                               the span is over
+
+Held  HoldEnded(went_on)  SentenceStarted*                    no word: no Woke, the hold goes on
 ```
+
+`HoldEnded(went_on)` follows `Held` with no `Woke` between, also after the `Held` of a deferred
+ending below, and what plays after it is what that ending would play.
 
 A talk-over that starts while the decision is in flight reports nothing until the ending is
 known. If the ending plays something (`continued`, `finished`, `answered`) and that talk-over
 stands, `Held` follows at once and the ending's effects wait: the paused sentence is not
 resumed and no new sentence starts. What the ending would play is the held answer, and the
 newer talk-over gets its own decision over it once the first decision's turn was read to its
-end. If the ending plays nothing, the answer has ended and the newer talk-over's lines wake as
+end, or, when that talk-over held no word, plays it with no decision. If the ending plays nothing, the answer has ended and the newer talk-over's lines wake as
 any line. A talk-over that starts after the ending, while its sentences play, holds them as any
 answer. Proved by `tests/test_voice_hold.py`:
 `test_the_first_words_of_a_talk_over_pause_the_playing_sentence_and_start_no_other`,
@@ -1809,7 +1843,12 @@ by `tests/test_voice_hold_place.py`:
 `test_while_the_sound_stops_lines_and_partials_enter_and_the_decision_opens_once_it_has`,
 `test_a_sound_that_never_stops_holds_the_decision_while_hearing_goes_on_until_it_ends`,
 `test_a_stop_that_reports_more_than_the_sentence_was_long_fails_loud` and
-`test_a_playing_ending_under_a_newer_talk_over_holds_again_told_where_the_sound_stands`.
+`test_a_playing_ending_under_a_newer_talk_over_holds_again_told_where_the_sound_stands`; and by
+`tests/test_voice_hold_without_words.py`:
+`test_a_talk_over_without_words_goes_on_by_itself_and_the_rest_plays_with_no_decision`,
+`test_a_talk_over_without_words_while_nothing_plays_goes_on_without_waiting_for_the_reading`,
+`test_the_next_waking_decision_is_told_that_the_agent_went_on` and
+`test_a_newer_talk_over_without_words_plays_what_the_waiting_ending_would_play`.
 
 Proved by `tests/test_voice_loop.py`:
 `test_a_spoken_line_that_wakes_sends_one_request_with_prompt_protocol_context_and_the_line`,

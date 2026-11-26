@@ -5,8 +5,10 @@ stopping and continuing in a place, what speaking and stopping answer (a sentenc
 written as a line when the voice failed) and what each refuses, and what the window says when
 people talk over the member (``TalkedOver``), when the member is held by it (``Interrupted``)
 and whether the member's voice at the place has failed (``VoiceState``); a hold says where it
-stopped the member in a ``HoldPlace``. ``agents.member``
-re-exports every name. This module is base, so a runner parses all of it without the
+stopped the member in a ``HoldPlace``, and a hold the app ended by itself is a ``WentOn``.
+``has_words`` is the one test of whether a text holds a word. ``agents.member`` re-exports the
+records and takes the shared field helpers (``MarkerTrue``, ``is_none``, ``is_false``) from
+here without re-exporting them. This module is base, so a runner parses all of it without the
 ``mcp-server`` extra.
 """
 
@@ -46,13 +48,33 @@ __all__ = [
     "TalkedOver",
     "VoiceState",
     "VoiceStyle",
+    "WentOn",
     "Written",
+    "has_words",
     "hold_place",
+    "is_false",
+    "is_none",
 ]
 
 
-def _is_none(value: object) -> bool:
+def is_none(value: object) -> bool:
     return value is None
+
+
+def is_false(value: bool) -> bool:
+    return not value
+
+
+def has_words(text: str) -> bool:
+    """Whether one of the text's characters is a letter or a digit (``str.isalpha`` or
+    ``str.isdigit``).
+
+    A digit is what ``str.isdigit`` accepts, so a superscript such as "²" counts too, which errs
+    toward a decision. Punctuation, an emoji, a fraction such as "½" and a Roman numeral sign such
+    as "Ⅷ" (number characters, neither letter nor digit) hold no word. It is the one test of
+    whether a talk-over held a word, for the wire and the voice loop alike.
+    """
+    return any(character.isalpha() or character.isdigit() for character in text)
 
 
 VoiceStyle = NonEmptyUnicodeText
@@ -76,12 +98,12 @@ class SpeakArguments(StrictModel):
 
     place: PlaceRef
     text: NonEmptyUnicodeText
-    language: SpokenLanguage | None = Field(default=None, exclude_if=_is_none)
-    style: VoiceStyle | None = Field(default=None, exclude_if=_is_none)
+    language: SpokenLanguage | None = Field(default=None, exclude_if=is_none)
+    style: VoiceStyle | None = Field(default=None, exclude_if=is_none)
     mood: Annotated[FigureMood, Field(strict=False)] | None = Field(
-        default=None, exclude_if=_is_none
+        default=None, exclude_if=is_none
     )
-    interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=_is_none)
+    interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
 
 
 def _refuse_false(value: bool) -> bool:
@@ -148,7 +170,7 @@ class StopSpeakingArguments(StrictModel):
     stale one is refused."""
 
     place: PlaceRef
-    interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=_is_none)
+    interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
 
 
 class StoppedSpeaking(StrictModel):
@@ -254,8 +276,8 @@ class HoldPlace(StrictModel):
     carries neither field. That ``heard_to`` falls on a word's end is the app's duty."""
 
     at: Annotated[HoldPoint, Field(strict=False)]
-    sentence: NonEmptyUnicodeText | None = Field(default=None, exclude_if=_is_none)
-    heard_to: Annotated[int, Field(ge=0)] | None = Field(default=None, exclude_if=_is_none)
+    sentence: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
+    heard_to: Annotated[int, Field(ge=0)] | None = Field(default=None, exclude_if=is_none)
 
     @model_validator(mode="after")
     def _keep_the_invariants_of_the_point(self) -> Self:
@@ -290,10 +312,22 @@ class Interrupted(StrictModel):
     fixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.
     The hold ends at one of them, or at the member's or the place's end. ``place`` says where
     the hold stopped the member and stays as it was while the hold stands; it is absent while
-    the app states none."""
+    the app states none. ``wordless`` is true from the change that adds the hold while no word
+    (``has_words``) of its talk-over has been heard; the app then owns the hold's end and ends it
+    by itself (``PlaceWindow.went_on``), and a runner starts no decision for it. It leaves in
+    the change in which the first word is heard, and never returns for this ``id``; it is
+    absent while false."""
 
     id: NonEmptyUnicodeText
-    place: HoldPlace | None = Field(default=None, exclude_if=_is_none)
+    place: HoldPlace | None = Field(default=None, exclude_if=is_none)
+    wordless: bool = Field(default=False, exclude_if=is_false)
+
+
+class WentOn(StrictModel):
+    """A hold through whose talk-over no word was heard ended by itself and the member went on:
+    ``id`` is that hold's ``Interrupted.id``."""
+
+    id: NonEmptyUnicodeText
 
 
 class VoiceState(StrEnum):

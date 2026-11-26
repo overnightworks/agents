@@ -56,7 +56,9 @@ HOLD_RULES: Final = (
     'sentence was left part way. "unsaid" lists the sentences you had written and not yet '
     f"said. Open that reply with [{Marker.CONTINUE}] to go on from where you stopped, "
     f"[{Marker.FINISH}] to finish the sentence you were saying and stop, {SILENT_REPLY} to stop, "
-    "or with the words to say instead, which stop what you were saying."
+    "or with the words to say instead, which stop what you were saying. A line with the key "
+    '"went_on" says that a sound without words held you and you went on by yourself from where '
+    "you stopped."
 )
 """What a runner tells the model about a held reply and the line ``told_hold`` writes for it; the
 holding reader reads these openings."""

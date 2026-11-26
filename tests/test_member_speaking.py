@@ -28,7 +28,9 @@ from agents.member import (
     StopSpeakingArguments,
     TalkedOver,
     VoiceState,
+    WentOn,
     Written,
+    has_words,
     hold_place,
 )
 from tests.support.member_wire import (
@@ -239,6 +241,74 @@ def test_a_window_reads_its_hold_back_from_its_json_unchanged() -> None:
     assert window.interrupted == Interrupted(id="h-1")
     assert json.loads(window.model_dump_json())["interrupted"] == interrupted_wire()
     assert PlaceWindow.model_validate_json(window.model_dump_json()) == window
+
+
+@pytest.mark.parametrize(
+    ("text", "holds_a_word"),
+    [
+        pytest.param("hm", True, id="a letter"),
+        pytest.param("\u00c4", True, id="a letter with a mark"),
+        pytest.param("7", True, id="a digit"),
+        pytest.param("\u00b2", True, id="a superscript digit"),
+        pytest.param("\u0663", True, id="an arabic-indic digit"),
+        pytest.param("", False, id="nothing"),
+        pytest.param("\u2026", False, id="an ellipsis"),
+        pytest.param(" ?! ", False, id="punctuation"),
+        pytest.param("\U0001f600", False, id="an emoji"),
+        pytest.param("\u00bd", False, id="a fraction"),
+        pytest.param("\u2167", False, id="a roman numeral sign"),
+    ],
+)
+def test_a_text_holds_a_word_when_one_of_its_characters_is_a_letter_or_a_digit(
+    text: str, holds_a_word: bool
+) -> None:
+    assert has_words(text) is holds_a_word
+
+
+def test_a_hold_that_went_through_no_word_reads_back_wordless_and_one_that_did_not_dumps_none() -> (
+    None
+):
+    wordless = window_from(
+        talked_window_wire(interrupted=interrupted_wire(wordless=True), talked_over=None)
+    )
+    worded = window_from(talked_window_wire(interrupted=interrupted_wire(wordless=False)))
+
+    assert wordless.interrupted == Interrupted(id="h-1", wordless=True)
+    assert json.loads(wordless.model_dump_json())["interrupted"] == interrupted_wire(wordless=True)
+    assert Interrupted(id="h-1").wordless is False
+    assert "wordless" not in json.loads(worded.model_dump_json())["interrupted"]
+    assert "wordless" not in json.loads(Interrupted(id="h-1").model_dump_json())
+
+
+def test_a_window_reads_the_hold_that_went_on_back_from_its_json_unchanged() -> None:
+    window = window_from(talked_window_wire(went_on={"id": "h-1"}, talked_over=None))
+
+    assert window.went_on == WentOn(id="h-1")
+    assert json.loads(window.model_dump_json())["went_on"] == {"id": "h-1"}
+    assert PlaceWindow.model_validate_json(window.model_dump_json()) == window
+
+
+def test_a_window_without_a_hold_that_went_on_dumps_without_the_key() -> None:
+    window = PlaceWindow(generation="g", starts_at=1, entries=())
+
+    assert window.went_on is None
+    assert "went_on" not in json.loads(window.model_dump_json())
+
+
+@pytest.mark.parametrize(
+    "went_on",
+    [{}, {"id": ""}, {"id": 1}, {"id": "h", "extra": 1}, "h-1"],
+    ids=["no-id", "empty-id", "number-id", "unknown-member", "bare-id"],
+)
+def test_a_window_whose_went_on_hold_is_malformed_is_refused(went_on: object) -> None:
+    with pytest.raises(ValidationError):
+        window_from(talked_window_wire(went_on=went_on))
+
+
+@pytest.mark.parametrize("wordless", [1, "true", None], ids=["number", "text", "null"])
+def test_a_hold_whose_wordless_mark_is_not_a_boolean_is_refused(wordless: object) -> None:
+    with pytest.raises(ValidationError):
+        window_from(talked_window_wire(interrupted=interrupted_wire(wordless=wordless)))
 
 
 A_SENTENCE = "Guten Tag, wie geht es?"

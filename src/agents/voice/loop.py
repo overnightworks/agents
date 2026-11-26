@@ -1,6 +1,7 @@
 """The voice loop: lines in, the host's wake rule, one decision at a time, sentences out.
 
-A talk-over holds the answer and one more decision ends the hold."""
+A talk-over holds the answer; one more decision ends the hold, unless the talk-over held no word,
+when the hold ends by itself."""
 
 from __future__ import annotations
 
@@ -91,12 +92,12 @@ async def run_voice_loop[Audio](
     undecided until a line wakes the agent again.
 
     While an answer is written or plays, the first partial of a person who started speaking
-    during it holds the answer (``Held``) and stops the sound (``VoiceOut.pause``) while hearing
-    goes on; once the sound has stopped, that talk-over has ended and the held turn has been read,
-    one decision, told where the sound stopped, ends the hold with ``[continue]``, ``[finish]``,
-    ``[silent]`` or new speech (``HoldEnded``); without it the rest is dropped. Each decision a
-    waking line started ends with one ``DecisionEnded``, its holds included, once its sound and its
-    turns have ended. A sentence renders in the answered line's language.
+    during it holds the answer (``Held``) and pauses the sound while hearing goes on; once the
+    sound has stopped, that talk-over has ended and the held turn has been read, one decision, told
+    where the sound stopped, ends the hold with ``[continue]``, ``[finish]``, ``[silent]`` or new
+    speech (``HoldEnded``); without it the rest is dropped, and a talk-over with no word ends its
+    hold by itself once nobody speaks (``WENT_ON``). Each decision a waking line started ends with
+    one ``DecisionEnded``, its holds included. A sentence renders in the answered line's language.
 
     When hearing ends, the loop closes the turn, stops the sound and returns. Any other error
     of a port or the backend, and a ``seq`` not above the last, closes the turn, stops the
@@ -289,7 +290,7 @@ class _VoiceLoop[Audio]:
 
     def _hear_line(self, line: PlaceEntry) -> None:
         if not line.own:
-            self._talk.finished(line.name)
+            self._talk.finished(line.name, line.text)
         if is_echo(line, self._latest_answer()):
             self._conversation.skip(line)
             self._report(EchoDropped(line.text))
@@ -390,12 +391,17 @@ class _VoiceLoop[Audio]:
     async def _hold(
         self, stage: _Stage, play: asyncio.Task[None]
     ) -> tuple[_Stage, asyncio.Task[None]] | None:
-        """Hold the answer until a decision ends the hold; what goes on, or ``None`` if nothing."""
+        """Hold the answer until a decision, or the talk-over's end without a word, ends the hold;
+        what goes on, or ``None`` if nothing."""
         held_play: asyncio.Task[None] | None = play
         while True:
-            await asyncio.wait(self._readings())
             place = await self._where_the_sound_stopped()
+            await self._until(lambda: self._talk.worded or self._talk.nobody_speaks)
+            if not self._talk.worded:
+                return await self._go_on(stage, held_play)
+            await asyncio.wait(self._readings())
             await self._until(lambda: not self._talk.standing)
+            self._talk.forget_words()
             decision = self._open_hold(stage, place)
             ending = await decision.ending
             self._report(HoldEnded(ending))
@@ -442,12 +448,31 @@ class _VoiceLoop[Audio]:
             return None
         if ending is HoldEnding.ANSWERED:
             stage, play = decision, None
+        return self._carry_on(stage, play)
+
+    async def _go_on(
+        self, stage: _Stage, play: asyncio.Task[None] | None
+    ) -> tuple[_Stage, asyncio.Task[None]] | None:
+        """End a hold whose talk-over held no word by itself, as ``[continue]`` would; no decision
+        is open, so the next one is told the agent went on."""
+        self._report(HoldEnded(HoldEnding.WENT_ON))
+        self._conversation.note_went_on()
+        if not await self._resumed(play):
+            return None
+        return self._carry_on(stage, play)
+
+    def _carry_on(
+        self, stage: _Stage, play: asyncio.Task[None] | None
+    ) -> tuple[_Stage, asyncio.Task[None]]:
+        """Play the stage's sentences on, starting its play when none runs, and hold the answer
+        again if a talk-over stands, else release it."""
         play = play or self._start_play(stage)
         if self._talk.standing:
             self._held_now()
         else:
             self._held = False
             self._go.set()
+            self._talk.forget_words()
         return stage, play
 
     async def _resumed(self, play: asyncio.Task[None] | None) -> bool:

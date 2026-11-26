@@ -30,6 +30,7 @@ from tests.support.voice_support import (
     PacedGateway,
     RecordingVoice,
     a_lookup_tool,
+    a_second_person_talks_over_beside_one_who_began_before_the_answer,
     an_answer_of_two_that_is_playing,
     conversation_of,
     finish,
@@ -107,11 +108,10 @@ def test_a_second_person_who_starts_during_the_answer_holds_it_while_an_earlier_
     voice, gateway = an_answer_of_two_that_is_playing(place)
 
     async def hearing(trace):
-        yield speaking(("Ben", "Ich glaube"))
-        yield a_line(1, "Erzähl.")
-        await trace.until(lambda: ("play", "Eins.") in trace.entries)
-        yield speaking(("Ben", "Ich glaube"), ("Cy", "Halt"))
-        await trace.until(lambda: Held() in trace.entries)
+        async for event in a_second_person_talks_over_beside_one_who_began_before_the_answer(
+            trace, words="Halt"
+        ):
+            yield event
         await trace.settled()
 
     assert place.run(hearing, gateway, voice=voice) == RETURNED

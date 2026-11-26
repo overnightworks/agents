@@ -515,12 +515,33 @@ def an_answer_of_two_that_is_playing(place, *later_replies):
     return voice, FakeGateway(THE_FIRST_ANSWER, *later_replies)
 
 
-async def interjection_while_playing(trace):
-    """The first line wakes the agent; a person then starts talking over its playing sentence."""
+async def interjection_while_playing(trace, *, words="Moment"):
+    """The first line wakes the agent; a person then starts talking over its playing sentence,
+    with ``words`` as their partial."""
     yield a_line(1, "Erzähl.")
     await trace.until(lambda: ("play", "Eins.") in trace.entries)
-    yield speaking(("Ben", "Moment"))
+    yield speaking(("Ben", words))
     await trace.until(lambda: Held() in trace.entries)
+
+
+async def a_second_person_talks_over_beside_one_who_began_before_the_answer(trace, *, words):
+    """Ben is speaking when the first line wakes the agent; Cy then talks over its playing
+    sentence with ``words`` as the partial, Ben still speaking, and the agent is held."""
+    yield speaking(("Ben", "Ich glaube"))
+    yield a_line(1, "Erzähl.")
+    await trace.until(lambda: ("play", "Eins.") in trace.entries)
+    yield speaking(("Ben", "Ich glaube"), ("Cy", words))
+    await trace.until(lambda: Held() in trace.entries)
+
+
+async def a_talk_over_without_words_beside_a_person_who_began_before_the_answer(trace):
+    """The second person's talk-over has no words; it then ends and Ben is still speaking."""
+    async for event in a_second_person_talks_over_beside_one_who_began_before_the_answer(
+        trace, words=""
+    ):
+        yield event
+    yield speaking(("Ben", "Ich glaube"))
+    await trace.settled()
 
 
 async def the_person_finishes(trace, *, text="Moment, wie meinst du das?", seq=2, language=None):

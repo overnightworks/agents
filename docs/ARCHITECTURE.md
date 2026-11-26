@@ -108,7 +108,7 @@ flowchart TB
   voice out of the conversation. The loop also holds its own answer when a person talks over it
   (`voice.talk_over` decides what a talk-over is, from the partial speech the host gives), stops
   the host's sound at the ruled place through `VoiceOut`, tells the decision where, and ends the
-  hold with one more decision.
+  hold with one more decision or, when the talk-over held no word, by itself once nobody speaks.
 
 ## Runtime
 
@@ -131,7 +131,8 @@ writing, never the playing, and a third renders the next sentence, never more th
 The loop holds itself: when a person talks over its answer it stops the host's sound at the ruled
 place, waits until the sound has stopped, the talk-over has ended and the held turn has been read to
 its end, and runs one hold decision that is told where the sound stopped, so no two model calls
-overlap.
+overlap; or, when the talk-over held no word, goes on by itself once nobody speaks, with no
+decision.
 
 The MCP person front is mounted by the host behind the host's own authentication gate. It
 resolves the person through a port, answers `tools/list` and `tools/call`, and replays a marked

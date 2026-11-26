@@ -195,24 +195,31 @@ class DecisionEnded:
 @dataclass(frozen=True)
 class Held:
     """A talk-over holds the answer: the sound playing is stopped by ``VoiceOut.pause`` and no
-    other sentence starts."""
+    other sentence starts. On the member wire this is Stopping."""
 
 
 class HoldEnding(StrEnum):
-    """How a hold ends: the answer goes on, finishes its sentence, stops, is replaced or dropped."""
+    """How a hold ends: the answer goes on, finishes its sentence, stops, is replaced or dropped,
+    or goes on by itself because the talk-over held no word.
+
+    The first five are what a hold decision gave; ``WENT_ON`` is no choice of the agent.
+    """
 
     CONTINUED = "continued"
     FINISHED = "finished"
     STOPPED = "stopped"
     ANSWERED = "answered"
     DROPPED = "dropped"
+    WENT_ON = "went_on"
 
 
 @dataclass(frozen=True)
 class HoldEnded:
     """The decision on a talk-over ended the hold; reported before its effects.
 
-    ``DROPPED`` is a failed decision or one that opened with nothing readable.
+    ``DROPPED`` is a failed decision or one that opened with nothing readable. ``WENT_ON`` is a
+    hold whose talk-over held no word (``agents.member.has_words``): it ends by itself, with no
+    decision and no ``Woke`` before it, once nobody the agent hears speaks.
     """
 
     ending: HoldEnding

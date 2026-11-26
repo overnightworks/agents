@@ -30,6 +30,7 @@ STANDINGS = {"standings": [STANDING]}
 WINDOW = talked_window_wire(interrupted={"id": "h-1"}, voice_state="available")
 A_PLACE = {"at": "in_sentence", "sentence": "Guten Tag.", "heard_to": 5}
 PLACED_WINDOW = talked_window_wire(interrupted={"id": "h-1", "place": A_PLACE})
+WENT_ON_WINDOW = talked_window_wire(went_on={"id": "h-0"})
 VIEW = {"revision": 2, "awaits_you": True, "state": {"items": [1, {"open": True}]}}
 
 # each record, its wire, and the places inside that wire where a newer app may add a key
@@ -46,6 +47,7 @@ UNKNOWN_KEY_PLACES = [
     pytest.param(PlaceWindow, WINDOW, ("talked_over", "speech", 0), id="partial speech"),
     pytest.param(PlaceWindow, WINDOW, ("interrupted",), id="interrupted"),
     pytest.param(PlaceWindow, PLACED_WINDOW, ("interrupted", "place"), id="hold place"),
+    pytest.param(PlaceWindow, WENT_ON_WINDOW, ("went_on",), id="went on"),
     pytest.param(PlaceView, VIEW, (), id="view"),
 ]
 
@@ -133,8 +135,20 @@ def test_a_hold_without_a_place_reads_as_one_the_app_states_none_for() -> None:
     assert window.interrupted == Interrupted(id="h-1")
 
 
-def test_a_reader_of_an_older_release_ignores_the_place_of_a_hold() -> None:
-    window = member_resource_from_json(WindowOfAnOlderRelease, json.dumps(PLACED_WINDOW))
+@pytest.mark.parametrize(
+    "written",
+    [
+        pytest.param(json.dumps(PLACED_WINDOW), id="place of a hold"),
+        pytest.param(
+            member_resource_from_json(PlaceWindow, json.dumps(talked_window_wire()))
+            .model_copy(update={"interrupted": Interrupted(id="h-1", wordless=True)})
+            .model_dump_json(),
+            id="hold without words",
+        ),
+    ],
+)
+def test_a_reader_of_an_older_release_ignores_what_a_hold_adds(written: str) -> None:
+    window = member_resource_from_json(WindowOfAnOlderRelease, written)
 
     assert window.interrupted == OlderInterrupted(id="h-1")
 

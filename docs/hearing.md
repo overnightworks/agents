@@ -156,8 +156,8 @@ app proves it.
   guess from the time it played. A line is never changed once appended. Every sentence answered
   `Spoken` yields at most one own line in the speaker's window, whole or `cut`, also after a voice
   failure that follows the start. It yields none when not every seat heard a word of it: cut, it
-  enters no window; held, it stays the head of the held queue, and continued, it plays from its start
-  and enters whole at its end. A sentence dropped by a stop or by a `speak` naming the hold answers
+  enters no window; held, it stays the head of the held queue, and continued, by the agent or by itself
+  (HEARING-30), it plays from its start and enters whole at its end. A sentence dropped by a stop or by a `speak` naming the hold answers
   `stopped` and yields none. A sentence dropped by an end or a pause answers `not_active`. A sentence
   that never started, refused or dropped from the queue, enters no window, a held sentence dropped
   before it started included, and no person's line is ever cut. The app marks an agent's spoken line
@@ -251,7 +251,8 @@ app proves it.
     waits. The window gains `interrupted: Interrupted(id, place)` and `playing` turns false in one
     change. In that change a sentence that played to its end enters its line, and one that a voice
     failure ended while Stopping enters as at a voice failure while held. The `id` is the app's and
-    never repeats within the window's `generation`.
+    never repeats within the window's `generation`. From that change `interrupted` carries `wordless`
+    while no word of the hold's talk-over has been heard (below).
   - `place` says where the hold stopped the member, and stays as it was while the hold stands:
     - `in_sentence`, with the `sentence` that answered `Spoken` and that the hold stopped before its
       end, and `heard_to`: the code points every seat heard, to a word's end, read from the word marks
@@ -263,17 +264,47 @@ app proves it.
     - An app on a release before the place leaves it absent.
   - `interrupted` stands exactly while the member is Held. It leaves the window in the same change
     that ends the hold: a `continue_speaking`, a `stop_speaking`, a `speak` with the hold's id, the
-    member's or the place's end, or the member's pause (HEARING-9). A new generation carries none.
-    Nothing leaves Held by itself, and no timer runs.
-  - Without the agent's decision, nothing it held or sends is said: a `speak` without the id is
-    refused `held` at once. A `speak` refused for any reason (its own arguments, `not_active`) leaves
+    member's or the place's end, the member's pause (HEARING-9), or the hold's going on by itself
+    (below). A new generation carries none. Nothing leaves Held by itself but a hold through whose
+    talk-over no word was heard (below), and no timer runs.
+  - Without the agent's decision, nothing it held or sends is said, but the held rest and the queue
+    of a hold that goes on by itself (below): a `speak` without the id is refused `held` at once. A `speak` refused for any reason (its own arguments, `not_active`) leaves
     the hold and its rest as they were.
   - The held rest is dropped for good only at a stop, at a `speak` with the id, at the member's pause
     (HEARING-9), or at the member's, the place's or the generation's end. A held sentence with
     `heard_to` above 0 enters with `cut` and `sentence[:heard_to]`, or whole when the place states no
     `heard_to`. One with `heard_to` 0, or one that had not started, enters no window.
   - A voice failure while held does not end the hold: the held sentence enters as above, and the hold
-    and `interrupted` stay over the queue. A later `continue_speaking` plays the queue.
+    and `interrupted` stay over the queue. A later `continue_speaking`, or the hold's going on by
+    itself, plays the queue.
+  - A hold through whose talk-over no word was heard goes on by itself:
+    - The hold's talk-over is every person of a `talked_over` record that stands while the member is
+      Stopping or Held in that hold, a record that arises while it is held included. A word is a
+      letter or a digit (`has_words`). It counts in a partial of such a person and in a line such a
+      person says while the hold stands, also after their partial went; a line that replaces the last
+      partial (so the record goes in the same change) counts in that change, before the end below is
+      checked.
+    - `wordless` stands from the change that adds `interrupted` while no word of the talk-over has
+      been heard. It leaves in the change in which the first word is heard, whereupon a runner
+      decides as for any hold; `interrupted` and its `place` stay, and `wordless` never returns for
+      that `id`. A hold whose first word came while Stopping never carries it.
+    - While `wordless` stands, the app owns the hold's end and a runner starts no decision for it. A
+      `continue_speaking`, a `stop_speaking` or a `speak` with the id that comes anyway acts as in
+      Held; a `speak` without the id is refused `held`.
+    - The end: while `wordless` stands, once no `talked_over` record stands and no person the member
+      hears is speaking (judged by those people's turns), the app ends the hold as `continue_speaking`
+      does (HEARING-31), in a change after the one that added `interrupted`: `interrupted` leaves,
+      `went_on: WentOn(id)` arises with the hold's `id`, and the held rest plays from its place, faded
+      back in, then the queue. A hold whose record went while Stopping is Held with `wordless` for at
+      least one change and goes on in the next.
+    - The member's pause, its or the place's end and a new generation end such a hold as any hold,
+      with no `went_on`. A voice that lasts the bound afterwards holds the member again, with a new
+      `id` (HEARING-21).
+  - `went_on` names the latest hold of the window's generation that went on by itself. It arises in
+    the change that ends that hold and stays until a later one replaces it; a new generation carries
+    none. It is a window field, not a line: lines are what people and the agent said (HEARING-6,
+    HEARING-16). A runner tells its next round once per generation and `id` (`told_went_on`) and never
+    sends that `id`.
   - A new window generation ends a hold as a stop without id does.
   - `stop_speaking` with the standing id ends the hold with Silent and answers `StoppedSpeaking(cut)`
     when the held sentence's cut line entered, else `DroppedSpeaking`; without an id it does the same
@@ -286,7 +317,8 @@ app proves it.
 - HEARING-31: (A) `continue_speaking(place, interrupted)` ends the hold with the standing id: the
   held sentence's rest plays on from where it stopped, faded back in, then the queue, and
   `interrupted` leaves in the same window change; a sentence with `heard_to` 0 plays from its start. It answers `ContinuedSpeaking(continued: true)`, and refuses `not_active`, or
-  `not_interrupted` when no hold or another one stands. The fade and the resume belong to the app's speech service.
+  `not_interrupted` when no hold or another one stands. The fade and the resume belong to the app's speech service. A hold that goes on by itself
+  (HEARING-30) plays the same way, with no call and no answer.
 
 - HEARING-32: (L+A) An app that runs the voice loop gives its hearing, besides each finished
   line, every change of the partial speech at the place as `PartialsChanged`: one `PartialSpeech`
@@ -303,19 +335,24 @@ app proves it.
   the hold decision only once it has returned. The decision is told the place (`told_hold`): the part
   heard and the rest, nothing heard, or the whole sentence when the app cannot tell, and the sentences
   written and not started. A person who starts while the talk-over stands joins it; a start after it
-  ended is a newer talk-over. The talk-over ends when each of its utterances has ended. Then, once the
-  sound has stopped and the held turn has been read to its end (its `maxDurationSeconds` bounds that
-  wait), one decision gets the talk so far, the lines heard since and the place with what was unsaid,
+  ended is a newer talk-over. The talk-over ends when each of its utterances has ended. Then, for a
+  talk-over that held a word (`has_words`, in a partial or a line of one of its people, also after
+  that person's partial went), once the sound has stopped and the held turn has been read to its end
+  (its `maxDurationSeconds` bounds that wait), one decision gets the talk so far, the lines heard since and the place with what was unsaid,
   and its reply's opening ends the hold: `[continue]` resumes the stopped sound and the rest plays,
   `[finish]` resumes it and drops the rest, `[silent]` stops, speech replaces the rest; anything else,
   a failed decision or none drops the rest and nothing more is said. An ending that plays something
-  waits while a newer talk-over stands, and that talk-over gets its own decision. No timer ends a
-  hold. The agent's own voice is kept out by the app's audio path; the loop does not test partials for
+  waits while a newer talk-over stands, and that talk-over gets its own decision. A talk-over none of
+  whose people's partials and lines held a word opens no decision: once the sound has stopped and the
+  newest `PartialsChanged` is empty, the loop goes on with what the hold holds, the stopped sound and
+  its rest, or what an ending that waited for this talk-over would play; it reports
+  `HoldEnded(went_on)`, and its next decision is told so (`told_went_on`). A fresh utterance holds
+  again. No timer ends a hold. The agent's own voice is kept out by the app's audio path; the loop does not test partials for
   echoes. A person whose question the speech service splits into two finals wakes the agent on the
   first and holds it on the second, so the first model call is spent for nothing and the hold
   decision waits for that reply to be written. On the member wire `continue_speaking` cannot express
-  "finish": it plays the queue too. Proved by `tests/test_voice_hold.py` and
-  `tests/test_voice_hold_place.py`; the app proves its partials and its `pause` and `resume`.
+  "finish": it plays the queue too. Proved by `tests/test_voice_hold.py`,
+  `tests/test_voice_hold_place.py` and `tests/test_voice_hold_without_words.py`; the app proves its partials and its `pause` and `resume`.
 
 ## When the voice fails
 
@@ -355,8 +392,9 @@ app proves it.
   - the queue of an agent's sentences, the voice state, the written fallback and its log line
     (HEARING-14 to HEARING-17 and HEARING-24 to HEARING-26);
   - the talked-over record with the partials, the stop and the style (HEARING-21 to
-    HEARING-23), the hold, the continue, the `speak` with the id and the refusals `held` and
-    `not_interrupted` (HEARING-30 and HEARING-31);
+    HEARING-23), the hold, the continue, `wordless`, `went_on` and the end of a hold whose talk-over
+    held no word, the `speak` with the id and the refusals `held` and `not_interrupted`
+    (HEARING-30 and HEARING-31);
   - for the voice loop, the partial at a lasting voice, and the stop and resume of its sound with where
     it stopped (HEARING-32);
   - what seeing needs of it (HEARING-19); and
