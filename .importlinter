@@ -62,6 +62,7 @@ source_modules =
     agents.member_outcomes
     agents.member_place
     agents.member_presentation
+    agents.member_speaking
     agents.mcp_wire
     agents.skills
     agents.tools
@@ -101,6 +102,7 @@ source_modules =
     agents.member_outcomes
     agents.member_place
     agents.member_presentation
+    agents.member_speaking
     agents.mcp_wire
     agents.skills
     agents.tools
@@ -136,6 +138,7 @@ source_modules =
     agents.member_outcomes
     agents.member_place
     agents.member_presentation
+    agents.member_speaking
     agents.mcp_wire
     agents.skills
     agents.tools
@@ -184,6 +187,7 @@ source_modules =
     agents.member_outcomes
     agents.member_place
     agents.member_presentation
+    agents.member_speaking
     agents.mcp_wire
     agents.skills
     agents.tools
@@ -219,6 +223,7 @@ source_modules =
     agents.member_outcomes
     agents.member_place
     agents.member_presentation
+    agents.member_speaking
     agents.mcp_wire
     agents.skills
     agents.tools
@@ -237,7 +242,7 @@ forbidden_modules =
 
 # An app's core admits agents.calling and agents.member, so what they import stays pure: no module
 # that reaches a library an app has not chosen, and none of the libraries those modules would bring.
-# member_place and member_presentation are sources because member imports them.
+# member_place, member_presentation and member_speaking are sources because member imports them.
 [importlinter:contract:calling-and-member-stay-pure]
 name = agents.calling and agents.member import no impure agents module and no library
 type = forbidden
@@ -248,6 +253,7 @@ source_modules =
     agents.member_outcomes
     agents.member_place
     agents.member_presentation
+    agents.member_speaking
 forbidden_modules =
     agents.agent_file
     agents.backend
