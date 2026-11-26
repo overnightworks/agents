@@ -91,14 +91,12 @@ async def run_voice_loop[Audio](
     undecided until a line wakes the agent again.
 
     While an answer is written or plays, the first partial of a person who started speaking
-    during it holds the answer (``Held``) and stops the sound that plays (``VoiceOut.pause``);
-    hearing goes on while the sound stops. Once the sound has stopped, that talk-over has ended
-    and the held turn has been read, one decision, told where the sound stopped, ends the hold
-    with ``[continue]``, ``[finish]``, ``[silent]`` or new speech (``HoldEnded``); without a
-    decision the rest is dropped. A host that yields no ``PartialsChanged`` is never held.
-    Each decision a waking line started ends with one ``DecisionEnded``, its holds included, once
-    its sound and its turns have ended. A sentence renders in the language of the answered line,
-    the newest one a person said or wrote.
+    during it holds the answer (``Held``) and stops the sound (``VoiceOut.pause``) while hearing
+    goes on; once the sound has stopped, that talk-over has ended and the held turn has been read,
+    one decision, told where the sound stopped, ends the hold with ``[continue]``, ``[finish]``,
+    ``[silent]`` or new speech (``HoldEnded``); without it the rest is dropped. Each decision a
+    waking line started ends with one ``DecisionEnded``, its holds included, once its sound and its
+    turns have ended. A sentence renders in the answered line's language.
 
     When hearing ends, the loop closes the turn, stops the sound and returns. Any other error
     of a port or the backend, and a ``seq`` not above the last, closes the turn, stops the

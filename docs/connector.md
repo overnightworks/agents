@@ -1806,7 +1806,6 @@ and `test_a_newer_talk_over_after_a_stopping_ending_holds_nothing_and_its_line_w
 by `tests/test_voice_hold_place.py`:
 `test_a_hold_is_told_in_one_of_four_shapes_beside_the_sentences_not_started`,
 `test_the_hold_decision_is_told_where_the_sentence_stopped_and_its_ending_is_carried_out`,
-`test_a_line_during_the_answer_without_a_partial_wakes_by_the_rule_and_holds_nothing`,
 `test_while_the_sound_stops_lines_and_partials_enter_and_the_decision_opens_once_it_has`,
 `test_a_sound_that_never_stops_holds_the_decision_while_hearing_goes_on_until_it_ends`,
 `test_a_stop_that_reports_more_than_the_sentence_was_long_fails_loud` and
@@ -1921,7 +1920,7 @@ the hold decision opens over every undecided line and clears a pending wake. The
 no rate limit; the person's budget at the gateway bounds it. Proved by
 `test_two_lines_heard_while_deciding_of_which_one_wakes_get_exactly_one_more_decision`,
 `test_lines_heard_while_deciding_that_do_not_wake_start_nothing_and_lead_the_next`,
-`test_a_waking_line_heard_while_an_answer_plays_is_decided_after_it_plays_uncut` and
+`test_a_waking_line_heard_while_an_answer_plays_is_decided_after_it_plays_uncut` (which holds nothing) and
 `test_two_hundred_waking_lines_each_after_the_last_answer_get_two_hundred_decisions`.
 
 `DecisionEnded` is the last event of a decision a waking line started, its holds included: it

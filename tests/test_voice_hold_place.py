@@ -184,25 +184,6 @@ def test_the_hold_decision_is_told_where_the_sentence_stopped_and_its_ending_is_
     assert HoldEnded(ending) in place.trace.events
 
 
-def test_a_line_during_the_answer_without_a_partial_wakes_by_the_rule_and_holds_nothing(place):
-    voice = RecordingVoice(place.trace, held={"Eins."})
-    gateway = FakeGateway(THE_FIRST_ANSWER, completion("Ja?"))
-
-    async def hearing(trace):
-        yield a_line(1, "Erzähl.")
-        await trace.until(lambda: ("play", "Eins.") in trace.entries)
-        yield a_line(2, "Moment.", name="Ben")
-        voice.release("Eins.")
-        await trace.settled()
-
-    assert place.run(hearing, gateway, voice=voice) == RETURNED
-
-    assert ("Moment.", False) in place.trace.asked
-    assert Held() not in place.trace.events
-    assert all(call[0] != "pause" for call in place.trace.calls)
-    assert place.trace.played == ["Eins.", "Zwei.", "Ja?"]
-
-
 def test_while_the_sound_stops_lines_and_partials_enter_and_the_decision_opens_once_it_has(place):
     voice = RecordingVoice(place.trace, held={"Eins."}, seconds_per_pause=30.0)
     gateway = FakeGateway(THE_FIRST_ANSWER, completion("[continue]"))

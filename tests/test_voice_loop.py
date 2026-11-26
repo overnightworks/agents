@@ -18,6 +18,7 @@ from agents.turn import FailureCode
 from agents.voice import (
     DecisionEnded,
     DecisionFailed,
+    Held,
     ReplyUnreadable,
     SentenceRefused,
     SentenceStarted,
@@ -293,6 +294,8 @@ def test_a_waking_line_heard_while_an_answer_plays_is_decided_after_it_plays_unc
     assert place.run(hearing, gateway, voice=voice) == RETURNED
 
     assert place.trace.played == ["Eins.", "Zwei.", "Gern."]
+    assert Held() not in place.trace.events
+    assert all(call[0] != "pause" for call in place.trace.calls)
     assert place.trace.events.index(Woke(), 1) > place.trace.events.index(SentenceStarted("Zwei."))
     assert conversation_of(gateway.requests[1]) == [
         ("user", ["Erzähl."]),
