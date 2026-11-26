@@ -531,7 +531,9 @@ class _VoiceLoop[Audio]:
         ahead = self._group.create_task(self._render_next(stage))
         try:
             while not stage.cut and (rendered := await ahead) is not None:
-                await self._go.wait()
+                # A set event wakes its waiter even when it is cleared again before the waiter runs.
+                while not self._go.is_set():
+                    await self._go.wait()
                 if stage.cut:
                     return
                 if isinstance(rendered, SentenceRefused):
