@@ -1,7 +1,0 @@
-claim_id = "89af93de3fba4390af0155603101cf72"
-agent = "Claude 5a2c1980-6775-406a-82da-93bde876e4a7"
-role = "builder"
-base = "03e0a31d431392cb94d3276a604148a98e58f4b9"
-branch = "claude/issue-1164-the-voice-loop-starts-no-sentence-while"
-scope = ["src/agents/voice/loop.py", "tests/test_voice_hold_without_words.py"]
-opened_commit = "9438d861d49cf2ab5798ff146a98acd524fe15c9"
