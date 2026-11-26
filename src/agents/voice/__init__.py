@@ -89,7 +89,8 @@ class VoiceOut[Audio](Protocol):
         ...
 
     async def resume(self) -> None:
-        """Go on with the paused sound from where it paused, faded back in.
+        """Go on with the paused sound from where it paused, faded back in; from the sentence's
+        start when its ``pause`` returned 0.
 
         Its ``play`` returns when it ends. When the paused sound had already ended, return at
         once; its ``play`` returns. Raises ``VoiceRefused`` when the host cannot go on.

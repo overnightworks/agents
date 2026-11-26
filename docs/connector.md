@@ -1701,8 +1701,8 @@ await run_voice_loop(
   `play` then returns; a sound that already ended gives this too) and `None` when the app cannot tell,
   as with no word marks, never estimated from time. A result above the sentence's length fails loud.
   Where the sound plays beyond a hop (a browser) the hop's time is the app's. `resume()` goes on
-  from where the sound paused, faded back in, and its `play` returns
-  when it ends; when the paused sound had already ended it returns at once, and it raises
+  from where the sound paused, or from the sentence's start when its `pause` returned 0, faded back
+  in, and its `play` returns when it ends; when the paused sound had already ended it returns at once, and it raises
   `VoiceRefused` when the app cannot go on. The loop calls `pause` only while a `play` has not
   returned and `resume` at most once after each `pause`, and runs `pause` in a task of its own, so
   hearing goes on while the sound stops. A `pause` that never returns holds the hold decision,
