@@ -312,6 +312,10 @@ def test_finish_with_no_sentence_paused_says_nothing_more(place):
         DecisionEnded(),
     ]
     assert trace.played == []
+    assert not [call for call in trace.calls if call[0] == "pause"]
+    assert rows_of(messages_of(gateway.requests[1])[-1])[-1] == {
+        "held": {"unsaid": ["Eins.", "Zwei."]}
+    }
 
 
 def test_silent_stops_the_paused_sentence_and_says_nothing_more(place):

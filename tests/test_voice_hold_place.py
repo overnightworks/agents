@@ -230,6 +230,37 @@ def test_the_sound_is_paused_while_its_sentence_plays_even_as_the_play_is_about_
     assert place.trace.order_of(("pause", "Eins."), ("played", "Eins."))[0] == ("pause", "Eins.")
 
 
+def test_a_hold_while_nothing_plays_is_told_no_place_after_an_earlier_hold_mid_sentence(place):
+    trace = place.trace
+    voice = RecordingVoice(trace, held={"Eins."}, heard_to={"Eins.": 4})
+    gateway = PacedGateway(
+        trace,
+        [piece("Eins. Zw"), lambda: trace.until(lambda: ("newer",) in trace.entries), finish()],
+        [piece("[continue]"), finish()],
+        [piece("[silent]"), finish()],
+    )
+
+    async def hearing(trace):
+        async for event in interjection_while_playing(trace):
+            yield event
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.until(lambda: ("resume", "Eins.") in trace.entries)
+        voice.release("Eins.")
+        await trace.until(lambda: ("played", "Eins.") in trace.entries)
+        yield speaking(("Cy", "Noch eine Frage"))
+        trace.record(("newer",))
+        await trace.until(lambda: trace.count(Held()) == 2)
+        yield a_line(3, "Noch eine Frage, bitte.", name="Cy")
+        yield speaking()
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert rows_of(messages_of(gateway.requests[2])[-1])[-1] == {"held": {"unsaid": []}}
+    assert [call for call in trace.calls if call[0] == "pause"] == [("pause", "Eins.")]
+
+
 def test_a_sound_that_never_stops_holds_the_decision_while_hearing_goes_on_until_it_ends(place):
     voice = RecordingVoice(place.trace, held={"Eins."}, hangs={("pause", "Eins.")})
     gateway = FakeGateway(THE_FIRST_ANSWER, completion("[continue]"))
