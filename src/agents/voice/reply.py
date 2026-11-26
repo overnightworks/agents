@@ -18,7 +18,7 @@ from typing import Final, Literal
 from agents.backend import TurnEvent
 from agents.turn_events import AssistantTextEvent, FinalEvent, ToolCallEvent
 from agents.voice import ReplyUnreadable, StayedSilent, sentences
-from agents.voice.conversation import WINDOW_NOTE
+from agents.voice.conversation import WINDOW_NOTE, Heard
 
 
 class Marker(StrEnum):
@@ -47,14 +47,19 @@ its front stays fixed, says which turns they hold for, and marks each spoken tur
 message."""
 
 HOLD_RULES: Final = (
-    "When someone talks over you, your reply is paused and you are asked again: the last user "
-    'message then ends with a line that has the keys "paused_at" (the sentence you were saying, '
-    'or null) and "unsaid" (the sentences you had written and not yet said). Open that reply '
-    f"with [{Marker.CONTINUE}] to go on from where you paused, [{Marker.FINISH}] to finish the "
-    f"sentence you were saying and stop, {SILENT_REPLY} to stop, or with the words to say "
-    "instead, which stop what you were saying."
+    "When someone talks over you, your sound stops at a word's end and you are asked again: the "
+    'last user message then ends with a line with the key "held", an object that tells where '
+    f'you stopped. Its "heard" is "{Heard.PART}" (you were saying a sentence and everyone heard '
+    f'it up to "said", "rest" is what is left of it), "{Heard.NONE}" (nobody had heard a word of '
+    f'the sentence you were saying, "rest" is the whole sentence) or "{Heard.UNKNOWN}" (it is '
+    'not known how far it was heard, "sentence" is the whole sentence); without "heard", no '
+    'sentence was playing. "unsaid" lists the sentences you had written and not yet said. Open '
+    f"that reply with [{Marker.CONTINUE}] to go on from where you stopped, [{Marker.FINISH}] to "
+    f"finish the sentence you were saying and stop, {SILENT_REPLY} to stop, or with the words to "
+    "say instead, which stop what you were saying."
 )
-"""What a runner tells the model about a paused reply; the holding reader reads these openings."""
+"""What a runner tells the model about a held reply and the line ``told_hold`` writes for it; the
+holding reader reads these openings."""
 
 PROTOCOL_TEXT: Final = (
     "You take part in a conversation by voice. Each user message holds what was heard or "

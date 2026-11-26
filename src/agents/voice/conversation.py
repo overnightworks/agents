@@ -6,24 +6,35 @@ did not play is never recorded. A decision sends at most ``window_bytes`` of it,
 UTF-8 bytes of the messages' texts, because a provider's tokens cannot be counted here; only the
 newest line goes beyond it, alone and behind ``WINDOW_NOTE`` once anything went. What a decision
 dropped never returns. A decision on a paused answer also holds the loop's own line that says
-what was paused and unsaid; it is recorded with the decision's lines when the decision is, and
-dropped with them when they stay undecided. The answered line of a decision is the newest of the
-lines it sends that a person said or wrote: not the agent's own, an act or the pause line.
+where the sound stopped and what was unsaid; it is recorded with the decision's lines when the
+decision is, and dropped with them when they stay undecided. The answered line of a decision is
+the newest of the lines it sends that a person said or wrote: not the agent's own, an act or the
+pause line.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Final
 
-from agents.member import PlaceEntry, SpokenLanguage
-from agents.turn import TurnMessage, TurnRole
+from agents.member import HoldPlace, PlaceEntry, SpokenLanguage
+from agents.turn import JsonObject, TurnMessage, TurnRole
 
 WINDOW_NOTE: Final = "(Earlier parts of this conversation are no longer shown.)"
 """The line that opens the first user message once the window has dropped earlier parts."""
 
 _LINE_BREAK: Final = "\n"
+
+
+class Heard(StrEnum):
+    """How much of the sentence a hold stopped the loop's line says was heard."""
+
+    PART = "part"
+    NONE = "none"
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
@@ -71,14 +82,14 @@ class Conversation:
             self._missed += line.seq - self._last_seq - 1
         self._last_seq = line.seq
 
-    def note_pause(self, paused_at: str | None, unsaid: list[str]) -> None:
-        """Add the loop's line about a paused answer to the lines the next decision opens over.
+    def note_hold(self, place: HoldPlace, unsaid: Sequence[str]) -> None:
+        """Add the loop's line about a held answer to the lines the next decision opens over.
 
-        ``paused_at`` is the sentence that was playing, ``None`` when none was; ``unsaid`` are
-        the sentences written and not started.
+        ``place`` is where the sound stopped and ``unsaid`` are the sentences written and not
+        started; the line tells them as ``told_hold`` does.
         """
-        fields = {"paused_at": paused_at, "unsaid": " ".join(unsaid)}
-        self._pause_line = _Line(json.dumps(fields, ensure_ascii=False), answerable=False)
+        held = {"held": told_hold(place, unsaid)}
+        self._pause_line = _Line(json.dumps(held, ensure_ascii=False), answerable=False)
         self._undecided.append(self._pause_line)
 
     def open_decision(self) -> list[TurnMessage]:
@@ -143,6 +154,31 @@ class Conversation:
         note = _bytes_of(WINDOW_NOTE + _LINE_BREAK) if self._noted else 0
         decided = sum(_bytes_of(message.text) for message in self._decided)
         return note + decided + _bytes_of(_LINE_BREAK.join(self._texts_deciding()))
+
+
+def told_hold(place: HoldPlace, unsaid: Sequence[str]) -> JsonObject:
+    """What a hold decision is told of where the sound stopped, and the sentences not started.
+
+    The part heard and the rest (``"heard": "part"`` with ``"said"`` and ``"rest"``), nothing
+    heard (``"none"``, the whole sentence as ``"rest"``) or, when the app cannot tell, the whole
+    ``"sentence"`` (``"unknown"``); ``Heard`` holds the three words. Between sentences it tells
+    none of these. ``"unsaid"`` lists the sentences written and not started. ``HOLD_RULES``
+    explains the keys to the model; a runner whose app states no place passes
+    ``hold_place(its playing sentence, None)``.
+    """
+    told: JsonObject = {}
+    if place.sentence is not None:
+        told |= _told_sentence(place.sentence, place.heard_to)
+    told["unsaid"] = list(unsaid)
+    return told
+
+
+def _told_sentence(sentence: str, heard_to: int | None) -> JsonObject:
+    if heard_to is None:
+        return {"heard": Heard.UNKNOWN, "sentence": sentence}
+    if heard_to == 0:
+        return {"heard": Heard.NONE, "rest": sentence}
+    return {"heard": Heard.PART, "said": sentence[:heard_to], "rest": sentence[heard_to:]}
 
 
 def _bytes_of(text: str) -> int:

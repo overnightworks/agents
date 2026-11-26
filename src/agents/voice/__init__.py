@@ -49,7 +49,9 @@ class VoiceOut[Audio](Protocol):
     The loop plays the sentences in order: ``play`` for a sentence starts only after it returned
     for the one before. While one sentence plays, the loop renders the next, never more than one
     ahead, so ``render`` may run while ``play`` does. A talk-over pauses the sound that plays and
-    the loop then resumes it or stops it by cancelling its ``play``.
+    the loop then resumes it or stops it by cancelling its ``play``. The loop calls ``pause``
+    only while a ``play`` has not returned, runs it in a task of its own while hearing goes on,
+    and cancels it when hearing ends.
     """
 
     async def render(self, sentence: str, *, language: SpokenLanguage | None) -> Audio:
@@ -67,11 +69,22 @@ class VoiceOut[Audio](Protocol):
         While the sound is paused the play does not return.
         """
 
-    async def pause(self) -> None:
-        """Pause the sound playing now, faded as the host's voice fades.
+    async def pause(self) -> int | None:
+        """Stop the sound playing now where its next word ends, faded as the host's voice fades,
+        and return what every listener heard of its sentence.
 
-        Return once the host has asked its sound to pause: where the sound plays beyond a hop (a
-        browser), the hop's time is the host's. A sound that already ended is left as it is.
+        The sound plays to its end instead when less than the host's bound of it remains; the
+        remainder comes from the sentence's word marks or, for a sentence without word marks,
+        from its finished sound. Otherwise it stops at its next word end, or at once for a
+        sentence without word marks. A remainder not yet known counts as more than the bound.
+        Return once the sound has stopped, for any reason, a refused ``play`` included: where
+        the sound plays beyond a hop (a browser), the hop's time is the host's.
+
+        The result is the number of code points of the sentence that every listener heard, cut
+        back to a word's end: 0 when none heard a word, the sentence's length when it played to
+        its end (its ``play`` then returns, and a sound that already ended gives this too) and
+        ``None`` when the host cannot tell, as with no word marks; it is never estimated from
+        time. A result above the sentence's length is a defect the loop raises.
         """
         ...
 
@@ -101,9 +114,11 @@ class PartialsChanged:
     """The partial speech at the place after a change.
 
     One ``PartialSpeech`` per person other than the agent whose finished line the host gives, in
-    the order they started, empty when nobody speaks. The host gives each change whether or not
-    the agent answers; a person's finished line comes before the change that drops that
-    utterance's partial. The loop decides what a talk-over is.
+    the order they started, empty when nobody speaks. A person is in it only once their voice has
+    lasted the bound the host sets (about 0.4 s), so a shorter voice reaches the loop only as its
+    line. The host gives each change whether or not the agent answers; a person's finished line
+    comes before the change that drops that utterance's partial. The loop decides what a
+    talk-over is.
     """
 
     speech: tuple[PartialSpeech, ...]
@@ -178,7 +193,8 @@ class DecisionEnded:
 
 @dataclass(frozen=True)
 class Held:
-    """A talk-over holds the answer: the sound playing is paused and no other sentence starts."""
+    """A talk-over holds the answer: the sound playing is stopped by ``VoiceOut.pause`` and no
+    other sentence starts."""
 
 
 class HoldEnding(StrEnum):

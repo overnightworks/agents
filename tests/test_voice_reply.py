@@ -6,6 +6,7 @@ from typing import get_args
 
 import pytest
 
+from agents.member import hold_place
 from agents.turn_events import (
     AssistantTextEvent,
     FinalEvent,
@@ -23,6 +24,7 @@ from agents.voice.reply import (
     SentenceRelease,
 )
 from agents.voice.sentences import split_sentences
+from tests.support.member_wire import keys_at_any_depth
 from tests.support.voice_lines import STREAMED_ANSWERS, a_line, random_pieces
 
 SILENT = (StayedSilent(),)
@@ -132,12 +134,26 @@ def test_the_protocol_text_names_every_key_a_written_line_carries():
     conversation.hear(a_line(1, "Eins."))
     conversation.hear(a_line(3, "Drei.", language="de"))
     conversation.hear(a_line(5, "Ada legt ab.", kind="move", spoken=False, act=True))
-    conversation.note_pause("Eins.", ["Zwei."])
 
     written = conversation.open_decision()[-1].text.splitlines()
 
     keys = {key for line in written for key in json.loads(line)}
     assert {key for key in keys if f'"{key}"' not in PROTOCOL_TEXT} == set()
+
+
+@pytest.mark.parametrize(
+    ("sentence", "heard_to"),
+    [("Eins.", 4), ("Eins.", 0), ("Eins.", None), (None, None)],
+    ids=["part heard", "none heard", "cannot tell", "between sentences"],
+)
+def test_the_protocol_text_names_every_key_and_word_the_hold_line_tells(sentence, heard_to):
+    conversation = Conversation(window_bytes=4096)
+    conversation.note_hold(hold_place(sentence, heard_to), ["Zwei."])
+
+    held = json.loads(conversation.open_decision()[-1].text)
+
+    told = keys_at_any_depth(held) | set(held["held"].get("heard", "").split())
+    assert {word for word in told if f'"{word}"' not in PROTOCOL_TEXT} == set()
 
 
 @pytest.mark.parametrize("marker", get_args(HoldMarker.__value__))
