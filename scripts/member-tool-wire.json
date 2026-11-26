@@ -243,7 +243,7 @@
         },
         "Interrupted": {
           "additionalProperties": false,
-          "description": "The member is held: a person talked over it, and nothing of the member plays until its\ndecision. ``id`` is the app's, never repeats within the window's ``generation`` and stays\nfixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.\n``place`` says where the hold stopped the member and stays as it was while the hold stands;\nit is absent while the app states none. The hold ends at one of them, or at the member's or\nthe place's end.",
+          "description": "The member is held: a person talked over it, and nothing of the member plays until its\ndecision. ``id`` is the app's, never repeats within the window's ``generation`` and stays\nfixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.\nThe hold ends at one of them, or at the member's or the place's end. ``place`` says where\nthe hold stopped the member and stays as it was while the hold stands; it is absent while\nthe app states none.",
           "properties": {
             "id": {
               "minLength": 1,

@@ -53,10 +53,10 @@ HOLD_RULES: Final = (
     f'it up to "said", "rest" is what is left of it), "{Heard.NONE}" (nobody had heard a word of '
     f'the sentence you were saying, "rest" is the whole sentence) or "{Heard.UNKNOWN}" (it is '
     'not known how far it was heard, "sentence" is the whole sentence); without "heard", no '
-    'sentence was playing. "unsaid" lists the sentences you had written and not yet said. Open '
-    f"that reply with [{Marker.CONTINUE}] to go on from where you stopped, [{Marker.FINISH}] to "
-    f"finish the sentence you were saying and stop, {SILENT_REPLY} to stop, or with the words to "
-    "say instead, which stop what you were saying."
+    'sentence was left part way. "unsaid" lists the sentences you had written and not yet '
+    f"said. Open that reply with [{Marker.CONTINUE}] to go on from where you stopped, "
+    f"[{Marker.FINISH}] to finish the sentence you were saying and stop, {SILENT_REPLY} to stop, "
+    "or with the words to say instead, which stop what you were saying."
 )
 """What a runner tells the model about a held reply and the line ``told_hold`` writes for it; the
 holding reader reads these openings."""

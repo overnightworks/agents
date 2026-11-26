@@ -285,9 +285,9 @@ class Interrupted(StrictModel):
     """The member is held: a person talked over it, and nothing of the member plays until its
     decision. ``id`` is the app's, never repeats within the window's ``generation`` and stays
     fixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.
-    ``place`` says where the hold stopped the member and stays as it was while the hold stands;
-    it is absent while the app states none. The hold ends at one of them, or at the member's or
-    the place's end."""
+    The hold ends at one of them, or at the member's or the place's end. ``place`` says where
+    the hold stopped the member and stays as it was while the hold stands; it is absent while
+    the app states none."""
 
     id: NonEmptyUnicodeText
     place: HoldPlace | None = Field(default=None, exclude_if=_is_none)

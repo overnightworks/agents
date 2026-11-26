@@ -273,7 +273,7 @@ app proves it.
     `heard_to` above 0 enters with `cut` and `sentence[:heard_to]`, or whole when the place states no
     `heard_to`. One with `heard_to` 0, or one that had not started, enters no window.
   - A voice failure while held does not end the hold: the held sentence enters as above, and the hold
-    and `interrupted` stay over the queue. A later `continue_speaking` plays the queue, as today.
+    and `interrupted` stay over the queue. A later `continue_speaking` plays the queue.
   - A new window generation ends a hold as a stop without id does.
   - `stop_speaking` with the standing id ends the hold with Silent and answers `StoppedSpeaking(cut)`
     when the held sentence's cut line entered, else `DroppedSpeaking`; without an id it does the same
