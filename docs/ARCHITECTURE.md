@@ -66,7 +66,7 @@ flowchart TB
   vocabulary, the size bounds and the failure codes), `turn_events`, `config`, the `backend` port
   and `member` (the records an app and an agent say to each other about a member, the place window
   and the place view) with `member_presentation` (an agent's looks, figure and voices) and
-  `member_place` (a place's reference and the URIs of its window and view), and `calling` (the
+  `member_place` (a place's reference and the URIs of its window and view) and `member_speaking` (the records of speaking, stopping, continuing and being held), and `calling` (the
   decisions of calling and sending away an agent, pure, on facts the app supplies); and
   `member_outcomes`, the failures and codes of a call to an app's member endpoint, pure so that a
   runner's decisions read them without the client.

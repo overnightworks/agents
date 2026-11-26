@@ -863,7 +863,7 @@ descriptions ([Trust](ARCHITECTURE.md#crosscutting-concepts)).
 ## The member module
 
 `agents.member` exports what an app and an agent say to each other about a member:
-`PlaceRef` (defined in `agents.member_place`, with `STANDING_URI` and the four URI functions, and re-exported here), `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
+`PlaceRef` (defined in `agents.member_place`, with `STANDING_URI` and the four URI functions, and re-exported here), the speech and hold records (defined in `agents.member_speaking` and re-exported here: the arguments and answers of `speak`, `stop_speaking` and `continue_speaking`, `PartialSpeech`, `TalkedOver`, `Interrupted` and `VoiceState`), `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
 `STANDING_URI`, `member://standing`, answers with), `PlaceWindow(generation, starts_at, entries, talked_over, interrupted, voice_state)`
 of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, continues, language, traceparent)`, `LEASE_SECONDS` (120),
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
