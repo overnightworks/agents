@@ -12,7 +12,7 @@ import asyncio
 import functools
 import json
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
@@ -91,9 +91,9 @@ class Trace:
 
     Voice events are recorded as reported; the support's own entries are tuples that start
     with their kind: ``render``, ``unrendered`` (a render cancelled), ``play``, ``played``,
-    ``stopped`` (a play cancelled), ``pause``, ``resume``, ``asked``, ``tool``, ``written``,
-    ``closed``, ``cancelled``, ``ended`` (the loop's run is over) and ``rendered_in`` (the
-    language a sentence was rendered in).
+    ``stopped`` (a play cancelled), ``pause``, ``unpaused`` (a pause cancelled), ``resume``,
+    ``asked``, ``tool``, ``written``, ``closed``, ``cancelled``, ``ended`` (the loop's run is
+    over) and ``rendered_in`` (the language a sentence was rendered in).
     """
 
     def __init__(self) -> None:
@@ -130,7 +130,16 @@ class Trace:
 
     @property
     def calls(self) -> list[tuple[str, str]]:
-        kinds = {"render", "unrendered", "play", "played", "stopped", "pause", "resume"}
+        kinds = {
+            "render",
+            "unrendered",
+            "play",
+            "played",
+            "stopped",
+            "pause",
+            "unpaused",
+            "resume",
+        }
         return [entry for entry in self.entries if isinstance(entry, tuple) and entry[0] in kinds]
 
     @property
@@ -184,9 +193,10 @@ class RecordingVoice:
     Every render takes ``seconds_per_render``, every play ``seconds_per_sentence`` and every
     resume ``seconds_per_resume`` on the loop's clock, and a sentence in ``held`` plays until
     ``release`` ends it. A play does not return while paused, until ``resume``; a sentence in
-    ``ends_at_pause`` ends as it is paused, so its ``resume`` has nothing to go on with. After
-    that time, ``raises`` maps a call and its sentence to what that call raises, and a call in
-    ``hangs`` never returns.
+    ``ends_at_pause`` ends as it is paused, so its ``resume`` has nothing to go on with. A pause
+    returns what ``heard_to`` maps its sentence to (``None``, the voice cannot tell, when absent),
+    and the length of a sentence in ``ends_at_pause``. After that time, ``raises`` maps a call and
+    its sentence to what that call raises, and a call in ``hangs`` never returns.
     """
 
     def __init__(
@@ -197,8 +207,10 @@ class RecordingVoice:
         hangs: Collection[tuple[str, str]] = (),
         held: Collection[str] = (),
         ends_at_pause: Collection[str] = (),
+        heard_to: Mapping[str, int | None] | None = None,
         seconds_per_render: float = 0.0,
         seconds_per_sentence: float = 0.0,
+        seconds_per_pause: float = 0.0,
         seconds_per_resume: float = 0.0,
     ) -> None:
         self._trace = trace
@@ -206,11 +218,13 @@ class RecordingVoice:
         self._hangs = hangs
         self._held = {sentence: asyncio.Event() for sentence in held}
         self._ends_at_pause = ends_at_pause
+        self._heard_to = heard_to or {}
         self._resumed = asyncio.Event()
         self._resumed.set()
         self._sentence = ""
         self._render_seconds = seconds_per_render
         self._seconds = seconds_per_sentence
+        self._pause_seconds = seconds_per_pause
         self._resume_seconds = seconds_per_resume
 
     def release(self, sentence: str) -> None:
@@ -228,13 +242,22 @@ class RecordingVoice:
             raise
         return sentence
 
-    async def pause(self) -> None:
-        self._trace.record(("pause", self._sentence))
-        if self._sentence in self._ends_at_pause:
-            if self._sentence in self._held:
-                self._held[self._sentence].set()
-            return
+    async def pause(self) -> int | None:
+        sentence = self._sentence
+        try:
+            self._trace.record(("pause", sentence))
+            if self._pause_seconds:
+                await asyncio.sleep(self._pause_seconds)
+            await self._as_arranged("pause", sentence)
+        except asyncio.CancelledError:
+            self._trace.record(("unpaused", sentence))
+            raise
+        if sentence in self._ends_at_pause:
+            if sentence in self._held:
+                self._held[sentence].set()
+            return len(sentence)
         self._resumed.clear()
+        return self._heard_to.get(sentence)
 
     async def resume(self) -> None:
         self._trace.record(("resume", self._sentence))
@@ -514,6 +537,34 @@ async def the_hold_ends(trace, voice):
     await trace.until(lambda: any(isinstance(entry, HoldEnded) for entry in trace.entries))
     voice.release("Eins.")
     await trace.settled()
+
+
+def run_a_talk_over_before_the_first_sentence_is_complete(place, decision: str) -> PacedGateway:
+    """A person talks over and finishes while the reply's first sentence is still being written;
+    the hold's decision is ``decision``. Returns the gateway the place ran against."""
+    trace = place.trace
+    gateway = PacedGateway(
+        trace,
+        [
+            piece("Ein"),
+            lambda: trace.until(lambda: Held() in trace.entries),
+            piece("s. Zwei."),
+            finish(),
+        ],
+        [piece(decision), finish()],
+    )
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.until(lambda: Woke() in trace.entries)
+        yield speaking(("Ben", "Moment"))
+        await trace.until(lambda: Held() in trace.entries)
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.settled()
+
+    assert place.run(hearing, gateway) == RETURNED
+    return gateway
 
 
 @pytest.fixture

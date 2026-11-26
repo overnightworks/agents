@@ -15,6 +15,8 @@ from agents.member import (
     ContinuedSpeaking,
     ContinueSpeakingArguments,
     DroppedSpeaking,
+    HoldPlace,
+    HoldPoint,
     Interrupted,
     PlaceRef,
     PlaceWindow,
@@ -27,6 +29,7 @@ from agents.member import (
     TalkedOver,
     VoiceState,
     Written,
+    hold_place,
 )
 from tests.support.member_wire import (
     continue_wire,
@@ -236,6 +239,143 @@ def test_a_window_reads_its_hold_back_from_its_json_unchanged() -> None:
     assert window.interrupted == Interrupted(id="h-1")
     assert json.loads(window.model_dump_json())["interrupted"] == interrupted_wire()
     assert PlaceWindow.model_validate_json(window.model_dump_json()) == window
+
+
+A_SENTENCE = "Guten Tag, wie geht es?"
+AN_EMOJI_SENTENCE = "Hallo \U0001f600\U0001f600"
+"""Eight code points, ten UTF-16 units and thirteen UTF-8 bytes."""
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param({"at": HoldPoint.BETWEEN_SENTENCES}, id="between"),
+        pytest.param(
+            {"at": HoldPoint.IN_SENTENCE, "sentence": A_SENTENCE}, id="in sentence, cannot tell"
+        ),
+        pytest.param(
+            {"at": HoldPoint.IN_SENTENCE, "sentence": A_SENTENCE, "heard_to": 0},
+            id="in sentence, none heard",
+        ),
+        pytest.param(
+            {"at": HoldPoint.IN_SENTENCE, "sentence": A_SENTENCE, "heard_to": len(A_SENTENCE) - 1},
+            id="in sentence, one code point short of its end",
+        ),
+        pytest.param(
+            {"at": HoldPoint.IN_SENTENCE, "sentence": AN_EMOJI_SENTENCE, "heard_to": 7},
+            id="in an emoji sentence, the code point before its end",
+        ),
+    ],
+)
+def test_a_hold_place_that_keeps_its_invariants_reads_back_from_its_json_unchanged(
+    fields: dict[str, Any],
+) -> None:
+    place = HoldPlace(**fields)
+
+    assert HoldPlace.model_validate_json(place.model_dump_json()) == place
+    assert json.loads(place.model_dump_json()).keys() == fields.keys()
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param({"at": HoldPoint.IN_SENTENCE}, id="in sentence without a sentence"),
+        pytest.param(
+            {"at": HoldPoint.IN_SENTENCE, "sentence": ""}, id="in sentence with an empty sentence"
+        ),
+        pytest.param(
+            {"at": HoldPoint.BETWEEN_SENTENCES, "sentence": A_SENTENCE},
+            id="between with a sentence",
+        ),
+        pytest.param(
+            {"at": HoldPoint.BETWEEN_SENTENCES, "heard_to": 0}, id="between with heard_to"
+        ),
+        pytest.param(
+            {"at": HoldPoint.IN_SENTENCE, "sentence": A_SENTENCE, "heard_to": len(A_SENTENCE)},
+            id="heard_to at the sentence's length",
+        ),
+        pytest.param(
+            {"at": HoldPoint.IN_SENTENCE, "sentence": A_SENTENCE, "heard_to": len(A_SENTENCE) + 1},
+            id="heard_to beyond the sentence",
+        ),
+        pytest.param(
+            {"at": HoldPoint.IN_SENTENCE, "sentence": A_SENTENCE, "heard_to": -1},
+            id="heard_to below zero",
+        ),
+        pytest.param(
+            {"at": HoldPoint.IN_SENTENCE, "sentence": AN_EMOJI_SENTENCE, "heard_to": 8},
+            id="heard_to at the length of an emoji sentence in code points",
+        ),
+    ],
+)
+def test_a_hold_place_that_breaks_an_invariant_is_refused(fields: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        HoldPlace(**fields)
+
+
+@pytest.mark.parametrize(
+    ("sentence", "heard_to", "expected"),
+    [
+        pytest.param(None, None, HoldPlace(at=HoldPoint.BETWEEN_SENTENCES), id="nothing plays"),
+        pytest.param(
+            A_SENTENCE,
+            len(A_SENTENCE),
+            HoldPlace(at=HoldPoint.BETWEEN_SENTENCES),
+            id="the sentence played to its end",
+        ),
+        pytest.param(
+            A_SENTENCE,
+            5,
+            HoldPlace(at=HoldPoint.IN_SENTENCE, sentence=A_SENTENCE, heard_to=5),
+            id="the sentence stopped part way",
+        ),
+        pytest.param(
+            A_SENTENCE,
+            0,
+            HoldPlace(at=HoldPoint.IN_SENTENCE, sentence=A_SENTENCE, heard_to=0),
+            id="no word was heard",
+        ),
+        pytest.param(
+            A_SENTENCE,
+            None,
+            HoldPlace(at=HoldPoint.IN_SENTENCE, sentence=A_SENTENCE),
+            id="the app cannot tell",
+        ),
+    ],
+)
+def test_the_hold_place_maps_what_played_and_what_was_heard_of_it(
+    sentence: str | None, heard_to: int | None, expected: HoldPlace
+) -> None:
+    assert hold_place(sentence, heard_to) == expected
+
+
+@pytest.mark.parametrize("heard_to", [-1, len(A_SENTENCE) + 1], ids=["below zero", "beyond"])
+def test_the_hold_place_fails_loud_for_a_heard_to_outside_the_sentence(heard_to: int) -> None:
+    with pytest.raises(ValueError, match="heard_to"):
+        hold_place(A_SENTENCE, heard_to)
+
+
+@pytest.mark.parametrize("heard_to", [0, 1], ids=["nothing heard", "part heard"])
+def test_the_hold_place_fails_loud_for_a_heard_to_without_a_sentence(heard_to: int) -> None:
+    with pytest.raises(ValueError, match="heard_to"):
+        hold_place(None, heard_to)
+
+
+def test_a_window_reads_the_place_of_its_hold_back_from_its_json_unchanged() -> None:
+    place = {"at": "in_sentence", "sentence": A_SENTENCE, "heard_to": 5}
+    window = window_from(talked_window_wire(interrupted=interrupted_wire(place=place)))
+
+    assert window.interrupted == Interrupted(
+        id="h-1", place=HoldPlace(at=HoldPoint.IN_SENTENCE, sentence=A_SENTENCE, heard_to=5)
+    )
+    assert json.loads(window.model_dump_json())["interrupted"] == interrupted_wire(place=place)
+
+
+def test_a_hold_without_a_place_dumps_without_the_key() -> None:
+    assert Interrupted(id="h-1").place is None
+    assert Interrupted(id="h-1").model_dump_json() == json.dumps(
+        interrupted_wire(), separators=(",", ":")
+    )
 
 
 def test_a_window_without_a_hold_dumps_without_the_key() -> None:

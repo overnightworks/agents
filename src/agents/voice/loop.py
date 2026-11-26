@@ -15,7 +15,7 @@ from logline import unit_trace
 
 from agents.agent_file import AgentDefinition, TurnRequest
 from agents.backend import AgentBackend, TurnPerson, TurnStopped
-from agents.member import PartialSpeech, PlaceEntry, SpokenLanguage
+from agents.member import HoldPlace, PartialSpeech, PlaceEntry, SpokenLanguage, hold_place
 from agents.voice import (
     DecisionEnded,
     DecisionFailed,
@@ -53,6 +53,8 @@ _PLAYING_ENDINGS: Final = frozenset(
     {HoldEnding.CONTINUED, HoldEnding.FINISHED, HoldEnding.ANSWERED}
 )
 
+_NOTHING_PLAYS: Final = hold_place(None, None)
+
 
 async def run_voice_loop[Audio](
     agent: AgentDefinition,
@@ -88,19 +90,19 @@ async def run_voice_loop[Audio](
     already queued play out. A decision that played nothing and was not silent leaves its lines
     undecided until a line wakes the agent again.
 
-    While an answer is written or plays, the first word of a person who started speaking during
-    it pauses the answer (``Held``); once that talk-over has ended and the held turn has been
-    read, one decision ends the hold with ``[continue]``, ``[finish]``, ``[silent]`` or new
-    speech (``HoldEnded``); without a decision the rest is dropped. A host that yields no
-    ``PartialsChanged`` is never held. Each decision a waking line started ends with one
-    ``DecisionEnded``, its holds included, once its sound and its turns have ended. A sentence
-    renders in the language of the answered line, the newest one a person said or wrote.
+    While an answer is written or plays, the first partial of a person who started speaking
+    during it holds the answer (``Held``) and stops the sound (``VoiceOut.pause``) while hearing
+    goes on; once the sound has stopped, that talk-over has ended and the held turn has been read,
+    one decision, told where the sound stopped, ends the hold with ``[continue]``, ``[finish]``,
+    ``[silent]`` or new speech (``HoldEnded``); without it the rest is dropped. Each decision a
+    waking line started ends with one ``DecisionEnded``, its holds included, once its sound and its
+    turns have ended. A sentence renders in the answered line's language.
 
     When hearing ends, the loop closes the turn, stops the sound and returns. Any other error
     of a port or the backend, and a ``seq`` not above the last, closes the turn, stops the
     sound and is raised inside an ``ExceptionGroup``. On the host's cancel nothing more is
-    reported, and none of these ends a decision with ``DecisionEnded``. A port that never returns
-    holds the answer while hearing goes on.
+    reported, and none of these ends a decision with ``DecisionEnded``. A port that never returns,
+    ``pause`` included, holds the answer while hearing goes on.
     """
     if agent.voice_window_bytes is None:
         raise ValueError(f"agent {agent.name}: the voice loop needs a voice section")
@@ -111,7 +113,7 @@ async def run_voice_loop[Audio](
         )
         answering = group.create_task(loop.answer_when_woken())
         async for event in hearing:
-            await loop.hear(event)
+            loop.hear(event)
         answering.cancel()
 
 
@@ -228,14 +230,16 @@ class _VoiceLoop[Audio]:
         self._last_played: list[str] = []
         self._talk = TalkOver()
         self._held = False
+        self._stopping: asyncio.Task[HoldPlace] | None = None
+        self._place = _NOTHING_PLAYS
         self._go = asyncio.Event()
         self._go.set()
         self._moved = asyncio.Event()
         self._stages: list[_Stage] = []
 
-    async def hear(self, event: HearingEvent) -> None:
+    def hear(self, event: HearingEvent) -> None:
         if isinstance(event, PartialsChanged):
-            await self._hear_partials(event.speech)
+            self._hear_partials(event.speech)
         else:
             self._hear_line(event)
         self._signal()
@@ -248,19 +252,40 @@ class _VoiceLoop[Audio]:
         while not holds():
             await self._moved.wait()
 
-    async def _hear_partials(self, speech: tuple[PartialSpeech, ...]) -> None:
+    def _hear_partials(self, speech: tuple[PartialSpeech, ...]) -> None:
         self._talk.partials(speech)
-        if self._held or not self._talk.worded:
+        if self._held or not self._talk.standing:
             return
         self._held = True
         self._go.clear()
-        await self._held_now()
+        self._held_now()
 
-    async def _held_now(self) -> None:
-        """Report the hold and pause the sentence playing, if one is."""
+    def _held_now(self) -> None:
+        """Report the hold and start stopping the sentence playing, if one is."""
         self._report(Held())
-        if self._answer.playing is not None:
-            await self._voice.pause()
+        sentence = self._answer.playing
+        if sentence is None:
+            self._place = _NOTHING_PLAYS
+            return
+        # Eager, so `pause` is entered while this sentence's `play` has not returned.
+        self._stopping = self._group.create_task(self._stop_sound(sentence), eager_start=True)
+
+    async def _stop_sound(self, sentence: str) -> HoldPlace:
+        """Stop the sound of ``sentence``; the place of the hold, from what every listener heard."""
+        return hold_place(sentence, await self._voice.pause())
+
+    async def _where_the_sound_stopped(self) -> HoldPlace:
+        """The latest place the sound stopped at, once the pause in flight has returned."""
+        if self._stopping is not None:
+            self._place = await self._stopping
+            self._stopping = None
+        return self._place
+
+    async def _stop_stopping(self) -> None:
+        if self._stopping is not None:
+            self._stopping.cancel()
+            await asyncio.wait({self._stopping})
+            self._stopping = None
 
     def _hear_line(self, line: PlaceEntry) -> None:
         if not line.own:
@@ -307,6 +332,7 @@ class _VoiceLoop[Audio]:
                 await asyncio.wait(self._readings())
         finally:
             self._finish_answer()
+            await self._stop_stopping()
             readings = self._readings()
             for reading in readings:
                 reading.cancel()
@@ -368,30 +394,31 @@ class _VoiceLoop[Audio]:
         held_play: asyncio.Task[None] | None = play
         while True:
             await asyncio.wait(self._readings())
+            place = await self._where_the_sound_stopped()
             await self._until(lambda: not self._talk.standing)
-            decision = self._open_hold(stage)
+            decision = self._open_hold(stage, place)
             ending = await decision.ending
             self._report(HoldEnded(ending))
             self._answer.marker = _RECORDED_ENDINGS[ending]
-            if ending not in _PLAYING_ENDINGS or not self._talk.worded:
+            if ending not in _PLAYING_ENDINGS or not self._talk.standing:
                 return await self._end_hold(ending, stage, decision, held_play)
             self._report(Held())
             if ending is HoldEnding.ANSWERED:
                 await self._stop(held_play)
                 self._answer.drop_cancelled_paused()
+                self._place = _NOTHING_PLAYS
                 stage, held_play = decision, None
             elif ending is HoldEnding.FINISHED:
                 stage.cut = True
                 stage.unsaid.clear()
 
-    def _open_hold(self, stage: _Stage) -> _Stage:
+    def _open_hold(self, stage: _Stage, place: HoldPlace) -> _Stage:
         """Open the one decision on a talk-over over the held answer and the lines heard."""
         self._report(Woke())
         answer = self._answer
         self._conversation.close_decision(answer.recorded_at_pause())
-        paused_at = answer.playing
         answer.begin_hold_segment()
-        self._conversation.note_pause(paused_at, stage.unsaid)
+        self._conversation.note_hold(place, stage.unsaid)
         self._woken.clear()
         return self._start_stage(holding=True)
 
@@ -416,8 +443,8 @@ class _VoiceLoop[Audio]:
         if ending is HoldEnding.ANSWERED:
             stage, play = decision, None
         play = play or self._start_play(stage)
-        if self._talk.worded:
-            await self._held_now()
+        if self._talk.standing:
+            self._held_now()
         else:
             self._held = False
             self._go.set()

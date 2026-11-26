@@ -106,8 +106,9 @@ flowchart TB
   the reply markers and sentence release (`voice.reply`), the running conversation
   (`voice.conversation`), the standard wake rule and the echo rule that keeps the agent's own
   voice out of the conversation. The loop also holds its own answer when a person talks over it
-  (`voice.talk_over` decides what a talk-over is, from the partial speech the host gives), pauses
-  the host's sound through `VoiceOut` and ends the hold with one more decision.
+  (`voice.talk_over` decides what a talk-over is, from the partial speech the host gives), stops
+  the host's sound at the ruled place through `VoiceOut`, tells the decision where, and ends the
+  hold with one more decision.
 
 ## Runtime
 
@@ -127,9 +128,10 @@ The voice loop runs in the host's process too. The host's wake rule decides whic
 starts a decision. One decision is in flight at a time: one task reads its turn while another
 plays its sentences in order through the host's `VoiceOut`, so the turn's deadline bounds the
 writing, never the playing, and a third renders the next sentence, never more than one ahead.
-The loop holds itself: when a person talks over its answer it pauses the host's sound, waits until
-the talk-over has ended and the held turn has been read to its end, and runs one hold decision,
-so no two model calls overlap.
+The loop holds itself: when a person talks over its answer it stops the host's sound at the ruled
+place, waits until the sound has stopped, the talk-over has ended and the held turn has been read to
+its end, and runs one hold decision that is told where the sound stopped, so no two model calls
+overlap.
 
 The MCP person front is mounted by the host behind the host's own authentication gate. It
 resolves the person through a port, answers `tools/list` and `tools/call`, and replays a marked
