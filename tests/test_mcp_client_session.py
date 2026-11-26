@@ -14,6 +14,7 @@ from typing import Any
 import httpx2
 import pytest
 from logline import current_traceparent, unit_trace
+from logline.testing import configured
 from mcp_types import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -342,13 +343,14 @@ async def test_the_trace_of_the_caller_travels_with_every_request(
 ) -> None:
     stands(app)
 
-    if inside_a_trace:
-        with unit_trace(None):
-            traceparent = current_traceparent()
+    with configured("agents-tests"):
+        if inside_a_trace:
+            with unit_trace(None):
+                traceparent = current_traceparent()
+                await reads_the_standing(gate, bearer)
+        else:
+            traceparent = None
             await reads_the_standing(gate, bearer)
-    else:
-        traceparent = None
-        await reads_the_standing(gate, bearer)
 
     assert {each.traceparent for each in gate.seen} == {traceparent}
 

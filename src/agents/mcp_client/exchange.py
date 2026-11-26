@@ -17,7 +17,6 @@ from http import HTTPStatus
 from typing import Final, override
 
 import httpx2
-from logline import outgoing_headers
 from mcp.shared.dispatcher import coerce_request_id
 from mcp_types import (
     JSONRPCError,
@@ -112,7 +111,6 @@ class BearerAuth(httpx2.Auth):
         if token is None:
             token = self._read_bearer()
         request.headers["Authorization"] = f"Bearer {token}"
-        request.headers.update(outgoing_headers())
         response = yield request
         if response.status_code < HTTPStatus.BAD_REQUEST:
             self.last_answer = HttpAnswer(response.status_code)

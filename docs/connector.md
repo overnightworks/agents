@@ -499,7 +499,7 @@ gateway may later withdraw a name an app stored: that turn ends `failed: provide
 and the client does not fall back to the file's model.
 
 Every request to the gateway (completions, pictures) carries the host's
-`traceparent` from `logline.outgoing_headers()`, and none outside a trace
+`traceparent` through the host's `logline.configure`, and none outside a trace
 (`test_a_request_inside_a_trace_carries_the_traces_id`,
 `test_a_request_outside_a_trace_carries_no_traceparent`). The client sets no level on the `httpx2`
 or `httpcore2` logger: `logline.configure` caps both at WARNING, so a host without it gets the
