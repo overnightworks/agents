@@ -3,6 +3,6 @@ agent = "Claude 5a2c1980-6775-406a-82da-93bde876e4a7"
 role = "builder"
 base = "99a1aedeecdb38803880aa0364dd18299845840f"
 branch = "claude/issue-1160-a-hold-through-which-no-word-was-heard-e"
-scope = ["docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "scripts/member-tool-wire.json", "src/agents/member.py", "src/agents/member_speaking.py", "src/agents/voice/__init__.py", "src/agents/voice/conversation.py", "src/agents/voice/loop.py", "src/agents/voice/reply.py", "src/agents/voice/talk_over.py", "tests/support/member_wire.py", "tests/support/voice_support.py", "tests/test_member_speaking.py", "tests/test_member_wire_evolution.py", "tests/test_voice_hold_without_words.py", "tests/test_voice_reply.py"]
+scope = ["docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "scripts/member-tool-wire.json", "src/agents/member.py", "src/agents/member_speaking.py", "src/agents/voice/__init__.py", "src/agents/voice/conversation.py", "src/agents/voice/loop.py", "src/agents/voice/reply.py", "src/agents/voice/talk_over.py", "tests/support/member_wire.py", "tests/support/voice_support.py", "tests/test_member_speaking.py", "tests/test_member_wire_evolution.py", "tests/test_voice_hold.py", "tests/test_voice_hold_without_words.py", "tests/test_voice_reply.py"]
 opened_commit = "5bf0df0f7c369f8d139a3871462333c6691b339d"
 whole_reason = "One reflex across the hold record, the voice loop's talk-over and the HEARING rules that state it for every app; the rule demands the wire and the loop in one change."
