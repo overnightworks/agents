@@ -4,7 +4,8 @@ An app and an agent's runner say these to each other about a member: the argumen
 stopping and continuing in a place, what speaking and stopping answer (a sentence voiced, or
 written as a line when the voice failed) and what each refuses, and what the window says when
 people talk over the member (``TalkedOver``), when the member is held by it (``Interrupted``)
-and whether the member's voice at the place has failed (``VoiceState``). ``agents.member``
+and whether the member's voice at the place has failed (``VoiceState``); a hold says where it
+stopped the member in a ``HoldPlace``. ``agents.member``
 re-exports every name. This module is base, so a runner parses all of it without the
 ``mcp-server`` extra.
 """
@@ -12,9 +13,9 @@ re-exports every name. This module is base, so a runner parses all of it without
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Self
 
-from pydantic import AfterValidator, Field, StrictBool, StringConstraints
+from pydantic import AfterValidator, Field, StrictBool, StringConstraints, model_validator
 
 from agents.figure_vocabulary import FigureMood
 from agents.member_place import PlaceRef
@@ -26,6 +27,8 @@ __all__ = [
     "ContinueSpeakingRefused",
     "ContinuedSpeaking",
     "DroppedSpeaking",
+    "HoldPlace",
+    "HoldPoint",
     "Interrupted",
     "MarkerTrue",
     "PartialSpeech",
@@ -44,6 +47,7 @@ __all__ = [
     "VoiceState",
     "VoiceStyle",
     "Written",
+    "hold_place",
 ]
 
 
@@ -93,7 +97,8 @@ MarkerTrue = Annotated[StrictBool, AfterValidator(_refuse_false)]
 class Spoken(StrictModel):
     """What ``speak`` answers, as JSON and without ``is_error``, when the sentence starts to play;
     the field is exactly the JSON ``true``. It carries no length: the sentence's end reaches the
-    member as its own line in the window."""
+    member as its own line in the window, or, when not every seat heard a word of it, through the
+    hold's place or the stop's answer."""
 
     spoken: MarkerTrue
 
@@ -147,16 +152,16 @@ class StopSpeakingArguments(StrictModel):
 
 
 class StoppedSpeaking(StrictModel):
-    """What ``stop_speaking`` answers on success, as JSON: the text of the cut sentence's line,
-    the heard part when the app knows it, else the whole sentence."""
+    """What ``stop_speaking`` answers when a cut line entered, as JSON: the text of the cut
+    sentence's line, the heard part when the app knows it, else the whole sentence."""
 
     cut: NonEmptyUnicodeText
 
 
 class DroppedSpeaking(StrictModel):
-    """What ``stop_speaking`` answers, as JSON, when it cut no sentence that had started: it
-    dropped a held sentence that had not started, or the queue; the field is exactly the JSON
-    ``true``."""
+    """What ``stop_speaking`` answers, as JSON, when no cut line entered: it dropped a held
+    sentence that had not started or that not every seat heard a word of, or a playing one cut
+    before that, or the queue; the field is exactly the JSON ``true``."""
 
     dropped: MarkerTrue
 
@@ -231,13 +236,61 @@ class TalkedOver(StrictModel):
     speech: tuple[PartialSpeech, ...] = Field(min_length=1)
 
 
+class HoldPoint(StrEnum):
+    """Where a hold stopped the member: ``in_sentence``, before the end of a sentence that answered
+    ``Spoken``, or ``between_sentences``, when no such sentence was playing or the playing one
+    played to its end. A sentence still rendering counts as waiting."""
+
+    IN_SENTENCE = "in_sentence"
+    BETWEEN_SENTENCES = "between_sentences"
+
+
+class HoldPlace(StrictModel):
+    """Where a hold stopped the member.
+
+    ``in_sentence`` requires the ``sentence`` the hold stopped before its end, and says with
+    ``heard_to`` how far every seat heard it: ``0 <= heard_to < len(sentence)`` in code points,
+    where 0 means not every seat heard a word; absent, the app cannot tell. ``between_sentences``
+    carries neither field. That ``heard_to`` falls on a word's end is the app's duty."""
+
+    at: Annotated[HoldPoint, Field(strict=False)]
+    sentence: NonEmptyUnicodeText | None = Field(default=None, exclude_if=_is_none)
+    heard_to: Annotated[int, Field(ge=0)] | None = Field(default=None, exclude_if=_is_none)
+
+    @model_validator(mode="after")
+    def _keep_the_invariants_of_the_point(self) -> Self:
+        if self.at is HoldPoint.BETWEEN_SENTENCES:
+            if self.sentence is not None or self.heard_to is not None:
+                raise ValueError("between_sentences carries no sentence and no heard_to")
+        elif self.sentence is None:
+            raise ValueError("in_sentence needs the sentence the hold stopped")
+        elif self.heard_to is not None and self.heard_to >= len(self.sentence):
+            raise ValueError("heard_to must stay below the sentence's length in code points")
+        return self
+
+
+def hold_place(sentence: str | None, heard_to: int | None) -> HoldPlace:
+    """The place of a hold that found ``sentence`` playing, ``None`` when none was, and of which
+    every seat heard ``heard_to`` code points, ``None`` when the app cannot tell.
+
+    No sentence, or one heard to its end, gives ``between_sentences``; any other gives
+    ``in_sentence``. A ``heard_to`` outside the sentence raises ``ValueError``.
+    """
+    if sentence is None or heard_to == len(sentence):
+        return HoldPlace(at=HoldPoint.BETWEEN_SENTENCES)
+    return HoldPlace(at=HoldPoint.IN_SENTENCE, sentence=sentence, heard_to=heard_to)
+
+
 class Interrupted(StrictModel):
     """The member is held: a person talked over it, and nothing of the member plays until its
     decision. ``id`` is the app's, never repeats within the window's ``generation`` and stays
     fixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.
-    The hold ends at one of them, or at the member's or the place's end."""
+    ``place`` says where the hold stopped the member and stays as it was while the hold stands;
+    it is absent while the app states none. The hold ends at one of them, or at the member's or
+    the place's end."""
 
     id: NonEmptyUnicodeText
+    place: HoldPlace | None = Field(default=None, exclude_if=_is_none)
 
 
 class VoiceState(StrEnum):

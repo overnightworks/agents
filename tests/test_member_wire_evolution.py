@@ -9,6 +9,7 @@ import pytest
 from pydantic import Field, ValidationError
 
 from agents.member import (
+    Interrupted,
     MemberResourceRecord,
     MemberStanding,
     PlaceRef,
@@ -27,6 +28,8 @@ PARENT = {"app": "https://app.example/mcp", "place": {"kind": "room", "id": "p-9
 STANDING = {"place": PLACE, "state": "invited", "invitation": INVITATION, "parent": PARENT}
 STANDINGS = {"standings": [STANDING]}
 WINDOW = talked_window_wire(interrupted={"id": "h-1"}, voice_state="available")
+A_PLACE = {"at": "in_sentence", "sentence": "Guten Tag.", "heard_to": 5}
+PLACED_WINDOW = talked_window_wire(interrupted={"id": "h-1", "place": A_PLACE})
 VIEW = {"revision": 2, "awaits_you": True, "state": {"items": [1, {"open": True}]}}
 
 # each record, its wire, and the places inside that wire where a newer app may add a key
@@ -42,6 +45,7 @@ UNKNOWN_KEY_PLACES = [
     pytest.param(PlaceWindow, WINDOW, ("talked_over",), id="talked over"),
     pytest.param(PlaceWindow, WINDOW, ("talked_over", "speech", 0), id="partial speech"),
     pytest.param(PlaceWindow, WINDOW, ("interrupted",), id="interrupted"),
+    pytest.param(PlaceWindow, PLACED_WINDOW, ("interrupted", "place"), id="hold place"),
     pytest.param(PlaceView, VIEW, (), id="view"),
 ]
 
@@ -113,6 +117,26 @@ def test_the_tolerant_reader_still_refuses_what_the_default_parse_refuses_beside
 ) -> None:
     with pytest.raises(ValidationError):
         member_resource_from_json(record, json.dumps({**wire, "added_later": 1}))
+
+
+class OlderInterrupted(StrictModel):
+    id: str
+
+
+class WindowOfAnOlderRelease(PlaceWindow):
+    interrupted: OlderInterrupted | None = None
+
+
+def test_a_hold_without_a_place_reads_as_one_the_app_states_none_for() -> None:
+    window = member_resource_from_json(PlaceWindow, json.dumps(WINDOW))
+
+    assert window.interrupted == Interrupted(id="h-1")
+
+
+def test_a_reader_of_an_older_release_ignores_the_place_of_a_hold() -> None:
+    window = member_resource_from_json(WindowOfAnOlderRelease, json.dumps(PLACED_WINDOW))
+
+    assert window.interrupted == OlderInterrupted(id="h-1")
 
 
 class Circle(StrictModel):

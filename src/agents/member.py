@@ -58,6 +58,8 @@ from agents.member_speaking import (
     ContinueSpeakingRefusal,
     ContinueSpeakingRefused,
     DroppedSpeaking,
+    HoldPlace,
+    HoldPoint,
     Interrupted,
     MarkerTrue,
     PartialSpeech,
@@ -76,6 +78,7 @@ from agents.member_speaking import (
     VoiceState,
     VoiceStyle,
     Written,
+    hold_place,
 )
 from agents.tools import ToolDeclaration, ToolEffect, tool_parameters
 from agents.turn import JsonObject, NonEmptyUnicodeText, StopOutcome, StrictModel, UnicodeText
@@ -114,6 +117,8 @@ __all__ = [
     "GestureArguments",
     "GestureRefusal",
     "GestureRefused",
+    "HoldPlace",
+    "HoldPoint",
     "HttpsFileRef",
     "Interrupted",
     "Invitation",
@@ -159,6 +164,7 @@ __all__ = [
     "Written",
     "framing_tool",
     "gesture_tool",
+    "hold_place",
     "member_arguments",
     "member_resource_from_json",
     "place_ref_from_view_uri",

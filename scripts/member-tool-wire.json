@@ -192,14 +192,74 @@
     },
     "PlaceWindow": {
       "$defs": {
+        "HoldPlace": {
+          "additionalProperties": false,
+          "description": "Where a hold stopped the member.\n\n``in_sentence`` requires the ``sentence`` the hold stopped before its end, and says with\n``heard_to`` how far every seat heard it: ``0 <= heard_to < len(sentence)`` in code points,\nwhere 0 means not every seat heard a word; absent, the app cannot tell. ``between_sentences``\ncarries neither field. That ``heard_to`` falls on a word's end is the app's duty.",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/HoldPoint"
+            },
+            "heard_to": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Heard To"
+            },
+            "sentence": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sentence"
+            }
+          },
+          "required": [
+            "at"
+          ],
+          "title": "HoldPlace",
+          "type": "object"
+        },
+        "HoldPoint": {
+          "description": "Where a hold stopped the member: ``in_sentence``, before the end of a sentence that answered\n``Spoken``, or ``between_sentences``, when no such sentence was playing or the playing one\nplayed to its end. A sentence still rendering counts as waiting.",
+          "enum": [
+            "in_sentence",
+            "between_sentences"
+          ],
+          "title": "HoldPoint",
+          "type": "string"
+        },
         "Interrupted": {
           "additionalProperties": false,
-          "description": "The member is held: a person talked over it, and nothing of the member plays until its\ndecision. ``id`` is the app's, never repeats within the window's ``generation`` and stays\nfixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.\nThe hold ends at one of them, or at the member's or the place's end.",
+          "description": "The member is held: a person talked over it, and nothing of the member plays until its\ndecision. ``id`` is the app's, never repeats within the window's ``generation`` and stays\nfixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.\n``place`` says where the hold stopped the member and stays as it was while the hold stands;\nit is absent while the app states none. The hold ends at one of them, or at the member's or\nthe place's end.",
           "properties": {
             "id": {
               "minLength": 1,
               "title": "Id",
               "type": "string"
+            },
+            "place": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HoldPlace"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             }
           },
           "required": [
@@ -1144,7 +1204,7 @@
       "results": [
         {
           "additionalProperties": false,
-          "description": "What ``speak`` answers, as JSON and without ``is_error``, when the sentence starts to play;\nthe field is exactly the JSON ``true``. It carries no length: the sentence's end reaches the\nmember as its own line in the window.",
+          "description": "What ``speak`` answers, as JSON and without ``is_error``, when the sentence starts to play;\nthe field is exactly the JSON ``true``. It carries no length: the sentence's end reaches the\nmember as its own line in the window, or, when not every seat heard a word of it, through the\nhold's place or the stop's answer.",
           "properties": {
             "spoken": {
               "title": "Spoken",
@@ -1250,7 +1310,7 @@
       "results": [
         {
           "additionalProperties": false,
-          "description": "What ``stop_speaking`` answers on success, as JSON: the text of the cut sentence's line,\nthe heard part when the app knows it, else the whole sentence.",
+          "description": "What ``stop_speaking`` answers when a cut line entered, as JSON: the text of the cut\nsentence's line, the heard part when the app knows it, else the whole sentence.",
           "properties": {
             "cut": {
               "minLength": 1,
@@ -1266,7 +1326,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "What ``stop_speaking`` answers, as JSON, when it cut no sentence that had started: it\ndropped a held sentence that had not started, or the queue; the field is exactly the JSON\n``true``.",
+          "description": "What ``stop_speaking`` answers, as JSON, when no cut line entered: it dropped a held\nsentence that had not started or that not every seat heard a word of, or a playing one cut\nbefore that, or the queue; the field is exactly the JSON ``true``.",
           "properties": {
             "dropped": {
               "title": "Dropped",
