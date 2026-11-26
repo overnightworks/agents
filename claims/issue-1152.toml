@@ -1,8 +1,0 @@
-claim_id = "c7b8ac54e12e4d22a504e601fcc51e5c"
-agent = "Claude 5a2c1980-6775-406a-82da-93bde876e4a7"
-role = "builder"
-base = "fb7b1114f2f713ffe3e09364559578cc012432c2"
-branch = "claude/issue-1152-agents-carries-the-trace-through-logline"
-scope = ["docs/connector.md", "pyproject.toml", "src/agents/backend/gateway.py", "src/agents/mcp_client/exchange.py", "tests/test_backend_gateway_trace.py", "tests/test_mcp_client_session.py", "uv.lock"]
-opened_commit = "0ce0f2671b87aa0f44702469d156b05422e2fce1"
-whole_reason = "Two carrier calls, the two tests that prove them, the connector sentence that names the carrier, and the pin raise with its lock."
