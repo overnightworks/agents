@@ -1,8 +1,0 @@
-claim_id = "9d2d753c87ad4841b45ff2083768d338"
-agent = "Claude 5a2c1980-6775-406a-82da-93bde876e4a7"
-role = "builder"
-base = "dbf1e6c421085db9429303842c7e3fe4fa7025e8"
-branch = "claude/issue-1154-the-speech-and-hold-records-live-in-agen"
-scope = [".importlinter", "docs/ARCHITECTURE.md", "docs/connector.md", "src/agents/member.py", "src/agents/member_speaking.py"]
-opened_commit = "02f2197e5177509352a44a636aa33197f12e1105"
-whole_reason = "One pure move of a block of records into a new module, with the import contract and the two module paragraphs that name it."
