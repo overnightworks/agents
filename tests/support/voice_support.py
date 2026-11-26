@@ -524,14 +524,22 @@ async def interjection_while_playing(trace, *, words="Moment"):
     await trace.until(lambda: Held() in trace.entries)
 
 
-async def a_talk_over_without_words_beside_a_person_who_began_before_the_answer(trace):
+async def a_second_person_talks_over_beside_one_who_began_before_the_answer(trace, *, words):
     """Ben is speaking when the first line wakes the agent; Cy then talks over its playing
-    sentence without words and Ben is still speaking."""
+    sentence with ``words`` as the partial, Ben still speaking, and the agent is held."""
     yield speaking(("Ben", "Ich glaube"))
     yield a_line(1, "Erzähl.")
     await trace.until(lambda: ("play", "Eins.") in trace.entries)
-    yield speaking(("Ben", "Ich glaube"), ("Cy", ""))
+    yield speaking(("Ben", "Ich glaube"), ("Cy", words))
     await trace.until(lambda: Held() in trace.entries)
+
+
+async def a_talk_over_without_words_beside_a_person_who_began_before_the_answer(trace):
+    """The second person's talk-over has no words; it then ends and Ben is still speaking."""
+    async for event in a_second_person_talks_over_beside_one_who_began_before_the_answer(
+        trace, words=""
+    ):
+        yield event
     yield speaking(("Ben", "Ich glaube"))
     await trace.settled()
 
