@@ -6,12 +6,19 @@ from collections.abc import Callable
 
 import pytest
 from logline import current_traceparent, unit_trace
+from logline.testing import configured
 
 from agents.backend.fake_gateway import FakeGateway, Reply, completion, picture
 from agents.backend.gateway import GatewayBackend
 from tests.support.gateway_turn_support import Scenario, a_picture_request, scenario
 
 scenario = scenario
+
+
+@pytest.fixture(autouse=True)
+def _host_configured():
+    with configured("agents-tests"):
+        yield
 
 
 def _completions(scenario: Scenario, gateway: FakeGateway) -> None:

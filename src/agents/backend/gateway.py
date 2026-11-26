@@ -33,7 +33,7 @@ from types import TracebackType
 from typing import Final
 
 import httpx2
-from logline import StepTimer, outgoing_headers
+from logline import StepTimer
 from pydantic import JsonValue, TypeAdapter
 
 from agents.agent_file import TurnRequest
@@ -351,11 +351,11 @@ async def _opened(
 ) -> AsyncGenerator[httpx2.Response, None]:
     """The gateway's 200 response, open while it is read; a connection lost meanwhile is raised.
 
-    The request carries the host's ``traceparent`` inside a trace and none outside one, and the
-    response's status goes on the request's line, and so does ``connect_ms`` when the request
-    opened a new connection, whether or not a response came.
+    The host's ``logline.configure`` puts the trace on the request. The response's status goes on
+    the request's line, and so does ``connect_ms`` when the request opened a new connection,
+    whether or not a response came.
     """
-    headers = {"Authorization": f"Bearer {key}", **outgoing_headers()}
+    headers = {"Authorization": f"Bearer {key}"}
     if content is not None:
         headers["Content-Type"] = "application/json"
     connecting = _ConnectTimes()
