@@ -539,6 +539,34 @@ async def the_hold_ends(trace, voice):
     await trace.settled()
 
 
+def run_a_talk_over_before_the_first_sentence_is_complete(place, decision: str) -> PacedGateway:
+    """A person talks over and finishes while the reply's first sentence is still being written;
+    the hold's decision is ``decision``. Returns the gateway the place ran against."""
+    trace = place.trace
+    gateway = PacedGateway(
+        trace,
+        [
+            piece("Ein"),
+            lambda: trace.until(lambda: Held() in trace.entries),
+            piece("s. Zwei."),
+            finish(),
+        ],
+        [piece(decision), finish()],
+    )
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.until(lambda: Woke() in trace.entries)
+        yield speaking(("Ben", "Moment"))
+        await trace.until(lambda: Held() in trace.entries)
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.settled()
+
+    assert place.run(hearing, gateway) == RETURNED
+    return gateway
+
+
 @pytest.fixture
 def place(tmp_path) -> VoicePlace:
     return VoicePlace(tmp_path)

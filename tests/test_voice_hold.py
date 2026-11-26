@@ -37,6 +37,7 @@ from tests.support.voice_support import (
     messages_of,
     piece,
     rows_of,
+    run_a_talk_over_before_the_first_sentence_is_complete,
     the_hold_ends,
     the_person_finishes,
 )
@@ -121,27 +122,7 @@ def test_a_second_person_who_starts_during_the_answer_holds_it_while_an_earlier_
 
 def test_a_talk_over_while_the_reply_is_still_written_starts_no_sentence_until_the_ending(place):
     trace = place.trace
-    gateway = PacedGateway(
-        trace,
-        [
-            piece("Ein"),
-            lambda: trace.until(lambda: Held() in trace.entries),
-            piece("s. Zwei."),
-            finish(),
-        ],
-        [piece("[continue]"), finish()],
-    )
-
-    async def hearing(trace):
-        yield a_line(1, "Erzähl.")
-        await trace.until(lambda: Woke() in trace.entries)
-        yield speaking(("Ben", "Moment"))
-        await trace.until(lambda: Held() in trace.entries)
-        async for event in the_person_finishes(trace):
-            yield event
-        await trace.settled()
-
-    assert place.run(hearing, gateway) == RETURNED
+    run_a_talk_over_before_the_first_sentence_is_complete(place, "[continue]")
 
     assert trace.events == [
         Woke(),
