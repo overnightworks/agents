@@ -22,6 +22,7 @@ from tests.support.voice_support import (
     THE_FIRST_ANSWER,
     PacedGateway,
     RecordingVoice,
+    a_talk_over_without_words_beside_a_person_who_began_before_the_answer,
     an_answer_of_two_that_is_playing,
     conversation_of,
     finish,
@@ -221,13 +222,10 @@ def test_a_hold_waits_for_a_person_who_began_before_the_answer_to_stop_and_then_
     voice, gateway = an_answer_of_two_that_is_playing(place)
 
     async def hearing(trace):
-        yield speaking(("Ben", "Ich glaube"))
-        yield a_line(1, "Erzähl.")
-        await trace.until(lambda: ("play", "Eins.") in trace.entries)
-        yield speaking(("Ben", "Ich glaube"), ("Cy", ""))
-        await trace.until(lambda: Held() in trace.entries)
-        yield speaking(("Ben", "Ich glaube"))
-        await trace.settled()
+        async for event in a_talk_over_without_words_beside_a_person_who_began_before_the_answer(
+            trace
+        ):
+            yield event
         assert WENT_ON not in trace.entries
         yield speaking()
         await the_sound_goes_on(trace, voice)
@@ -244,13 +242,10 @@ def test_a_short_worded_line_of_a_person_of_the_talk_over_gets_a_decision_while_
     voice, gateway = an_answer_of_two_that_is_playing(place, completion("[continue]"))
 
     async def hearing(trace):
-        yield speaking(("Ben", "Ich glaube"))
-        yield a_line(1, "Erzähl.", name="Ada")
-        await trace.until(lambda: ("play", "Eins.") in trace.entries)
-        yield speaking(("Ben", "Ich glaube"), ("Cy", ""))
-        await trace.until(lambda: Held() in trace.entries)
-        yield speaking(("Ben", "Ich glaube"))
-        await trace.settled()
+        async for event in a_talk_over_without_words_beside_a_person_who_began_before_the_answer(
+            trace
+        ):
+            yield event
         assert WENT_ON not in trace.entries
         yield a_line(2, "Stopp.", name="Cy")
         await trace.until(lambda: HoldEnded(HoldEnding.CONTINUED) in trace.entries)

@@ -524,6 +524,18 @@ async def interjection_while_playing(trace, *, words="Moment"):
     await trace.until(lambda: Held() in trace.entries)
 
 
+async def a_talk_over_without_words_beside_a_person_who_began_before_the_answer(trace):
+    """Ben is speaking when the first line wakes the agent; Cy then talks over its playing
+    sentence without words and Ben is still speaking."""
+    yield speaking(("Ben", "Ich glaube"))
+    yield a_line(1, "Erzähl.")
+    await trace.until(lambda: ("play", "Eins.") in trace.entries)
+    yield speaking(("Ben", "Ich glaube"), ("Cy", ""))
+    await trace.until(lambda: Held() in trace.entries)
+    yield speaking(("Ben", "Ich glaube"))
+    await trace.settled()
+
+
 async def the_person_finishes(trace, *, text="Moment, wie meinst du das?", seq=2, language=None):
     yield a_line(seq, text, name="Ben", language=language)
     yield speaking()

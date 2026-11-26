@@ -305,7 +305,7 @@ def test_a_window_whose_went_on_hold_is_malformed_is_refused(went_on: object) ->
         window_from(talked_window_wire(went_on=went_on))
 
 
-@pytest.mark.parametrize("wordless", [1, "true", None])
+@pytest.mark.parametrize("wordless", [1, "true", None], ids=["number", "text", "null"])
 def test_a_hold_whose_wordless_mark_is_not_a_boolean_is_refused(wordless: object) -> None:
     with pytest.raises(ValidationError):
         window_from(talked_window_wire(interrupted=interrupted_wire(wordless=wordless)))
