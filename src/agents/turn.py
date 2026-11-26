@@ -1,7 +1,7 @@
 """The words an app uses for a turn: its conversation, files, tool images and failure codes.
 
 This module is the one owner of the turn's vocabulary, shared by the backend, the tool contract
-and the MCP person front, with the field helpers every wire record uses (``StrictModel``,
+and the MCP person front, with the field helpers the wire records share (``StrictModel``,
 ``MarkerTrue``, ``is_none``, ``is_false``). It imports neither ``tools`` nor ``mcp_wire``.
 """
 
