@@ -1,7 +1,8 @@
 """The words an app uses for a turn: its conversation, files, tool images and failure codes.
 
 This module is the one owner of the turn's vocabulary, shared by the backend, the tool contract
-and the MCP person front. It imports neither ``tools`` nor ``mcp_wire``.
+and the MCP person front, with the field helpers every wire record uses (``StrictModel``,
+``MarkerTrue``, ``is_none``, ``is_false``). It imports neither ``tools`` nor ``mcp_wire``.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from pydantic import (
     Field,
     JsonValue,
     PlainSerializer,
+    StrictBool,
     TypeAdapter,
     ValidationError,
     model_validator,
@@ -229,6 +231,24 @@ AgentRoles = Annotated[
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+
+def is_none(value: object) -> bool:
+    return value is None
+
+
+def is_false(value: bool) -> bool:
+    return not value
+
+
+def _refuse_false(value: bool) -> bool:
+    if not value:
+        raise ValueError("must be true")
+    return value
+
+
+MarkerTrue = Annotated[StrictBool, AfterValidator(_refuse_false)]
+"""A marker field of an answer: exactly the JSON ``true``, so two answers stay distinct as JSON."""
 
 
 def _refuse_non_file_name(name: str) -> str:

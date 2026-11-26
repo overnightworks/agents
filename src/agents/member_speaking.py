@@ -7,9 +7,7 @@ people talk over the member (``TalkedOver``), when the member is held by it (``I
 and whether the member's voice at the place has failed (``VoiceState``); a hold says where it
 stopped the member in a ``HoldPlace``, and a hold the app ended by itself is a ``WentOn``.
 ``has_words`` is the one test of whether a text holds a word. ``agents.member`` re-exports the
-records and takes the shared field helpers (``MarkerTrue``, ``is_none``, ``is_false``) from
-here without re-exporting them. This module is base, so a runner parses all of it without the
-``mcp-server`` extra.
+records. This module is base, so a runner parses all of it without the ``mcp-server`` extra.
 """
 
 from __future__ import annotations
@@ -17,11 +15,11 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Self
 
-from pydantic import AfterValidator, Field, StrictBool, StringConstraints, model_validator
+from pydantic import Field, StringConstraints, model_validator
 
 from agents.figure_vocabulary import FigureMood
 from agents.member_place import PlaceRef
-from agents.turn import NonEmptyUnicodeText, StrictModel, UnicodeText
+from agents.turn import MarkerTrue, NonEmptyUnicodeText, StrictModel, UnicodeText, is_false, is_none
 
 __all__ = [
     "ContinueSpeakingArguments",
@@ -32,7 +30,6 @@ __all__ = [
     "HoldPlace",
     "HoldPoint",
     "Interrupted",
-    "MarkerTrue",
     "PartialSpeech",
     "SpeakAnswer",
     "SpeakArguments",
@@ -52,17 +49,7 @@ __all__ = [
     "Written",
     "has_words",
     "hold_place",
-    "is_false",
-    "is_none",
 ]
-
-
-def is_none(value: object) -> bool:
-    return value is None
-
-
-def is_false(value: bool) -> bool:
-    return not value
 
 
 def has_words(text: str) -> bool:
@@ -104,16 +91,6 @@ class SpeakArguments(StrictModel):
         default=None, exclude_if=is_none
     )
     interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
-
-
-def _refuse_false(value: bool) -> bool:
-    if not value:
-        raise ValueError("must be true")
-    return value
-
-
-MarkerTrue = Annotated[StrictBool, AfterValidator(_refuse_false)]
-"""A marker field of an answer: exactly the JSON ``true``, so two answers stay distinct as JSON."""
 
 
 class Spoken(StrictModel):
