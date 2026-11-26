@@ -127,10 +127,26 @@ class WindowOfAnOlderRelease(PlaceWindow):
     interrupted: OlderInterrupted | None = None
 
 
+class WindowWithoutWordlessHolds(StrictModel):
+    generation: str
+    starts_at: int
+    entries: tuple[dict[str, Any], ...]
+    interrupted: OlderInterrupted | None = None
+
+
 def test_a_hold_without_a_place_reads_as_one_the_app_states_none_for() -> None:
     window = member_resource_from_json(PlaceWindow, json.dumps(WINDOW))
 
     assert window.interrupted == Interrupted(id="h-1")
+
+
+def test_a_reader_of_an_older_release_ignores_what_a_hold_without_words_adds() -> None:
+    wire = talked_window_wire(interrupted={"id": "h-1", "wordless": True}, went_on={"id": "h-0"})
+
+    window = WindowWithoutWordlessHolds.model_validate_json(json.dumps(wire), extra="ignore")
+
+    assert window.interrupted == OlderInterrupted(id="h-1")
+    assert "went_on" not in window.model_dump_json()
 
 
 def test_a_reader_of_an_older_release_ignores_the_place_of_a_hold() -> None:

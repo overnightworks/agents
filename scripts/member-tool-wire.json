@@ -243,7 +243,7 @@
         },
         "Interrupted": {
           "additionalProperties": false,
-          "description": "The member is held: a person talked over it, and nothing of the member plays until its\ndecision. ``id`` is the app's, never repeats within the window's ``generation`` and stays\nfixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.\nThe hold ends at one of them, or at the member's or the place's end. ``place`` says where\nthe hold stopped the member and stays as it was while the hold stands; it is absent while\nthe app states none.",
+          "description": "The member is held: a person talked over it, and nothing of the member plays until its\ndecision. ``id`` is the app's, never repeats within the window's ``generation`` and stays\nfixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.\nThe hold ends at one of them, or at the member's or the place's end. ``place`` says where\nthe hold stopped the member and stays as it was while the hold stands; it is absent while\nthe app states none. ``wordless`` is true from the change that adds the hold while no word\n(``has_words``) of its talk-over has been heard; the app then owns the hold's end and ends it\nby itself (``PlaceWindow.went_on``), and a runner starts no decision for it. It leaves in\nthe change in which the first word is heard, and never returns for this ``id``; it is\nabsent while false.",
           "properties": {
             "id": {
               "minLength": 1,
@@ -260,6 +260,11 @@
                 }
               ],
               "default": null
+            },
+            "wordless": {
+              "default": false,
+              "title": "Wordless",
+              "type": "boolean"
             }
           },
           "required": [
@@ -412,10 +417,26 @@
           ],
           "title": "VoiceState",
           "type": "string"
+        },
+        "WentOn": {
+          "additionalProperties": false,
+          "description": "A hold through whose talk-over no word was heard ended by itself and the member went on:\n``id`` is that hold's ``Interrupted.id``.",
+          "properties": {
+            "id": {
+              "minLength": 1,
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "title": "WentOn",
+          "type": "object"
         }
       },
       "additionalProperties": false,
-      "description": "The lines of one place from ``starts_at`` on, in ascending ``seq``; ``seq`` may skip.\n\n``generation`` names the run of ``seq`` numbers the window belongs to. An empty window is\nvalid, and its ``starts_at`` is the ``seq`` the next line will get. ``talked_over`` is set\nonly while people talk over the member; a person's partial and finished line are never both\nin one read. ``interrupted`` is set exactly while the member is held, and leaves in the same\nchange that ends the hold; a new ``generation`` carries none. ``voice_state`` states a failure\nof the member's voice at the place, for that member there; absent, the app states nothing.",
+      "description": "The lines of one place from ``starts_at`` on, in ascending ``seq``; ``seq`` may skip.\n\n``generation`` names the run of ``seq`` numbers the window belongs to. An empty window is\nvalid, and its ``starts_at`` is the ``seq`` the next line will get. ``talked_over`` is set\nonly while people talk over the member; a person's partial and finished line are never both\nin one read. ``interrupted`` is set exactly while the member is held, and leaves in the same\nchange that ends the hold; a new ``generation`` carries none. ``went_on`` names the latest hold\nof this ``generation`` that ended by itself; it arises in the change that ends that hold and\nstays until a later one replaces it. ``voice_state`` states a failure of the member's voice at\nthe place, for that member there; absent, the app states nothing.",
       "properties": {
         "entries": {
           "items": {
@@ -460,6 +481,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/VoiceState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "went_on": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WentOn"
             },
             {
               "type": "null"

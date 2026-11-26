@@ -6,9 +6,9 @@ place (``PlaceView``), the arguments of accepting and declining an invitation, o
 stopping and continuing in a place and of setting the framing, what accepting, declining and
 setting the framing answer when they refuse, what speaking and stopping answer (a sentence voiced,
 or written as a line when the voice failed), and what the window says when people talk over the
-member (``TalkedOver``), when the member is held by it (``Interrupted``) and whether the member's
-voice at the place has failed (``VoiceState``). ``MemberFacts`` states who a member is, owner and
-name, as a lease keeps them. A runner reads a standing, window or view with
+member (``TalkedOver``), when the member is held by it (``Interrupted``), when it went on by itself
+(``WentOn``) and whether the member's voice at the place has failed (``VoiceState``).
+``MemberFacts`` states who a member is, owner and name, as a lease keeps them. A runner reads a standing, window or view with
 ``member_resource_from_json``, which ignores a key its release does not know. The
 URIs name the resources that serve them; a URI is no credential, so a guessed one yields nothing.
 This module is base, so a runner parses all of it without the ``mcp-server`` extra.
@@ -77,7 +77,9 @@ from agents.member_speaking import (
     TalkedOver,
     VoiceState,
     VoiceStyle,
+    WentOn,
     Written,
+    has_words,
     hold_place,
 )
 from agents.tools import ToolDeclaration, ToolEffect, tool_parameters
@@ -161,9 +163,11 @@ __all__ = [
     "VoiceState",
     "VoiceStyle",
     "Voices",
+    "WentOn",
     "Written",
     "framing_tool",
     "gesture_tool",
+    "has_words",
     "hold_place",
     "member_arguments",
     "member_resource_from_json",
@@ -554,8 +558,10 @@ class PlaceWindow(StrictModel):
     valid, and its ``starts_at`` is the ``seq`` the next line will get. ``talked_over`` is set
     only while people talk over the member; a person's partial and finished line are never both
     in one read. ``interrupted`` is set exactly while the member is held, and leaves in the same
-    change that ends the hold; a new ``generation`` carries none. ``voice_state`` states a failure
-    of the member's voice at the place, for that member there; absent, the app states nothing.
+    change that ends the hold; a new ``generation`` carries none. ``went_on`` names the latest hold
+    of this ``generation`` that ended by itself; it arises in the change that ends that hold and
+    stays until a later one replaces it. ``voice_state`` states a failure of the member's voice at
+    the place, for that member there; absent, the app states nothing.
     """
 
     generation: NonEmptyUnicodeText
@@ -563,6 +569,7 @@ class PlaceWindow(StrictModel):
     entries: tuple[PlaceEntry, ...]
     talked_over: TalkedOver | None = Field(default=None, exclude_if=_is_none)
     interrupted: Interrupted | None = Field(default=None, exclude_if=_is_none)
+    went_on: WentOn | None = Field(default=None, exclude_if=_is_none)
     voice_state: Annotated[VoiceState, Field(strict=False)] | None = Field(
         default=None, exclude_if=_is_none
     )
