@@ -355,7 +355,7 @@ def test_the_hold_place_fails_loud_for_a_heard_to_outside_the_sentence(heard_to:
         hold_place(A_SENTENCE, heard_to)
 
 
-@pytest.mark.parametrize("heard_to", [0, 1])
+@pytest.mark.parametrize("heard_to", [0, 1], ids=["nothing heard", "part heard"])
 def test_the_hold_place_fails_loud_for_a_heard_to_without_a_sentence(heard_to: int) -> None:
     with pytest.raises(ValueError, match="heard_to"):
         hold_place(None, heard_to)
