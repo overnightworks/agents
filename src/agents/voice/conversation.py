@@ -7,9 +7,11 @@ UTF-8 bytes of the messages' texts, because a provider's tokens cannot be counte
 newest line goes beyond it, alone and behind ``WINDOW_NOTE`` once anything went. What a decision
 dropped never returns. A decision on a paused answer also holds the loop's own line that says
 where the sound stopped and what was unsaid; it is recorded with the decision's lines when the
-decision is, and dropped with them when they stay undecided. The answered line of a decision is
-the newest of the lines it sends that a person said or wrote: not the agent's own, an act or the
-pause line.
+decision is, and dropped with them when they stay undecided. A hold that went on by itself adds
+the loop's own went-on line (``told_went_on``) to the undecided lines, which the next decision,
+a hold decision of the same answer or the next waking one, opens over. The answered line of a
+decision is the newest of the lines it sends that a person said or wrote: not the agent's own, an
+act or one of the loop's two lines about a hold.
 """
 
 from __future__ import annotations
@@ -92,6 +94,11 @@ class Conversation:
         self._pause_line = _Line(json.dumps(held, ensure_ascii=False), answerable=False)
         self._undecided.append(self._pause_line)
 
+    def note_went_on(self) -> None:
+        """Add the loop's line that a hold ended by itself to the lines the next decision opens
+        over; it stays undecided with them when that decision plays nothing."""
+        self._undecided.append(_Line(json.dumps(told_went_on()), answerable=False))
+
     def open_decision(self) -> list[TurnMessage]:
         """The messages of a decision over every undecided line, ending with them.
 
@@ -171,6 +178,13 @@ def told_hold(place: HoldPlace, unsaid: Sequence[str]) -> JsonObject:
         told |= _told_sentence(place.sentence, place.heard_to)
     told["unsaid"] = list(unsaid)
     return told
+
+
+def told_went_on() -> JsonObject:
+    """What the next round is told once a sound without words held the agent and it went on by
+    itself from where it stopped; ``HOLD_RULES`` explains the key to the model. A runner sends the
+    same object."""
+    return {"went_on": True}
 
 
 def _told_sentence(sentence: str, heard_to: int | None) -> JsonObject:

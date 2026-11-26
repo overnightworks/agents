@@ -515,11 +515,12 @@ def an_answer_of_two_that_is_playing(place, *later_replies):
     return voice, FakeGateway(THE_FIRST_ANSWER, *later_replies)
 
 
-async def interjection_while_playing(trace):
-    """The first line wakes the agent; a person then starts talking over its playing sentence."""
+async def interjection_while_playing(trace, *, words="Moment"):
+    """The first line wakes the agent; a person then starts talking over its playing sentence,
+    with ``words`` as their partial."""
     yield a_line(1, "Erzähl.")
     await trace.until(lambda: ("play", "Eins.") in trace.entries)
-    yield speaking(("Ben", "Moment"))
+    yield speaking(("Ben", words))
     await trace.until(lambda: Held() in trace.entries)
 
 

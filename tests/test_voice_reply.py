@@ -14,7 +14,7 @@ from agents.turn_events import (
     ToolResultEvent,
 )
 from agents.voice import ReplyUnreadable, StayedSilent
-from agents.voice.conversation import Conversation
+from agents.voice.conversation import Conversation, told_went_on
 from agents.voice.reply import (
     PROTOCOL_TEXT,
     REPLY_RULES,
@@ -142,18 +142,31 @@ def test_the_protocol_text_names_every_key_a_written_line_carries():
 
 
 @pytest.mark.parametrize(
-    ("sentence", "heard_to"),
-    [("Eins.", 4), ("Eins.", 0), ("Eins.", None), (None, None)],
-    ids=["part heard", "none heard", "cannot tell", "between sentences"],
+    ("sentence", "heard_to", "went_on"),
+    [
+        ("Eins.", 4, False),
+        ("Eins.", 0, False),
+        ("Eins.", None, False),
+        (None, None, False),
+        ("Eins.", 4, True),
+    ],
+    ids=["part heard", "none heard", "cannot tell", "between sentences", "went on before"],
 )
-def test_the_protocol_text_names_every_key_and_word_the_hold_line_tells(sentence, heard_to):
+def test_the_protocol_text_names_every_key_and_word_the_hold_lines_tell(
+    sentence, heard_to, went_on
+):
     conversation = Conversation(window_bytes=4096)
+    if went_on:
+        conversation.note_went_on()
     conversation.note_hold(hold_place(sentence, heard_to), ["Zwei."])
 
-    held = json.loads(conversation.open_decision()[-1].text)
+    lines = [json.loads(line) for line in conversation.open_decision()[-1].text.splitlines()]
 
-    told = keys_at_any_depth(held) | set(held["held"].get("heard", "").split())
+    told = set[str]()
+    for line in lines:
+        told |= keys_at_any_depth(line) | set(line.get("held", {}).get("heard", "").split())
     assert {word for word in told if f'"{word}"' not in PROTOCOL_TEXT} == set()
+    assert (told_went_on() in lines) is went_on
 
 
 @pytest.mark.parametrize("marker", get_args(HoldMarker.__value__))
