@@ -276,6 +276,81 @@ def test_a_voice_that_starts_afresh_after_the_going_on_holds_the_agent_again(pla
     assert place.trace.events == [Woke(), SentenceStarted("Eins."), Held(), WENT_ON, Held()]
 
 
+async def a_decision_that_ends_the_hold_while_a_newer_person_says_a_word(trace):
+    async for event in interjection_while_playing(trace):
+        yield event
+    yield speaking()
+    await trace.until(lambda: trace.count(Woke()) == 2)
+    yield speaking(("Cy", "Halt"))
+    yield speaking()
+    trace.record(("newer",))
+    await trace.until(lambda: HoldEnded(HoldEnding.CONTINUED) in trace.entries)
+    await trace.settled()
+
+
+async def a_going_on_and_a_short_line_of_the_talker_without_a_partial(trace):
+    async for event in interjection_while_playing(trace, words=""):
+        yield event
+    yield speaking()
+    await trace.until(lambda: WENT_ON in trace.entries)
+    yield a_line(2, "Ja.", name="Ben")
+    await trace.settled()
+
+
+def the_decision_ends_once_a_newer_person_has_ended(trace):
+    return PacedGateway(
+        trace,
+        [piece("Eins. Zwei."), finish()],
+        [lambda: trace.until(lambda: ("newer",) in trace.entries), piece("[continue]"), finish()],
+    )
+
+
+THE_SECOND_TALK_OVER_GOES_ON = [Held(), WENT_ON, SentenceStarted("Zwei."), DecisionEnded()]
+
+
+@pytest.mark.parametrize(
+    ("first_hold", "make_gateway", "events_up_to_the_answer_end"),
+    [
+        pytest.param(
+            a_decision_that_ends_the_hold_while_a_newer_person_says_a_word,
+            the_decision_ends_once_a_newer_person_has_ended,
+            [
+                Woke(),
+                SentenceStarted("Eins."),
+                Held(),
+                Woke(),
+                HoldEnded(HoldEnding.CONTINUED),
+                *THE_SECOND_TALK_OVER_GOES_ON,
+            ],
+            id="a newer person said a word during the decision",
+        ),
+        pytest.param(
+            a_going_on_and_a_short_line_of_the_talker_without_a_partial,
+            lambda trace: FakeGateway(THE_FIRST_ANSWER, completion("Gern.")),
+            [Woke(), SentenceStarted("Eins."), Held(), WENT_ON, *THE_SECOND_TALK_OVER_GOES_ON],
+            id="the talker of a hold that went on says a short line",
+        ),
+    ],
+)
+def test_a_second_talk_over_without_words_in_the_answer_goes_on_by_itself_after_a_first_hold(
+    place, first_hold, make_gateway, events_up_to_the_answer_end
+):
+    voice = a_voice(place)
+
+    async def hearing(trace):
+        async for event in first_hold(trace):
+            yield event
+        yield speaking(("Dan", ""))
+        await trace.until(lambda: trace.count(Held()) == 2)
+        yield speaking()
+        await the_sound_goes_on(trace, voice)
+
+    assert place.run(hearing, make_gateway(place.trace), voice=voice) == RETURNED
+
+    events = place.trace.events
+    assert events[: events.index(DecisionEnded()) + 1] == events_up_to_the_answer_end
+
+
 def test_a_talk_over_with_words_after_the_going_on_tells_the_decision_the_going_on_before_the_hold(
     place,
 ):
