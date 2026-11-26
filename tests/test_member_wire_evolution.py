@@ -20,7 +20,7 @@ from agents.member import (
     member_resource_from_json,
 )
 from agents.turn import StrictModel
-from tests.support.member_wire import entry, talked_window_wire
+from tests.support.member_wire import entry, interrupted_wire, talked_window_wire
 
 PLACE = {"kind": "room", "id": "r-1"}
 INVITATION = {"id": "i-1", "epoch": 3, "expires_at": "2026-11-08T12:00:00Z"}
@@ -30,6 +30,7 @@ STANDINGS = {"standings": [STANDING]}
 WINDOW = talked_window_wire(interrupted={"id": "h-1"}, voice_state="available")
 A_PLACE = {"at": "in_sentence", "sentence": "Guten Tag.", "heard_to": 5}
 PLACED_WINDOW = talked_window_wire(interrupted={"id": "h-1", "place": A_PLACE})
+WENT_ON_WINDOW = talked_window_wire(went_on={"id": "h-0"})
 VIEW = {"revision": 2, "awaits_you": True, "state": {"items": [1, {"open": True}]}}
 
 # each record, its wire, and the places inside that wire where a newer app may add a key
@@ -46,6 +47,7 @@ UNKNOWN_KEY_PLACES = [
     pytest.param(PlaceWindow, WINDOW, ("talked_over", "speech", 0), id="partial speech"),
     pytest.param(PlaceWindow, WINDOW, ("interrupted",), id="interrupted"),
     pytest.param(PlaceWindow, PLACED_WINDOW, ("interrupted", "place"), id="hold place"),
+    pytest.param(PlaceWindow, WENT_ON_WINDOW, ("went_on",), id="went on"),
     pytest.param(PlaceView, VIEW, (), id="view"),
 ]
 
@@ -127,30 +129,23 @@ class WindowOfAnOlderRelease(PlaceWindow):
     interrupted: OlderInterrupted | None = None
 
 
-class WindowWithoutWordlessHolds(StrictModel):
-    generation: str
-    starts_at: int
-    entries: tuple[dict[str, Any], ...]
-    interrupted: OlderInterrupted | None = None
-
-
 def test_a_hold_without_a_place_reads_as_one_the_app_states_none_for() -> None:
     window = member_resource_from_json(PlaceWindow, json.dumps(WINDOW))
 
     assert window.interrupted == Interrupted(id="h-1")
 
 
-def test_a_reader_of_an_older_release_ignores_what_a_hold_without_words_adds() -> None:
-    wire = talked_window_wire(interrupted={"id": "h-1", "wordless": True}, went_on={"id": "h-0"})
-
-    window = WindowWithoutWordlessHolds.model_validate_json(json.dumps(wire), extra="ignore")
-
-    assert window.interrupted == OlderInterrupted(id="h-1")
-    assert "went_on" not in window.model_dump_json()
-
-
-def test_a_reader_of_an_older_release_ignores_the_place_of_a_hold() -> None:
-    window = member_resource_from_json(WindowOfAnOlderRelease, json.dumps(PLACED_WINDOW))
+@pytest.mark.parametrize(
+    "wire",
+    [
+        pytest.param(PLACED_WINDOW, id="place of a hold"),
+        pytest.param(
+            talked_window_wire(interrupted=interrupted_wire(wordless=True)), id="hold without words"
+        ),
+    ],
+)
+def test_a_reader_of_an_older_release_ignores_what_a_hold_adds(wire: dict[str, Any]) -> None:
+    window = member_resource_from_json(WindowOfAnOlderRelease, json.dumps(wire))
 
     assert window.interrupted == OlderInterrupted(id="h-1")
 
