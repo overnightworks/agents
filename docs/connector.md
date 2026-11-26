@@ -1504,15 +1504,15 @@ and a new generation end such a hold as any hold, with no `went_on`
 
 **Rollout order.** Answers and arguments are strict: a runner takes the release before its app
 answers `DroppedSpeaking`, `held` or `not_interrupted`, and an app on an older release refuses a
-`speak` with `interrupted`, so a runner sends it only once its app has shipped the hold. Runners take
-each release first; then apps fill `place`, drop the line of a sentence that not every seat heard a
-word of, and declare what they add later. A runner takes this release before any app sets `wordless`:
-a runner of an older release ignores `wordless` and `went_on` and decides a hold whose record has
-gone, and that decision would race the app's going on by itself, so an app sets `wordless` and goes
-on by itself only once every runner it serves has adopted it. An app drops that line only in the same change in which it
-starts to state `place` on its holds, and only once every runner it serves has adopted this release;
-a runner whose app states no place builds `hold_place(its playing sentence, None)` and tells the
-decision the whole sentence. An absent `place` makes a runner tell the hold as it was without it.
+`speak` with `interrupted`, so a runner sends it only once its app has shipped the hold. Runners
+take each release first; then apps fill `place`, drop the line of a sentence that not every seat
+heard a word of, and declare what they add later. An app drops that line only in the same change in
+which it starts to state `place` on its holds, and only once every runner it serves has adopted this
+release; a runner whose app states no place builds `hold_place(its playing sentence, None)` and
+tells the decision the whole sentence. An absent `place` makes a runner tell the hold as it was
+without it. An app sets `wordless` and goes on by itself only once every runner it serves has
+adopted this release: a runner of an older release ignores `wordless` and `went_on` and decides a
+hold whose record has gone, and that decision would race the app's going on by itself.
 
 Proved by `tests/test_member.py` (among them
 `test_speak_arguments_with_a_malformed_language_are_refused`) and `tests/test_member_speaking.py`
