@@ -41,7 +41,7 @@ class TalkOver:
         self.forget_words()
 
     def forget_words(self) -> None:
-        """Judge the words afresh: the people of the talk-over are those who stand now."""
+        """Count words afresh: the people of the talk-over are those who stand now."""
         self._talkers = {name for name, began in self._began_during_answer.items() if began}
         self._worded = False
 
