@@ -20,7 +20,7 @@ from agents.member import (
     member_resource_from_json,
 )
 from agents.turn import StrictModel
-from tests.support.member_wire import entry, interrupted_wire, talked_window_wire
+from tests.support.member_wire import entry, talked_window_wire
 
 PLACE = {"kind": "room", "id": "r-1"}
 INVITATION = {"id": "i-1", "epoch": 3, "expires_at": "2026-11-08T12:00:00Z"}
@@ -136,16 +136,19 @@ def test_a_hold_without_a_place_reads_as_one_the_app_states_none_for() -> None:
 
 
 @pytest.mark.parametrize(
-    "wire",
+    "written",
     [
-        pytest.param(PLACED_WINDOW, id="place of a hold"),
+        pytest.param(json.dumps(PLACED_WINDOW), id="place of a hold"),
         pytest.param(
-            talked_window_wire(interrupted=interrupted_wire(wordless=True)), id="hold without words"
+            member_resource_from_json(PlaceWindow, json.dumps(talked_window_wire()))
+            .model_copy(update={"interrupted": Interrupted(id="h-1", wordless=True)})
+            .model_dump_json(),
+            id="hold without words",
         ),
     ],
 )
-def test_a_reader_of_an_older_release_ignores_what_a_hold_adds(wire: dict[str, Any]) -> None:
-    window = member_resource_from_json(WindowOfAnOlderRelease, json.dumps(wire))
+def test_a_reader_of_an_older_release_ignores_what_a_hold_adds(written: str) -> None:
+    window = member_resource_from_json(WindowOfAnOlderRelease, written)
 
     assert window.interrupted == OlderInterrupted(id="h-1")
 

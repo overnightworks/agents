@@ -51,14 +51,16 @@ __all__ = [
     "Written",
     "has_words",
     "hold_place",
+    "is_false",
+    "is_none",
 ]
 
 
-def _is_none(value: object) -> bool:
+def is_none(value: object) -> bool:
     return value is None
 
 
-def _is_false(value: bool) -> bool:
+def is_false(value: bool) -> bool:
     return not value
 
 
@@ -95,12 +97,12 @@ class SpeakArguments(StrictModel):
 
     place: PlaceRef
     text: NonEmptyUnicodeText
-    language: SpokenLanguage | None = Field(default=None, exclude_if=_is_none)
-    style: VoiceStyle | None = Field(default=None, exclude_if=_is_none)
+    language: SpokenLanguage | None = Field(default=None, exclude_if=is_none)
+    style: VoiceStyle | None = Field(default=None, exclude_if=is_none)
     mood: Annotated[FigureMood, Field(strict=False)] | None = Field(
-        default=None, exclude_if=_is_none
+        default=None, exclude_if=is_none
     )
-    interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=_is_none)
+    interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
 
 
 def _refuse_false(value: bool) -> bool:
@@ -167,7 +169,7 @@ class StopSpeakingArguments(StrictModel):
     stale one is refused."""
 
     place: PlaceRef
-    interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=_is_none)
+    interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
 
 
 class StoppedSpeaking(StrictModel):
@@ -273,8 +275,8 @@ class HoldPlace(StrictModel):
     carries neither field. That ``heard_to`` falls on a word's end is the app's duty."""
 
     at: Annotated[HoldPoint, Field(strict=False)]
-    sentence: NonEmptyUnicodeText | None = Field(default=None, exclude_if=_is_none)
-    heard_to: Annotated[int, Field(ge=0)] | None = Field(default=None, exclude_if=_is_none)
+    sentence: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
+    heard_to: Annotated[int, Field(ge=0)] | None = Field(default=None, exclude_if=is_none)
 
     @model_validator(mode="after")
     def _keep_the_invariants_of_the_point(self) -> Self:
@@ -316,8 +318,8 @@ class Interrupted(StrictModel):
     absent while false."""
 
     id: NonEmptyUnicodeText
-    place: HoldPlace | None = Field(default=None, exclude_if=_is_none)
-    wordless: bool = Field(default=False, exclude_if=_is_false)
+    place: HoldPlace | None = Field(default=None, exclude_if=is_none)
+    wordless: bool = Field(default=False, exclude_if=is_false)
 
 
 class WentOn(StrictModel):

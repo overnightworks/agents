@@ -81,6 +81,8 @@ from agents.member_speaking import (
     Written,
     has_words,
     hold_place,
+    is_false,
+    is_none,
 )
 from agents.tools import ToolDeclaration, ToolEffect, tool_parameters
 from agents.turn import JsonObject, NonEmptyUnicodeText, StopOutcome, StrictModel, UnicodeText
@@ -241,24 +243,16 @@ class ParentPlace(StrictModel):
     place: PlaceRef
 
 
-def _is_false(value: bool) -> bool:
-    return not value
-
-
-def _is_none(value: object) -> bool:
-    return value is None
-
-
 class Standing(StrictModel):
     """One place, the member's state there and, exactly when invited, the invitation."""
 
     place: PlaceRef
     state: Annotated[StandingState, Field(strict=False)]
     invitation: Invitation | None = None
-    serves_view: bool = Field(default=False, exclude_if=_is_false)
+    serves_view: bool = Field(default=False, exclude_if=is_false)
     """Whether the app serves this place's ``PlaceView`` beside its window; both URIs are then
     listed among the member's current resources."""
-    parent: ParentPlace | None = Field(default=None, exclude_if=_is_none)
+    parent: ParentPlace | None = Field(default=None, exclude_if=is_none)
     """The place this place lies inside, if another app's place holds it; the app sets it from
     the invitation on and keeps it while the member holds the place."""
 
@@ -286,9 +280,9 @@ class AcceptInvitationArguments(StrictModel):
     place: PlaceRef
     invitation: NonEmptyUnicodeText
     epoch: int = Field(ge=0)
-    looks: Looks | None = Field(default=None, exclude_if=_is_none)
-    figure: FigureRef | None = Field(default=None, exclude_if=_is_none)
-    voices: Voices | None = Field(default=None, exclude_if=_is_none)
+    looks: Looks | None = Field(default=None, exclude_if=is_none)
+    figure: FigureRef | None = Field(default=None, exclude_if=is_none)
+    voices: Voices | None = Field(default=None, exclude_if=is_none)
 
 
 class AcceptInvitationRefusal(StrEnum):
@@ -348,9 +342,9 @@ class SetTurnStateArguments(StrictModel):
 
     place: PlaceRef
     stopped: Annotated[StopOutcome, Field(strict=False)] | None = Field(
-        default=None, exclude_if=_is_none
+        default=None, exclude_if=is_none
     )
-    thinking: bool = Field(default=False, exclude_if=_is_false)
+    thinking: bool = Field(default=False, exclude_if=is_false)
 
     @field_validator("thinking")
     @classmethod
@@ -489,7 +483,7 @@ def framing_tool() -> ToolDeclaration:
 
 OptionalTraceparent = Annotated[
     Annotated[str, StringConstraints(max_length=256)] | None,
-    Field(default=None, exclude_if=_is_none),
+    Field(default=None, exclude_if=is_none),
 ]
 """A W3C ``traceparent`` as an app stores it, left out of the JSON when absent. Only its length is
 bound here: logline's ``unit_trace`` is the one reader and starts a new trace for a value it
@@ -514,10 +508,10 @@ class PlaceEntry(StrictModel):
     text: NonEmptyUnicodeText
     own: bool
     spoken: bool = False
-    cut: bool = Field(default=False, exclude_if=_is_false)
-    act: bool = Field(default=False, exclude_if=_is_false)
-    continues: bool = Field(default=False, exclude_if=_is_false)
-    language: SpokenLanguage | None = Field(default=None, exclude_if=_is_none)
+    cut: bool = Field(default=False, exclude_if=is_false)
+    act: bool = Field(default=False, exclude_if=is_false)
+    continues: bool = Field(default=False, exclude_if=is_false)
+    language: SpokenLanguage | None = Field(default=None, exclude_if=is_none)
     traceparent: OptionalTraceparent
 
     @model_validator(mode="after")
@@ -567,11 +561,11 @@ class PlaceWindow(StrictModel):
     generation: NonEmptyUnicodeText
     starts_at: int = Field(ge=1)
     entries: tuple[PlaceEntry, ...]
-    talked_over: TalkedOver | None = Field(default=None, exclude_if=_is_none)
-    interrupted: Interrupted | None = Field(default=None, exclude_if=_is_none)
-    went_on: WentOn | None = Field(default=None, exclude_if=_is_none)
+    talked_over: TalkedOver | None = Field(default=None, exclude_if=is_none)
+    interrupted: Interrupted | None = Field(default=None, exclude_if=is_none)
+    went_on: WentOn | None = Field(default=None, exclude_if=is_none)
     voice_state: Annotated[VoiceState, Field(strict=False)] | None = Field(
-        default=None, exclude_if=_is_none
+        default=None, exclude_if=is_none
     )
 
     @model_validator(mode="after")
