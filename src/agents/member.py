@@ -8,10 +8,10 @@ setting the framing answer when they refuse, what speaking and stopping answer (
 or written as a line when the voice failed), and what the window says when people talk over the
 member (``TalkedOver``), when the member is held by it (``Interrupted``), when it went on by itself
 (``WentOn``) and whether the member's voice at the place has failed (``VoiceState``).
-``MemberFacts`` states who a member is, owner and name, as a lease keeps them. A runner reads a standing, window or view with
-``member_resource_from_json``, which ignores a key its release does not know. The
-URIs name the resources that serve them; a URI is no credential, so a guessed one yields nothing.
-This module is base, so a runner parses all of it without the ``mcp-server`` extra.
+``MemberFacts`` states who a member is, owner and name, as a lease keeps them. A runner reads a
+standing, window or view with ``member_resource_from_json``, which ignores a key its release does
+not know. The URIs name the resources that serve them; a URI is no credential, so a guessed one
+yields nothing. This module is base, so a runner parses all of it without the ``mcp-server`` extra.
 """
 
 from __future__ import annotations
