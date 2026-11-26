@@ -1,0 +1,8 @@
+claim_id = "da8fbf5e176542c6bc8647b25c3b3153"
+agent = "Claude 5a2c1980-6775-406a-82da-93bde876e4a7"
+role = "builder"
+base = "2f8b2ec89d717ac481d6c9dc517902174e21288c"
+branch = "fix/wire-field-helpers"
+scope = ["src/agents/member.py", "src/agents/member_presentation.py", "src/agents/member_speaking.py", "src/agents/turn.py"]
+opened_commit = "327cc7573fc5735da587b6f24449f5b261a96fd2"
+whole_reason = "The three shared wire field helpers move to one owner and their three users import them from it in one change."
