@@ -6,8 +6,9 @@ written as a line when the voice failed) and what each refuses, and what the win
 people talk over the member (``TalkedOver``), when the member is held by it (``Interrupted``)
 and whether the member's voice at the place has failed (``VoiceState``); a hold says where it
 stopped the member in a ``HoldPlace``, and a hold the app ended by itself is a ``WentOn``.
-``has_words`` is the one test of whether a text holds a word. ``agents.member`` re-exports every
-name. This module is base, so a runner parses all of it without the
+``has_words`` is the one test of whether a text holds a word. ``agents.member`` re-exports the
+records and takes the shared field helpers (``MarkerTrue``, ``is_none``, ``is_false``) from
+here without re-exporting them. This module is base, so a runner parses all of it without the
 ``mcp-server`` extra.
 """
 
