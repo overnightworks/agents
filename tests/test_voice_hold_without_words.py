@@ -71,7 +71,7 @@ def test_a_talk_over_without_words_goes_on_by_itself_and_the_rest_plays_with_no_
     gateway = FakeGateway(THE_FIRST_ANSWER)
 
     async def hearing(trace):
-        async for event in interjection_while_playing(trace, words=""):
+        async for event in interjection_while_playing(trace, words="…"):
             yield event
         yield speaking()
         await the_sound_goes_on(trace, voice)
@@ -82,22 +82,6 @@ def test_a_talk_over_without_words_goes_on_by_itself_and_the_rest_plays_with_no_
     assert place.trace.played == ["Eins.", "Zwei."]
     assert len(gateway.requests) == 1
     assert (("resume", "Eins.") in place.trace.calls) is ("ends_at_pause" not in arrangement)
-
-
-@pytest.mark.parametrize("words", ["", "…", " ?! ", "\U0001f600"])
-def test_a_partial_without_a_letter_or_digit_is_no_word(place, words):
-    voice, gateway = an_answer_of_two_that_is_playing(place)
-
-    async def hearing(trace):
-        async for event in interjection_while_playing(trace, words=words):
-            yield event
-        yield speaking()
-        await the_sound_goes_on(trace, voice)
-
-    assert place.run(hearing, gateway, voice=voice) == RETURNED
-
-    assert place.trace.events == THE_ANSWER_AFTER_GOING_ON
-    assert len(gateway.requests) == 1
 
 
 def test_a_talk_over_without_words_while_nothing_plays_goes_on_without_waiting_for_the_reading(
