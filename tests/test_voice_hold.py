@@ -280,44 +280,6 @@ def test_finish_resumes_the_paused_sentence_and_drops_the_rest(place):
     assert place.trace.events[-2:] == [HoldEnded(HoldEnding.FINISHED), DecisionEnded()]
 
 
-def test_finish_with_no_sentence_paused_says_nothing_more(place):
-    trace = place.trace
-    gateway = PacedGateway(
-        trace,
-        [
-            piece("Ein"),
-            lambda: trace.until(lambda: Held() in trace.entries),
-            piece("s. Zwei."),
-            finish(),
-        ],
-        [piece("[finish]"), finish()],
-    )
-
-    async def hearing(trace):
-        yield a_line(1, "Erzähl.")
-        await trace.until(lambda: Woke() in trace.entries)
-        yield speaking(("Ben", "Moment"))
-        await trace.until(lambda: Held() in trace.entries)
-        async for event in the_person_finishes(trace):
-            yield event
-        await trace.settled()
-
-    assert place.run(hearing, gateway) == RETURNED
-
-    assert trace.events == [
-        Woke(),
-        Held(),
-        Woke(),
-        HoldEnded(HoldEnding.FINISHED),
-        DecisionEnded(),
-    ]
-    assert trace.played == []
-    assert not [call for call in trace.calls if call[0] == "pause"]
-    assert rows_of(messages_of(gateway.requests[1])[-1])[-1] == {
-        "held": {"unsaid": ["Eins.", "Zwei."]}
-    }
-
-
 def test_silent_stops_the_paused_sentence_and_says_nothing_more(place):
     voice, gateway = an_answer_of_two_that_is_playing(place, completion("[silent]"))
 

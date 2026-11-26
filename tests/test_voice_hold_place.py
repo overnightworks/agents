@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from agents.backend.fake_gateway import FakeGateway, completion
 from agents.member import HoldPlace, HoldPoint
-from agents.voice import Held, HoldEnded, HoldEnding, Woke
+from agents.voice import DecisionEnded, Held, HoldEnded, HoldEnding, Woke
 from agents.voice.conversation import told_hold
 from tests.support import voice_support
 from tests.support.voice_lines import a_line, speaking
@@ -332,3 +332,41 @@ def test_a_playing_ending_under_a_newer_talk_over_holds_again_told_where_the_sou
     assert place.run(hearing, gateway, voice=voice) == RETURNED
 
     assert rows_of(messages_of(gateway.requests[2])[-1])[-1] == {"held": told}
+
+
+def test_finish_with_no_sentence_paused_says_nothing_more(place):
+    trace = place.trace
+    gateway = PacedGateway(
+        trace,
+        [
+            piece("Ein"),
+            lambda: trace.until(lambda: Held() in trace.entries),
+            piece("s. Zwei."),
+            finish(),
+        ],
+        [piece("[finish]"), finish()],
+    )
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.until(lambda: Woke() in trace.entries)
+        yield speaking(("Ben", "Moment"))
+        await trace.until(lambda: Held() in trace.entries)
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.settled()
+
+    assert place.run(hearing, gateway) == RETURNED
+
+    assert trace.events == [
+        Woke(),
+        Held(),
+        Woke(),
+        HoldEnded(HoldEnding.FINISHED),
+        DecisionEnded(),
+    ]
+    assert trace.played == []
+    assert not [call for call in trace.calls if call[0] == "pause"]
+    assert rows_of(messages_of(gateway.requests[1])[-1])[-1] == {
+        "held": {"unsaid": ["Eins.", "Zwei."]}
+    }
