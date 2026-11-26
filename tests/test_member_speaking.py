@@ -355,6 +355,12 @@ def test_the_hold_place_fails_loud_for_a_heard_to_outside_the_sentence(heard_to:
         hold_place(A_SENTENCE, heard_to)
 
 
+@pytest.mark.parametrize("heard_to", [0, 1])
+def test_the_hold_place_fails_loud_for_a_heard_to_without_a_sentence(heard_to: int) -> None:
+    with pytest.raises(ValueError, match="heard_to"):
+        hold_place(None, heard_to)
+
+
 def test_a_window_reads_the_place_of_its_hold_back_from_its_json_unchanged() -> None:
     place = {"at": "in_sentence", "sentence": A_SENTENCE, "heard_to": 5}
     window = window_from(talked_window_wire(interrupted=interrupted_wire(place=place)))

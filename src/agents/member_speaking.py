@@ -274,9 +274,12 @@ def hold_place(sentence: str | None, heard_to: int | None) -> HoldPlace:
     every seat heard ``heard_to`` code points, ``None`` when the app cannot tell.
 
     No sentence, or one heard to its end, gives ``between_sentences``; any other gives
-    ``in_sentence``. A ``heard_to`` outside the sentence raises ``ValueError``.
+    ``in_sentence``. A ``heard_to`` outside the sentence, or any ``heard_to`` without one, raises
+    ``ValueError``.
     """
-    if sentence is None or heard_to == len(sentence):
+    if sentence is None:
+        return HoldPlace(at=HoldPoint.BETWEEN_SENTENCES, heard_to=heard_to)
+    if heard_to == len(sentence):
         return HoldPlace(at=HoldPoint.BETWEEN_SENTENCES)
     return HoldPlace(at=HoldPoint.IN_SENTENCE, sentence=sentence, heard_to=heard_to)
 
