@@ -1,0 +1,7 @@
+claim_id = "5ccf57433d264f979aa9e3a55cebbbb1"
+agent = "Claude 5a2c1980-6775-406a-82da-93bde876e4a7"
+role = "builder"
+base = "ffbbac51ed790a0e3f64b4948367b672826164db"
+branch = "docs/connector-rollout-order"
+scope = ["docs/connector.md"]
+opened_commit = "73689df8f5edc3b316a0092bad8e64ed19a0ad28"
