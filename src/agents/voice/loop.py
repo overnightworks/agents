@@ -267,7 +267,8 @@ class _VoiceLoop[Audio]:
         if sentence is None:
             self._place = _NOTHING_PLAYS
             return
-        self._stopping = self._group.create_task(self._stop_sound(sentence))
+        # Eager, so `pause` is entered while this sentence's `play` has not returned.
+        self._stopping = self._group.create_task(self._stop_sound(sentence), eager_start=True)
 
     async def _stop_sound(self, sentence: str) -> HoldPlace:
         """Stop the sound of ``sentence``; the place of the hold, from what every listener heard."""

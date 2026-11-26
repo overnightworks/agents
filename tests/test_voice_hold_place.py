@@ -211,6 +211,25 @@ def test_while_the_sound_stops_lines_and_partials_enter_and_the_decision_opens_o
     assert place.trace.played == ["Eins.", "Zwei."]
 
 
+def test_the_sound_is_paused_while_its_sentence_plays_even_as_the_play_is_about_to_return(place):
+    voice = RecordingVoice(place.trace, held={"Eins."})
+    gateway = FakeGateway(THE_FIRST_ANSWER, completion("[continue]"))
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.until(lambda: ("play", "Eins.") in trace.entries)
+        voice.release("Eins.")
+        yield speaking(("Ben", "Moment"))
+        await trace.until(lambda: Held() in trace.entries)
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert place.trace.order_of(("pause", "Eins."), ("played", "Eins."))[0] == ("pause", "Eins.")
+
+
 def test_a_sound_that_never_stops_holds_the_decision_while_hearing_goes_on_until_it_ends(place):
     voice = RecordingVoice(place.trace, held={"Eins."}, hangs={("pause", "Eins.")})
     gateway = FakeGateway(THE_FIRST_ANSWER, completion("[continue]"))
