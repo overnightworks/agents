@@ -3,6 +3,6 @@ agent = "Claude 5a2c1980-6775-406a-82da-93bde876e4a7"
 role = "builder"
 base = "b524cdbceaf787d312b1926cb30cd25f125e227c"
 branch = "claude/issue-1156-at-a-hold-the-agent-is-told-the-exact-pl"
-scope = ["docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "scripts/member-tool-wire.json", "src/agents/member.py", "src/agents/member_speaking.py", "src/agents/voice/__init__.py", "src/agents/voice/conversation.py", "src/agents/voice/loop.py", "src/agents/voice/reply.py", "src/agents/voice/talk_over.py", "tests/support/voice_support.py", "tests/test_member_speaking.py", "tests/test_voice_hold.py", "tests/test_voice_reply.py"]
+scope = ["docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "scripts/member-tool-wire.json", "src/agents/member.py", "src/agents/member_speaking.py", "src/agents/voice/__init__.py", "src/agents/voice/conversation.py", "src/agents/voice/loop.py", "src/agents/voice/reply.py", "src/agents/voice/talk_over.py", "tests/support/voice_support.py", "tests/test_member_speaking.py", "tests/test_member_wire_evolution.py", "tests/test_voice_hold.py", "tests/test_voice_hold_place.py", "tests/test_voice_loop.py", "tests/test_voice_reply.py"]
 opened_commit = "5c7d81e9e3cfa5927ba9cd5fb1ac3928d5807a07"
 whole_reason = "One capability across the hold record, the voice loop's pause port and its talk-over, with the HEARING rules and docs that state it; the plan cut the pure record move out as S1a, and the rest shares one contract."
