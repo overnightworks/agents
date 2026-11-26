@@ -467,3 +467,36 @@ def test_a_worded_line_of_a_person_who_never_had_a_partial_wakes_one_decision_af
         ("assistant", "Eins. Zwei."),
         ("user", ["Stopp.", THE_WENT_ON_LINE]),
     ]
+
+
+@pytest.mark.parametrize(
+    ("words", "reply", "ending"),
+    [
+        pytest.param("", None, WENT_ON, id="after a talk-over without words went on"),
+        pytest.param(
+            "Moment",
+            completion("[continue]"),
+            HoldEnded(HoldEnding.CONTINUED),
+            id="after a continue",
+        ),
+    ],
+)
+def test_a_voice_that_comes_as_soon_as_a_hold_ended_holds_the_answer_and_starts_no_sentence(
+    place, words, reply, ending
+):
+    voice = RecordingVoice(place.trace, held={"Eins."}, ends_at_pause={"Eins."})
+    gateway = FakeGateway(THE_FIRST_ANSWER, *([reply] if reply else []))
+
+    async def hearing(trace):
+        async for event in interjection_while_playing(trace, words=words):
+            yield event
+        yield speaking()
+        await trace.until(lambda: ending in trace.entries)
+        yield speaking(("Cy", "Noch"))
+        await trace.until(lambda: trace.count(Held()) == 2)
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert place.trace.events[-1] == Held()
+    assert ("play", "Zwei.") not in place.trace.calls
