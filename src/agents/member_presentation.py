@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 from pydantic import AfterValidator, Field, StringConstraints, field_validator
 
 from agents.figure_vocabulary import FigureGesture
-from agents.turn import StrictModel
+from agents.turn import StrictModel, is_none
 
 __all__ = [
     "FigureLook",
@@ -70,10 +70,6 @@ def _is_empty(value: dict[FigureGesture, HttpsFileRef]) -> bool:
     return not value
 
 
-def _is_none(value: HttpsFileRef | None) -> bool:
-    return value is None
-
-
 class FigureRef(HttpsFileRef):
     """Where an agent's 3D figure is (see ``HttpsFileRef``) and, optionally, its own clips: for a
     gesture of figure's base set, the file that replaces figure's neutral clip on this figure
@@ -120,7 +116,7 @@ class FigureLook(FigureRef):
     unset. ``FigureRef``, so the old ``figure``, carries no room. A figure look plays gestures."""
 
     kind: Literal["figure"]
-    room: HttpsFileRef | None = Field(default=None, exclude_if=_is_none)
+    room: HttpsFileRef | None = Field(default=None, exclude_if=is_none)
 
 
 class VideoLook(StrictModel):
