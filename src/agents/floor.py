@@ -3,8 +3,8 @@ order of the sentences the answer says.
 
 A talk-over holds the answer. The loop keeps one ``Floor`` per agent and place in memory and calls
 its methods as the events happen; the module reads no clock, runs no task and does no I/O, and
-sound never reaches it. ``hear_partials`` returns whether the consumer holds the answer; ``end_hold``
-returns the steps the consumer carries out, ``Wait`` among them while the hold stands on.
+sound never reaches it. ``hear_partials`` returns whether the consumer holds the answer;
+``end_hold`` returns the steps the consumer carries out, ``Wait`` among them while the hold stands.
 
 The floor orders the sentences the consumer enters and hands back what the consumer enters, never
 reading it: the consumer's sentence stays its own text, sound and record. It works by position, so
