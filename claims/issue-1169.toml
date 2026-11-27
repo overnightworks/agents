@@ -1,8 +1,0 @@
-claim_id = "68772a2d113c49d8b605074259cbdfd9"
-agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
-role = "builder"
-base = "f93ffbec424287df3e3cdc8a4450e6219aa53182"
-branch = "claude/issue-1169-agents-pins-quality-v0-28-0"
-scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", ".github/workflows/release.yml", "docs/connector.md", "pyproject.toml", "quality/config.toml", "tests/scripts", "tests/support", "tests/test_agents_vocabulary_generator.py", "tests/test_check_forbidden_imports_exist.py", "tests/test_figure_vocabulary_generator.py", "tests/test_generator_scripts.py", "tests/test_member_tool_wire_diff.py", "tests/test_member_tool_wire_generator.py"]
-opened_commit = "c7ca8c37e3e4593cfaec3506623acbe17dd29cc3"
-whole_reason = "One release step: the quality pins, the test moves that end the two layout entries and the coverage floor turn red or green together at v0.28.0."
