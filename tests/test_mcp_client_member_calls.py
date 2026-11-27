@@ -271,7 +271,10 @@ async def test_an_accept_result_the_sdk_cannot_validate_is_an_unusable_answer(
 
     async def lists_a_tool_with_an_output_schema(reply: GateReply) -> None:
         tool = Tool(
-            name=ACCEPT_INVITATION_TOOL, input_schema={"type": "object"}, output_schema=schema
+            name=ACCEPT_INVITATION_TOOL,
+            description="Accepts an invitation.",
+            input_schema={"type": "object"},
+            output_schema=schema,
         )
         await reply.result(ListToolsResult(tools=[tool]))
 
@@ -283,7 +286,7 @@ async def test_an_accept_result_the_sdk_cannot_validate_is_an_unusable_answer(
         with pytest.raises(UnusableAnswer) as failure:
             await session.accept(invitation)
 
-    assert failure.value.code == INVALID_ANSWER_CODE
+    assert (failure.value.code, gate.count(CALL)) == (INVALID_ANSWER_CODE, 1)
 
 
 # Speaking.
