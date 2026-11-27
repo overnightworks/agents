@@ -461,6 +461,25 @@ def test_a_failing_end_is_one_failed_line_without_the_detail_and_the_listen_ends
     assert "secret detail" not in log_lines.everything()
 
 
+def test_an_end_past_its_cap_is_one_failed_warning_and_the_stream_still_closes(
+    signalling_front: McpPersonFront,
+    place_store: PlaceStoreFake,
+    alice: Principal,
+    log_lines: LogLines,
+) -> None:
+    place_store.ended_takes = 3600
+    connection = listen_connection(signalling_front, alice, [STANDING_URI])
+
+    async def scenario() -> None:
+        async with signalling_front.running(), open_stream(connection):
+            pass
+
+    served(scenario())
+
+    ended = log_lines.one("listen_end.ended")
+    assert (connection.status, ended["outcome"], ended["level"]) == (200, "failed", "warning")
+
+
 def test_an_end_that_is_recorded_is_one_ok_line(
     signalling_front: McpPersonFront, alice: Principal, log_lines: LogLines
 ) -> None:

@@ -390,8 +390,9 @@ class ResourceChanges:
         with suppress(PlaceStoreError, TimeoutError):  # the failed line is the record
             async with store_step("listen_end.ended", _LOG) as step:
                 step.handled()
-                async with asyncio.timeout(_END_CAP_SECONDS):
-                    await self._store.ended(stream.identity, _HOLDS_ENDED)
+                await asyncio.wait_for(
+                    self._store.ended(stream.identity, _HOLDS_ENDED), _END_CAP_SECONDS
+                )
 
     def _forget(self, recipient: Principal, stream: _ListenStream) -> None:
         streams = self._streams[recipient]
