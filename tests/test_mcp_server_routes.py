@@ -719,9 +719,7 @@ def test_an_undecided_operation_is_refused_even_when_a_marked_one_breaches_the_p
     ],
     ids=["empty", "blank", "not a string", "list", "also a mark", "extra key", "empty mapping"],
 )
-def test_an_exclusion_that_not_an_agent_tool_does_not_return_is_refused(
-    extension: Any,
-) -> None:
+def test_an_exclusion_that_not_an_agent_tool_does_not_return_is_refused(extension: Any) -> None:
     app = application(Registration("GET", "/notes", nothing, document={"x-agent-tool": extension}))
 
     assert "GET /notes" in str(refused(app))
@@ -733,9 +731,7 @@ def test_a_put_patch_or_delete_marked_read_only_is_refused_naming_the_operation(
 ) -> None:
     app = application(Registration(method, "/notes", nothing, tool="a"))
 
-    failure = str(refused(app))
-
-    assert f"{method} /notes" in failure
+    assert f"{method} /notes" in str(refused(app))
 
 
 @pytest.mark.parametrize("method", ["PUT", "PATCH", "DELETE"])
@@ -747,11 +743,7 @@ def test_a_marked_put_patch_or_delete_is_called_with_its_path_query_and_body_arg
 
     app = application(
         Registration(
-            method,
-            "/notes/{note_id}",
-            change,
-            tool="change_note",
-            effect=ToolEffect.SIDE_EFFECTING,
+            method, "/notes/{note_id}", change, tool="change_note", effect=ToolEffect.SIDE_EFFECTING
         )
     )
     arguments = {"note_id": "n1", "title": "Dawn", "genre": "pop", "reason": "typo"}
