@@ -375,6 +375,8 @@ class _McpMemberSession:
             declared = tuple(declaration_of(tool) for tool in listing.tools)
         except ValidationError:
             raise UnusableAnswer(INVALID_ANSWER_CODE) from None
+        if len({tool.name for tool in declared}) != len(declared):
+            raise UnusableAnswer(INVALID_ANSWER_CODE)
         if self._list_counter == started:
             self._declared_arguments = {tool.name: tool.parameters for tool in declared}
             if self._honoured:

@@ -93,6 +93,22 @@ async def test_a_declaration_that_fails_validation_is_an_unusable_answer(
     assert failure.value.code == INVALID_ANSWER_CODE
 
 
+async def test_a_listing_that_names_a_tool_twice_is_an_unusable_answer(
+    gate: ScriptedGate, bearer: SecretStr
+) -> None:
+    async def lists_one_tool_twice(reply: GateReply) -> None:
+        tool = Tool(name="peek", description="peek", input_schema={"type": "object"})
+        await reply.result(ListToolsResult(tools=[tool, tool]))
+
+    gate.script(LIST_TOOLS, lists_one_tool_twice)
+
+    async with opened(gate, bearer) as session:
+        with pytest.raises(UnusableAnswer) as failure:
+            await session.declared_tools()
+
+    assert failure.value.code == INVALID_ANSWER_CODE
+
+
 @pytest.mark.parametrize(
     "outcome",
     [ToolOutcome("said", is_error=False), ToolOutcome("gone", is_error=True)],
