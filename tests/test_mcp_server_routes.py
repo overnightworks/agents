@@ -466,6 +466,9 @@ def answer_with(content: object) -> Registration:
         answer_with(["application/json"]),
         answer_with({"application/json": "x"}),
         answer_with({"application/json": {"schema": "object"}}),
+        body_with({"application/json": {"schema": {"type": "object"}}}),
+        Registration("GET", "/notes", nothing, tool="a", extra={"status_code": 404}),
+        Registration("GET", "/notes/{note_id}", nothing, tool="a"),
     ],
     ids=[
         "header parameter",
@@ -506,6 +509,9 @@ def answer_with(content: object) -> Registration:
         "response content as a list",
         "response media type not an object",
         "response schema not an object",
+        "request body object without properties",
+        "no success response",
+        "template placeholder without its path parameter",
     ],
 )
 def test_a_marked_route_outside_the_profile_is_refused_naming_the_operation(
