@@ -102,10 +102,13 @@ line, made from the previous release's snapshot by `scripts/member_tool_wire_dif
 that serves an app reads it there. It says `unchanged`, or names in this order: `changed:` the
 tools added, removed or whose arguments or answers differ in anything but a `title` or
 `description` keyword (a gained optional property included), and after `resources:` the resource
-records whose schema differs in anything else; `Descriptions only:` the tools that differ in those
+records whose schema differs in anything else; `descriptions only:` the tools that differ in those
 prose keywords alone, which reach the model but never change what a runner sends or accepts; and
-`Fields added:` the resource records that only gained optional fields. A name under
-`Descriptions only:` changes no shape, so a runner's check holds no release on it. The line names
+`fields added:` the resource records that only gained optional fields. The first part that is
+present follows the label in lower case, each later one starts upper case (`descriptions only:` or
+`Descriptions only:`, `fields added:` or `Fields added:`) and ends with a period, so a runner's
+check matches the labels without regard to case. A name under `descriptions only:` changes no
+shape, so a runner's check holds no release on it. The line names
 no side: "Rollout order" below owns which side takes a release first, and a release that needs
 another order says so there. The guard
 compares schemas: a rule across fields or a validator does not show in one, so its author names it.
