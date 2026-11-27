@@ -482,16 +482,14 @@ def _models_in(annotation: object) -> tuple[type[BaseModel], ...]:
 
 
 def _key_words(annotation: object) -> frozenset[str] | None:
-    """The words of the enum a field's mapping annotation keys by, at any depth: empty when the
-    mapping's keys are no enum; none when the annotation holds no mapping."""
+    """The words of the enum a field's mapping annotation keys by, at any depth; none when the
+    annotation holds no mapping."""
     origin = get_origin(annotation)
     if isinstance(origin, type) and issubclass(origin, Mapping):
         key_type = get_args(annotation)[0]
         while get_origin(key_type) is Annotated:
             key_type = get_args(key_type)[0]
-        if isinstance(key_type, type) and issubclass(key_type, StrEnum):
-            return frozenset(word.value for word in key_type)
-        return frozenset()
+        return frozenset(word.value for word in cast(type[StrEnum], key_type))
     return next(
         (words for part in get_args(annotation) if (words := _key_words(part)) is not None), None
     )
