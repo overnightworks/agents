@@ -777,7 +777,8 @@ in front of several pods: the client keeps none, so each request may reach anoth
 call, so a caller that wants a total bound wraps the call; `listen` is the exception, whose
 `stream_seconds` is a total deadline that cuts a stream even while it wakes. A request whose
 complete JSON answer names another request ends as `Unreachable`; the SDK would drop that answer and
-leave the request waiting. A 200 answer that is no JSON-RPC carries the SDK's local parse codes
+leave the request waiting; a stream reconnect inside a call that the app answers with JSON ends the
+call as `Unreachable`. A 200 answer that is no JSON-RPC carries the SDK's local parse codes
 `jsonrpc_-32600` or `jsonrpc_-32700`. On a 3xx the SDK writes one ERROR line, `Unexpected content
 type: `, with no information of the app; the client leaves it, since silencing it would mean
 changing a host's logger levels, which a library never touches. No bearer is in any representation,

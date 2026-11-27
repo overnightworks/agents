@@ -18,6 +18,8 @@ from logline.testing import configured
 from mcp_types import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
+    INVALID_REQUEST,
+    PARSE_ERROR,
     UNSUPPORTED_PROTOCOL_VERSION,
     BlobResourceContents,
     DiscoverResult,
@@ -540,6 +542,40 @@ async def test_a_status_failure_of_a_stream_reconnect_names_no_method(
 
     assert failure.value.status == HTTPStatus.METHOD_NOT_ALLOWED
     assert failure.value.method is None
+
+
+async def a_json_answer(reply: GateReply) -> None:
+    await reply.body(HTTPStatus.OK, "application/json", b"{}")
+
+
+async def test_a_call_whose_stream_reconnect_is_answered_with_json_is_unreachable(
+    app: MemberApp, gate: ScriptedGate, bearer: SecretStr
+) -> None:
+    async def drops_after_an_event_with_an_id(reply: GateReply) -> None:
+        await reply.open_stream()
+        await reply.event({"jsonrpc": "2.0", "method": "notifications/message"}, event_id="1")
+        await reply.end()
+
+    stands(app)
+    gate.script(READ, drops_after_an_event_with_an_id)
+    gate.script(NO_METHOD, a_json_answer, a_json_answer)
+
+    with pytest.raises(Unreachable):
+        await reads_the_standing(gate, bearer)
+
+
+async def test_a_200_answer_that_is_no_jsonrpc_carries_one_of_the_sdks_local_parse_codes(
+    app: MemberApp, gate: ScriptedGate, bearer: SecretStr
+) -> None:
+    stands(app)
+    gate.script(
+        READ, lambda reply: reply.body(HTTPStatus.OK, "application/json", b'{"detail": "no"}')
+    )
+
+    with pytest.raises(UnusableAnswer) as failure:
+        await reads_the_standing(gate, bearer)
+
+    assert failure.value.code in {jsonrpc_code(INVALID_REQUEST), jsonrpc_code(PARSE_ERROR)}
 
 
 async def test_a_jsonrpc_error_at_a_success_status_is_an_unusable_answer_with_no_method(
