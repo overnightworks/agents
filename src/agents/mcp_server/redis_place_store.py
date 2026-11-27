@@ -288,7 +288,8 @@ def _decoded(address: str) -> PlaceSignal | ListeningTurn | None:
             return ResourceChange(Principal(iss=iss, sub=sub), uri, origin)
         case ("v1", "tools", iss, sub, None, origin):
             return ToolsChange(Principal(iss=iss, sub=sub), origin)
-        case ("v1", direction, iss, sub, uri, _):
+        case _:
+            _, direction, iss, sub, uri, _origin = validated
             return ListeningTurn(
                 Principal(iss=iss, sub=sub), uri, listens=direction == "listening-yes"
             )
