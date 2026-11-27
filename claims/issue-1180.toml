@@ -1,8 +1,0 @@
-claim_id = "a72f0ccc19d34163873de3a75837cf50"
-agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
-role = "builder"
-base = "287cc896366b9afd24a654b44fd1dd005d19ac4a"
-branch = "claude/issue-1180-agents-floor-orders-the-voice-loop-s-sen"
-scope = [".aco/ahead-of-caller.toml", "docs/ARCHITECTURE.md", "src/agents/floor.py", "src/agents/voice/loop.py"]
-opened_commit = "f6b425f36becfa1d226f2b0cbe256e7970eda17d"
-whole_reason = "One move of the loop's order into the core: the steps, the loop that carries them out and the architecture sentences change together, and a split would leave the order in two places."
