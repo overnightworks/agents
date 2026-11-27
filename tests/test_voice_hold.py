@@ -602,9 +602,18 @@ def test_an_utterance_that_begins_only_after_the_answer_ended_holds_nothing(plac
     assert len(gateway.requests) == 2
 
 
-def test_a_talk_over_that_starts_while_an_ending_resumes_the_sound_holds_it_again(place):
+@pytest.mark.parametrize(
+    ("reply", "unsaid"),
+    [
+        pytest.param("[continue]", ["Zwei."], id="continue-leaves-the-waiting-sentences-unsaid"),
+        pytest.param("[finish]", [], id="finish-drops-the-waiting-sentences"),
+    ],
+)
+def test_a_talk_over_that_starts_while_an_ending_resumes_the_sound_holds_it_again(
+    place, reply, unsaid
+):
     voice = RecordingVoice(place.trace, held={"Eins."}, seconds_per_resume=0.5)
-    gateway = FakeGateway(THE_FIRST_ANSWER, completion("[continue]"))
+    gateway = FakeGateway(THE_FIRST_ANSWER, completion(reply), completion("[silent]"))
 
     async def hearing(trace):
         async for event in interjection_while_playing(trace):
@@ -613,6 +622,9 @@ def test_a_talk_over_that_starts_while_an_ending_resumes_the_sound_holds_it_agai
             yield event
         await trace.until(lambda: ("resume", "Eins.") in trace.entries)
         yield speaking(("Cy", "Noch eine Frage"))
+        await trace.until(lambda: trace.events.count(Held()) == 2)
+        yield a_line(3, "Noch eine Frage, bitte.", name="Cy")
+        yield speaking()
         await trace.settled()
 
     assert place.run(hearing, gateway, voice=voice) == RETURNED
@@ -620,6 +632,7 @@ def test_a_talk_over_that_starts_while_an_ending_resumes_the_sound_holds_it_agai
     assert place.trace.events.count(Held()) == 2
     assert [call for call in place.trace.calls if call[0] == "pause"] == [("pause", "Eins.")] * 2
     assert ("play", "Zwei.") not in place.trace.calls
+    assert conversation_of(gateway.requests[2])[-1][1][-1]["held"]["unsaid"] == unsaid
 
 
 def test_a_resume_refused_ends_the_answer_as_a_refused_play_does(place):
