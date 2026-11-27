@@ -300,6 +300,40 @@ def test_a_hold_between_sentences_never_plays_the_sentence_rendered_ahead(place,
     assert trace.events[-1] == DecisionEnded()
 
 
+@pytest.mark.parametrize(
+    ("rendering", "played", "unsaid"),
+    [
+        pytest.param("Eins.", [], ["Eins.", "Zwei."], id="before-the-first-sentence-played"),
+        pytest.param("Zwei.", ["Eins."], ["Zwei."], id="after-a-sentence-played"),
+    ],
+)
+def test_a_talk_over_while_the_next_sentence_renders_starts_no_sentence_and_tells_it_unsaid(
+    place, rendering, played, unsaid
+):
+    trace = place.trace
+    voice = RecordingVoice(trace, hangs={("render", rendering)})
+    gateway = FakeGateway(THE_FIRST_ANSWER, completion("[silent]"))
+    in_flight = []
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.until(lambda: ("render", rendering) in trace.entries)
+        yield speaking(("Ben", "Moment"))
+        await trace.until(lambda: Held() in trace.entries)
+        in_flight.append(("rendered", rendering) not in trace.entries)
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert in_flight == [True]
+    assert trace.played == played
+    assert all(call[0] not in {"pause", "resume"} for call in trace.calls)
+    assert ("play", rendering) not in trace.calls
+    assert conversation_of(gateway.requests[1])[-1][1][-1] == {"held": {"unsaid": unsaid}}
+
+
 def test_silent_stops_the_paused_sentence_and_says_nothing_more(place):
     voice, gateway = an_answer_of_two_that_is_playing(place, completion("[silent]"))
 
