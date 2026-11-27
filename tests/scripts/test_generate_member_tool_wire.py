@@ -6,9 +6,12 @@ import json
 from pathlib import Path
 from typing import get_args, get_type_hints
 
+import pytest
+
 import scripts.generate_member_tool_wire as generator
 from agents.mcp_server.resources import MemberResources
 from agents.member import MEMBER_RESOURCE_RECORDS, MEMBER_TOOL_ARGUMENTS, MEMBER_TOOL_RESULTS
+from tests.support.generator_script import assert_script_writes_its_file_under_the_root
 
 
 def test_the_committed_snapshot_is_what_the_code_renders() -> None:
@@ -51,3 +54,11 @@ def test_the_snapshot_covers_every_record_the_resource_port_can_return() -> None
     alias, _none = get_args(get_type_hints(MemberResources.read)["return"])
 
     assert set(MEMBER_RESOURCE_RECORDS) == set(get_args(alias.__value__))
+
+
+def test_run_as_a_script_it_writes_the_file_under_the_repository_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert_script_writes_its_file_under_the_root(
+        generator, "generate_member_tool_wire.py", generator.WIRE_PATH, tmp_path, monkeypatch
+    )

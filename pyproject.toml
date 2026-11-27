@@ -90,3 +90,10 @@ norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules"
 addopts = ["--import-mode=importlib"]
 markers = ["integration: an adapter-bound test that needs an extra's library or a real dependency"]
 pythonpath = ["."]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+precision = 2
+fail_under = 99.30

@@ -914,7 +914,7 @@ variant is a change. A runner on a release before the function, or one that pars
 default, refuses every key it does not know, so until the deployed runner reads through the
 function a change and an added field alike wait for the runner's release.
 Proved by `tests/test_member_wire_evolution.py`, `tests/test_mcp_server_resources.py` and
-`tests/test_member_tool_wire_diff.py`.
+`tests/scripts/test_member_tool_wire_diff.py`.
 
 **A trace on a line and on a view.** `PlaceEntry` and `PlaceView` carry an optional `traceparent`,
 a W3C trace context the app set when the line entered or the view's `revision` moved: the app writes

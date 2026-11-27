@@ -9,6 +9,7 @@ import pytest
 
 import scripts.generate_agents_vocabulary as generator
 from agents.turn import StopOutcome
+from tests.support.generator_script import assert_script_writes_its_file_under_the_root
 
 
 def written(root: Path) -> dict[str, object]:
@@ -38,3 +39,11 @@ def test_a_second_run_leaves_the_file_as_it_was(root: Path) -> None:
     generator.main(root=root)
 
     assert (root / generator.VOCABULARY_PATH).read_bytes() == first
+
+
+def test_run_as_a_script_it_writes_the_file_under_the_repository_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert_script_writes_its_file_under_the_root(
+        generator, "generate_agents_vocabulary.py", generator.VOCABULARY_PATH, tmp_path, monkeypatch
+    )
