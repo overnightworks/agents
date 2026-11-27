@@ -733,7 +733,9 @@ the app's protocol revision and yields a `MemberSession`:
 
 - reads: `read_standing`, `read_place`, `read_view` (`None` for a place the app shows the member no
   more) and `read_discovery` (the app's instructions and whether it declares skills; no request);
-- tools: `declared_tools`, `kept_tools`, `tools_notices` and `invoke(name, arguments)`, whose
+- tools: `declared_tools`, which refuses a listing with a declaration that fails validation or a
+  name given twice as `UnusableAnswer(invalid_answer)` and keeps nothing from it, `kept_tools`,
+  `tools_notices` and `invoke(name, arguments)`, whose
   `ToolOutcome` holds the one picture an app answers with, its representation free of any byte. A
   name the app never declared is no outcome: `invoke` raises `StatusFailure` with status 400. A
   declared tool outside the app's current offer returns an error `ToolOutcome`, so a runner that
