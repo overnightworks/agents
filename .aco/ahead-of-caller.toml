@@ -1,9 +1,4 @@
 [[code]]
-path = "src/agents/voice/loop.py"
-item = "#803"
-reason = "The voice loop; no app runs it yet: presentator#944, presentator#109 and hopin#630 move onto it."
-
-[[code]]
 path = "src/agents/voice/conversation.py"
 item = "#803"
 reason = "The loop's decision window; only the loop builds a Conversation."
