@@ -1,9 +1,18 @@
-"""The floor of one agent at one place: who talks over its answer and whether it is held.
+"""The floor of one agent at one place: who talks over its answer, whether it is held, and the
+order of the sentences the answer says.
 
 A talk-over holds the answer. The loop keeps one ``Floor`` per agent and place in memory and calls
 its methods as the events happen; the module reads no clock, runs no task and does no I/O, and
-sound never reaches it. A call that can start or keep a hold returns whether the consumer holds the
-answer; the consumer carries that out.
+sound never reaches it. ``hear_partials`` returns whether the consumer holds the answer;
+``end_hold`` returns the steps the consumer carries out, ``Wait`` among them while the hold stands.
+
+The floor orders the sentences the consumer enters and hands back what the consumer enters, never
+reading it: the consumer's sentence stays its own text, sound and record. It works by position, so
+two equal sentences stay two. A call that decides what a sentence does returns a step the consumer
+carries out: ``Start``, ``PlayOn``, ``Wait`` or ``Drop``. A sentence is waiting once entered,
+playing from its start until the consumer reports that it ended, and gone once dropped. A sentence
+entered between ``decision_opens`` and ``end_hold`` is the reply to the hold: it waits apart from
+the held answer's sentences and takes their place when the hold ends with ``ANSWERED``.
 
 A floor is in one of four phases, in the loop's meaning:
 
@@ -31,12 +40,13 @@ module. Whether a talk-over held a word is judged by person: from their first pa
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
 from agents.member_speaking import HoldPlace, PartialSpeech, has_words, hold_place
 
-__all__ = ["Floor", "HoldEnding"]
+__all__ = ["Drop", "Floor", "HoldEnding", "HoldStep", "PlayOn", "Start", "Wait"]
 
 
 class HoldEnding(StrEnum):
@@ -58,7 +68,45 @@ _PLAYING_ENDINGS: Final = frozenset(
     {HoldEnding.CONTINUED, HoldEnding.FINISHED, HoldEnding.ANSWERED}
 )
 
+_DROPPING_ENDINGS: Final = frozenset(
+    {HoldEnding.FINISHED, HoldEnding.ANSWERED, HoldEnding.STOPPED, HoldEnding.DROPPED}
+)
+"""Endings after which the held answer's waiting sentences are gone."""
+
+_DROPPING_THE_HELD: Final = frozenset({HoldEnding.ANSWERED, HoldEnding.STOPPED, HoldEnding.DROPPED})
+"""Endings that drop the sentence held too, instead of letting it play on."""
+
 _NOTHING_PLAYS: Final = hold_place(None, None)
+
+
+@dataclass(frozen=True)
+class Start[Said]:
+    """This sentence starts now: it has left the waiting ones and is the one that plays."""
+
+    sentence: Said
+
+
+@dataclass(frozen=True)
+class PlayOn[Said]:
+    """The held sentence plays on from where its sound stopped, at ``Floor.place``."""
+
+    sentence: Said
+
+
+@dataclass(frozen=True)
+class Wait:
+    """Nothing of the answer starts or plays on now, because a hold stands."""
+
+
+@dataclass(frozen=True)
+class Drop[Said]:
+    """A started sentence is dropped: the consumer stops its sound. It leaves ``Floor.playing``
+    once the consumer reports that it ended."""
+
+    sentence: Said
+
+
+type HoldStep[Said] = PlayOn[Said] | Wait | Drop[Said]
 
 
 class TalkOver:
@@ -124,16 +172,23 @@ class TalkOver:
         return not self._speaking
 
 
-class Floor:
-    """The talk-over at a place and the hold it puts on the answer."""
+class Floor[Said]:
+    """The talk-over at a place, the hold it puts on the answer and the order of its sentences."""
 
     def __init__(self) -> None:
         self._talk = TalkOver()
         self._holding = False
         self._place = _NOTHING_PLAYS
+        self._waiting: list[Said] = []
+        self._reply: list[Said] = []
+        self._playing: Said | None = None
+        self._deciding = False
 
     def answer_begins(self) -> None:
-        """An answer opens: every utterance so far began before it."""
+        """An answer opens: no sentence waits, and every utterance so far began before it."""
+        self._waiting.clear()
+        self._reply.clear()
+        self._deciding = False
         self._talk.answer_begins()
 
     def answer_ends(self) -> None:
@@ -147,41 +202,89 @@ class Floor:
         if self._holding or not self._talk.standing:
             return False
         self._holding = True
+        self._place_when_nothing_plays()
         return True
+
+    def _place_when_nothing_plays(self) -> None:
+        if self._playing is None:
+            self._place = _NOTHING_PLAYS
 
     def hear_finished(self, name: str, text: str) -> None:
         """A person's finished line."""
         self._talk.finished(name, text)
 
-    def nothing_played(self) -> None:
-        """The hold arose while no sentence played."""
-        self._place = _NOTHING_PLAYS
+    def enter(self, sentence: Said) -> None:
+        """A sentence is written and joins the waiting ones, or the reply while a hold decides."""
+        (self._reply if self._deciding else self._waiting).append(sentence)
+
+    def next_start(self) -> Start[Said] | Wait | None:
+        """The next sentence to start: ``Start``, ``Wait`` while a hold stands and a sentence
+        waits, or nothing when none waits."""
+        if not self._waiting:
+            return None
+        if self._holding:
+            return Wait()
+        self._playing = self._waiting.pop(0)
+        return Start(self._playing)
+
+    def sentence_ended(self) -> None:
+        """The sentence that started ended: played out, refused or stopped."""
+        self._playing = None
 
     def sound_stopped_at(self, place: HoldPlace) -> None:
         """Where the sound stopped."""
         self._place = place
 
     def decision_opens(self) -> None:
-        """A hold decision opens: the words are counted afresh."""
+        """A hold decision opens: the words are counted afresh, and what is written from now on is
+        the reply."""
         self._talk.forget_words()
+        self._deciding = True
 
-    def keeps_holding(self, ending: HoldEnding) -> bool:
-        """A decision gave ``ending``; whether the hold stands on with it, the sound already stopped
-        and, after ``ANSWERED``, between sentences."""
-        if ending not in _PLAYING_ENDINGS or not self._talk.standing:
-            return False
+    def end_hold(self, ending: HoldEnding) -> tuple[HoldStep[Said], ...]:
+        """A decision gave ``ending``, or a wordless hold may go on: what it does to the sentences,
+        as the steps the consumer carries out in order.
+
+        ``Wait`` comes first when the hold stands on with the ending, the sound already stopped
+        and, after ``ANSWERED``, between sentences. The hold itself ends only with
+        ``answer_goes_on`` or the answer's end.
+        """
+        holds_on = ending in _PLAYING_ENDINGS and self._talk.standing
+        reply, self._reply = self._reply, []
+        self._deciding = False
         if ending is HoldEnding.ANSWERED:
-            self._place = _NOTHING_PLAYS
-        return True
+            self._waiting = reply
+            if holds_on:
+                self._place = _NOTHING_PLAYS
+        elif ending in _DROPPING_ENDINGS:
+            self._waiting = []
+        steps: list[HoldStep[Said]] = [Wait()] if holds_on else []
+        if (held := self._playing) is not None:
+            if ending in _DROPPING_THE_HELD:
+                steps.append(Drop(held))
+            elif not holds_on:
+                steps.append(PlayOn(held))
+        return tuple(steps)
 
     def answer_goes_on(self) -> bool:
         """The answer goes on after an ending or a wordless hold; whether a talk-over that stands
         holds it again at once. Otherwise the hold is over."""
         if self._talk.standing:
+            self._place_when_nothing_plays()
             return True
         self._holding = False
         self._talk.forget_words()
         return False
+
+    @property
+    def playing(self) -> Said | None:
+        """The sentence that started and has not ended: the held one while a hold stands."""
+        return self._playing
+
+    @property
+    def waiting(self) -> tuple[Said, ...]:
+        """The sentences written and not started, in written order."""
+        return tuple(self._waiting)
 
     @property
     def holding(self) -> bool:
