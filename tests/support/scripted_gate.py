@@ -20,6 +20,7 @@ from mcp_types import (
     ErrorData,
     JSONRPCError,
     NotificationParams,
+    PromptListChangedNotification,
     ResourceUpdatedNotification,
     ResourceUpdatedNotificationParams,
     SubscriptionFilter,
@@ -119,12 +120,17 @@ class GateReply:
         body = f"{identified}event: message\ndata: {json.dumps(document)}\n\n".encode()
         await self.send({"type": "http.response.body", "body": body, "more_body": True})
 
-    async def acknowledge(self, honored: list[str], *, tools: bool = False) -> None:
-        """Acknowledges the listen stream with these resources, and the tools notice if asked."""
+    async def acknowledge(
+        self, honored: list[str], *, tools: bool = False, prompts: bool = False
+    ) -> None:
+        """Acknowledges the listen stream with these resources, and the tools and prompts notices
+        if asked."""
         notification = SubscriptionsAcknowledgedNotification(
             params=SubscriptionsAcknowledgedNotificationParams(
                 notifications=SubscriptionFilter(
-                    resource_subscriptions=honored or None, tools_list_changed=tools or None
+                    resource_subscriptions=honored or None,
+                    tools_list_changed=tools or None,
+                    prompts_list_changed=prompts or None,
                 ),
                 _meta=self._stream_meta,
             )
@@ -142,6 +148,12 @@ class GateReply:
         """Tells the listener that the app's tools changed."""
         await self._notify(
             ToolListChangedNotification(params=NotificationParams(_meta=self._stream_meta))
+        )
+
+    async def prompts_notice(self) -> None:
+        """Tells the listener that the app's prompts changed."""
+        await self._notify(
+            PromptListChangedNotification(params=NotificationParams(_meta=self._stream_meta))
         )
 
     async def complete(self) -> None:

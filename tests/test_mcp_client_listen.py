@@ -68,13 +68,13 @@ async def listens(gate: ScriptedGate, bearer: SecretStr, **keywords: Any) -> Non
         pass
 
 
-def acknowledging(*, tools: bool, then: Any = None) -> Any:
-    """A stream the app opens and acknowledges with the standing and, if ``tools``, its tools
-    notice honored; ``then`` writes what comes after."""
+def acknowledging(*, tools: bool, prompts: bool = False, then: Any = None) -> Any:
+    """A stream the app opens and acknowledges with the standing and, if ``tools`` or ``prompts``,
+    that notice honored; ``then`` writes what comes after."""
 
     async def streams(reply: GateReply) -> None:
         await reply.open_stream()
-        await reply.acknowledge([STANDING_URI], tools=tools)
+        await reply.acknowledge([STANDING_URI], tools=tools, prompts=prompts)
         if then is not None:
             await then(reply)
         await hangs(reply)
@@ -187,6 +187,34 @@ async def test_a_tools_notice_the_app_did_not_honor_is_no_wake(
         notices = session.tools_notices()
 
     assert (wake, notices) == (ResourceWake(ROOM), 0)
+
+
+async def test_a_prompts_notice_the_app_honored_is_no_wake(
+    gate: ScriptedGate, bearer: SecretStr
+) -> None:
+    async def writes(reply: GateReply) -> None:
+        await reply.prompts_notice()
+        await reply.pulse(ROOM)
+
+    gate.script(LISTEN, acknowledging(tools=False, prompts=True, then=writes))
+
+    async with opened(gate, bearer) as session, session.listen() as stream:
+        wake = await wake_of(stream)
+
+    assert wake == ResourceWake(ROOM)
+
+
+async def test_an_error_the_callers_own_body_raises_in_the_listen_is_not_told_as_a_failure(
+    gate: ScriptedGate, bearer: SecretStr
+) -> None:
+    gate.script(LISTEN, acknowledging(tools=False))
+
+    async with opened(gate, bearer) as session:
+        with pytest.raises(OSError, match="the host's own") as raised:
+            async with session.listen():
+                raise OSError("the host's own")
+
+    assert type(raised.value) is OSError
 
 
 def listing(*names: str) -> Any:
