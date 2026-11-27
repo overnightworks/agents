@@ -57,7 +57,8 @@ def test_the_check_exits_nonzero_only_for_an_unprovided_name(
 
 
 def test_run_as_a_script_on_this_repository_every_forbidden_import_names_a_real_package() -> None:
+    script = str(Path(check.__file__).resolve())
     with pytest.raises(SystemExit) as raised:
-        runpy.run_path(str(Path(check.__file__).resolve()), run_name="__main__")
+        runpy.run_path(script, run_name="__main__")
 
     assert raised.value.code == 0

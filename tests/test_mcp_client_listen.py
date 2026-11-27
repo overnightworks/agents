@@ -211,10 +211,14 @@ async def test_an_error_the_callers_own_body_raises_in_the_listen_is_not_told_as
 
     async with opened(gate, bearer) as session:
         with pytest.raises(OSError, match="the host's own") as raised:
-            async with session.listen():
-                raise OSError("the host's own")
+            await raises_inside_the_listen(session)
 
     assert type(raised.value) is OSError
+
+
+async def raises_inside_the_listen(session: Any) -> None:
+    async with session.listen():
+        raise OSError("the host's own")
 
 
 def listing(*names: str) -> Any:
