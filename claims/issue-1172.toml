@@ -1,8 +1,0 @@
-claim_id = "bce5c42dcf6d4d96880a6267b9e654ea"
-agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
-role = "builder"
-base = "f93ffbec424287df3e3cdc8a4450e6219aa53182"
-branch = "claude/issue-1172-the-voice-loop-holds-and-goes-on-as-befo"
-scope = [".aco/ahead-of-caller.toml", ".importlinter", "docs/ARCHITECTURE.md", "src/agents/floor.py", "src/agents/voice/__init__.py", "src/agents/voice/loop.py", "src/agents/voice/talk_over.py"]
-opened_commit = "78513de4fe05f8ac9ff8aa32bceb31993c0f8fee"
-whole_reason = "One move of the loop's hold state into a new base module: the module, the loop that drives it, the re-export, the import contracts and the one architecture paragraph change together, and a split would leave the hold state in two places."
