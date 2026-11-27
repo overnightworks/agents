@@ -1,8 +1,0 @@
-claim_id = "7ed0e370cc28456bb8ad51c427439ff2"
-agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
-role = "builder"
-base = "287cc896366b9afd24a654b44fd1dd005d19ac4a"
-branch = "claude/issue-1184-a-tools-listing-that-repeats-a-tool-name"
-scope = ["docs/connector.md", "src/agents/mcp_client/session.py", "tests/test_mcp_client_listen.py", "tests/test_mcp_client_tools.py"]
-opened_commit = "09885be0e47132626b6b409ce7fa88d90aaf31d1"
-whole_reason = "One rule of the tools listing: the check in declared_tools, its two tests and the connector sentence that states it change together."
