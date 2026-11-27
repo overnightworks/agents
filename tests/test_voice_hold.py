@@ -261,6 +261,55 @@ def test_finish_resumes_the_paused_sentence_and_drops_the_rest(place):
     assert place.trace.events[-2:] == [HoldEnded(HoldEnding.FINISHED), DecisionEnded()]
 
 
+def test_finish_ends_the_answer_after_the_resumed_sentence_without_waiting_for_a_dropped_render(
+    place,
+):
+    voice = RecordingVoice(place.trace, held={"Eins."}, hangs={("render", "Zwei.")})
+    gateway = FakeGateway(THE_FIRST_ANSWER, completion("[finish]"))
+
+    async def hearing(trace):
+        async for event in the_hold_ends(trace, voice):
+            yield event
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert place.trace.played == ["Eins."]
+    assert ("play", "Zwei.") not in place.trace.calls
+    assert place.trace.events[-2:] == [HoldEnded(HoldEnding.FINISHED), DecisionEnded()]
+
+
+@pytest.mark.parametrize(
+    ("decision", "played"),
+    [
+        pytest.param("Klar. Gern.", ["Eins.", "Klar.", "Gern."], id="speech-replaces-the-rest"),
+        pytest.param("[silent]", ["Eins."], id="silent-ends-the-answer"),
+        pytest.param("[shout] Hallo.", ["Eins."], id="an-unreadable-decision-ends-the-answer"),
+    ],
+)
+def test_a_hold_between_sentences_never_plays_the_sentence_rendered_ahead(place, decision, played):
+    trace = place.trace
+    voice = RecordingVoice(trace, seconds_per_render=3.0)
+    gateway = FakeGateway(THE_FIRST_ANSWER, completion(decision))
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.until(lambda: ("played", "Eins.") in trace.entries)
+        yield speaking(("Ben", "Moment"))
+        await trace.until(lambda: Held() in trace.entries)
+        assert ("render", "Zwei.") in trace.entries
+        await trace.until(lambda: ("rendered", "Zwei.") in trace.entries)
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.until(lambda: trace.events[-1] == DecisionEnded())
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert trace.played == played
+    assert ("play", "Zwei.") not in trace.calls
+    assert trace.events[-1] == DecisionEnded()
+
+
 def test_silent_stops_the_paused_sentence_and_says_nothing_more(place):
     voice, gateway = an_answer_of_two_that_is_playing(place, completion("[silent]"))
 

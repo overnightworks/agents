@@ -90,7 +90,8 @@ class Trace:
     """Everything the loop did that a test may see, in order, and a way to wait for a state.
 
     Voice events are recorded as reported; the support's own entries are tuples that start
-    with their kind: ``render``, ``unrendered`` (a render cancelled), ``play``, ``played``,
+    with their kind: ``render``, ``rendered`` (a render returned), ``unrendered`` (a render
+    cancelled), ``play``, ``played``,
     ``stopped`` (a play cancelled), ``pause``, ``unpaused`` (a pause cancelled), ``resume``,
     ``asked``, ``tool``, ``written``, ``closed``, ``cancelled``, ``ended`` (the loop's run is
     over) and ``rendered_in`` (the language a sentence was rendered in).
@@ -240,6 +241,7 @@ class RecordingVoice:
         except asyncio.CancelledError:
             self._trace.record(("unrendered", sentence))
             raise
+        self._trace.record(("rendered", sentence))
         return sentence
 
     async def pause(self) -> int | None:
