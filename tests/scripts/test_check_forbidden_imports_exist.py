@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import runpy
 from pathlib import Path
 
 import pytest
@@ -44,7 +45,7 @@ def test_a_package_kept_out_of_the_tree_needs_no_distribution() -> None:
 
 
 @pytest.mark.parametrize(("forbidden", "exit_code"), [("alpha", 0), ("typo", 1)])
-def test_run_as_a_script_it_exits_nonzero_only_for_an_unprovided_name(
+def test_the_check_exits_nonzero_only_for_an_unprovided_name(
     tmp_path: Path, forbidden: str, exit_code: int
 ) -> None:
     (tmp_path / ".importlinter").write_text(
@@ -53,3 +54,10 @@ def test_run_as_a_script_it_exits_nonzero_only_for_an_unprovided_name(
     )
     (tmp_path / "uv.lock").write_text('[[package]]\nname = "alpha"\n', encoding="utf-8")
     assert check.main(root=tmp_path) == exit_code
+
+
+def test_run_as_a_script_on_this_repository_every_forbidden_import_names_a_real_package() -> None:
+    with pytest.raises(SystemExit) as raised:
+        runpy.run_path(str(Path(check.__file__).resolve()), run_name="__main__")
+
+    assert raised.value.code == 0
