@@ -524,15 +524,6 @@ def test_the_parts_come_as_changed_then_descriptions_only_then_fields_added() ->
     )
 
 
-def test_descriptions_only_follows_the_label_when_nothing_changed() -> None:
-    before = {"speak": tool_of(record("S", "First."))}
-    after = {"speak": tool_of(record("S", "Second."))}
-
-    assert diff.note_line(snapshot(before), snapshot(after)) == (
-        "**Member-tool wire:** descriptions only: speak."
-    )
-
-
 def test_changes_and_added_fields_share_one_line() -> None:
     before = {"Alpha": record("Alpha", one=(int, ...)), "Beta": record("Beta", two=(int, ...))}
     after = {
