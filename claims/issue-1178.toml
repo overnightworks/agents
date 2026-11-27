@@ -3,5 +3,5 @@ agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
 role = "builder"
 base = "f22cbb317793ac2009116a5ba25bec45e057417b"
 branch = "claude/issue-1178-two-hold-endings-the-loops-order-move-re"
-scope = ["tests/test_voice_hold.py"]
+scope = ["docs/connector.md", "tests/support/voice_support.py", "tests/test_voice_hold.py"]
 opened_commit = "ef8de2dcd619684e8455d3d9d4aa54d444741956"
