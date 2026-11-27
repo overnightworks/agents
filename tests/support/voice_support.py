@@ -48,6 +48,8 @@ A_REFUSED_TURN: Final = DecisionFailed(
 A_SILENT_ROUND: Final = tool_round(tool_call("call-1", "look_up", {}), content="[silent]")
 """A tool round that calls ``look_up`` and says ``[silent]``."""
 THE_FIRST_ANSWER: Final = completion("Eins. Zwei.")
+HELD_AT_ONE: Final = {"held": {"heard": "unknown", "sentence": "Eins.", "unsaid": ["Zwei."]}}
+"""The row that tells a decision the answer was held at ``Eins.`` with ``Zwei.`` unsaid."""
 
 type Wait = Callable[[], Awaitable[object]]
 type StreamPart = bytes | Wait | Exception
@@ -90,10 +92,11 @@ class Trace:
     """Everything the loop did that a test may see, in order, and a way to wait for a state.
 
     Voice events are recorded as reported; the support's own entries are tuples that start
-    with their kind: ``render``, ``unrendered`` (a render cancelled), ``play``, ``played``,
-    ``stopped`` (a play cancelled), ``pause``, ``unpaused`` (a pause cancelled), ``resume``,
-    ``asked``, ``tool``, ``written``, ``closed``, ``cancelled``, ``ended`` (the loop's run is
-    over) and ``rendered_in`` (the language a sentence was rendered in).
+    with their kind: ``render``, ``rendered`` (a render returned), ``unrendered`` (a render
+    cancelled), ``play``, ``played``, ``stopped`` (a play cancelled), ``pause``, ``unpaused``
+    (a pause cancelled), ``resume``, ``asked``, ``tool``, ``written``, ``closed``,
+    ``cancelled``, ``ended`` (the loop's run is over) and ``rendered_in`` (the language a
+    sentence was rendered in).
     """
 
     def __init__(self) -> None:
@@ -240,6 +243,7 @@ class RecordingVoice:
         except asyncio.CancelledError:
             self._trace.record(("unrendered", sentence))
             raise
+        self._trace.record(("rendered", sentence))
         return sentence
 
     async def pause(self) -> int | None:
@@ -509,9 +513,12 @@ class VoicePlace:
         return wakes
 
 
-def an_answer_of_two_that_is_playing(place, *later_replies):
-    """A voice that plays ``Eins.`` until released and a gateway whose first reply has both."""
-    voice = RecordingVoice(place.trace, held={"Eins."})
+def an_answer_of_two_that_is_playing(place, *later_replies, hangs=()):
+    """A voice that plays ``Eins.`` until released and a gateway whose first reply has both.
+
+    A ``(call, sentence)`` pair in ``hangs`` is a voice call that never returns.
+    """
+    voice = RecordingVoice(place.trace, held={"Eins."}, hangs=hangs)
     return voice, FakeGateway(THE_FIRST_ANSWER, *later_replies)
 
 

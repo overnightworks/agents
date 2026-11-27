@@ -18,6 +18,7 @@ from agents.voice import (
 from tests.support import voice_support
 from tests.support.voice_lines import a_line, speaking
 from tests.support.voice_support import (
+    HELD_AT_ONE,
     RETURNED,
     THE_FIRST_ANSWER,
     PacedGateway,
@@ -34,7 +35,6 @@ place = voice_support.place
 
 WENT_ON = HoldEnded(HoldEnding.WENT_ON)
 THE_WENT_ON_LINE = {"went_on": True}
-HELD_AT_ONE = {"held": {"heard": "unknown", "sentence": "Eins.", "unsaid": ["Zwei."]}}
 THE_ANSWER_AFTER_GOING_ON = [
     Woke(),
     SentenceStarted("Eins."),
