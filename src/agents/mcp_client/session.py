@@ -531,10 +531,11 @@ class _McpMemberSession:
 
     async def _answered[Answer](self, request: Coroutine[object, object, Answer]) -> Answer:
         self.auth.last_answer = None
-        call = CallAnswer()
+        stranding = asyncio.timeout(None)
+        call = CallAnswer(stranding)
         reset = CALL_ANSWER.set(call)
         try:
-            async with asyncio.timeout(None) as call.stranding:
+            async with stranding:
                 return await request
         except CALL_ERRORS as error:
             raise failure_of(error, call.answer) from None
