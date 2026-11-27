@@ -16,7 +16,7 @@ from logline import unit_trace
 
 from agents.agent_file import AgentDefinition, TurnRequest
 from agents.backend import AgentBackend, TurnPerson, TurnStopped
-from agents.floor import Drop, Floor, HoldStep, PlayOn, Start, Wait
+from agents.floor import Drop, Floor, HoldStep, Start, Wait
 from agents.member import HoldPlace, PartialSpeech, PlaceEntry, SpokenLanguage, hold_place
 from agents.voice import (
     DecisionEnded,
@@ -427,14 +427,12 @@ class _VoiceLoop[Audio]:
         """Carry out an ending's steps in order; ``False`` once the host refused the resume and
         the answer is over."""
         for step in steps:
-            match step:
-                case Wait():
-                    self._report(Held())
-                case Drop():
-                    await self._stop(play)
-                case PlayOn(sentence):
-                    if not await self._resumed(play, sentence):
-                        return False
+            if isinstance(step, Wait):
+                self._report(Held())
+            elif isinstance(step, Drop):
+                await self._stop(play)
+            elif not await self._resumed(play, step.sentence):
+                return False
         return True
 
     async def _go_on(

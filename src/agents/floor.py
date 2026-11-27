@@ -80,17 +80,17 @@ _NOTHING_PLAYS: Final = hold_place(None, None)
 
 
 @dataclass(frozen=True)
-class Start[Sentence]:
+class Start[Said]:
     """This sentence starts now: it has left the waiting ones and is the one that plays."""
 
-    sentence: Sentence
+    sentence: Said
 
 
 @dataclass(frozen=True)
-class PlayOn[Sentence]:
+class PlayOn[Said]:
     """The held sentence plays on from where its sound stopped, at ``Floor.place``."""
 
-    sentence: Sentence
+    sentence: Said
 
 
 @dataclass(frozen=True)
@@ -99,14 +99,14 @@ class Wait:
 
 
 @dataclass(frozen=True)
-class Drop[Sentence]:
+class Drop[Said]:
     """A started sentence is dropped: the consumer stops its sound. It leaves ``Floor.playing``
     once the consumer reports that it ended."""
 
-    sentence: Sentence
+    sentence: Said
 
 
-type HoldStep[Sentence] = PlayOn[Sentence] | Wait | Drop[Sentence]
+type HoldStep[Said] = PlayOn[Said] | Wait | Drop[Said]
 
 
 class TalkOver:
@@ -172,16 +172,16 @@ class TalkOver:
         return not self._speaking
 
 
-class Floor[Sentence]:
+class Floor[Said]:
     """The talk-over at a place, the hold it puts on the answer and the order of its sentences."""
 
     def __init__(self) -> None:
         self._talk = TalkOver()
         self._holding = False
         self._place = _NOTHING_PLAYS
-        self._waiting: list[Sentence] = []
-        self._reply: list[Sentence] = []
-        self._playing: Sentence | None = None
+        self._waiting: list[Said] = []
+        self._reply: list[Said] = []
+        self._playing: Said | None = None
         self._deciding = False
 
     def answer_begins(self) -> None:
@@ -213,11 +213,11 @@ class Floor[Sentence]:
         """A person's finished line."""
         self._talk.finished(name, text)
 
-    def enter(self, sentence: Sentence) -> None:
+    def enter(self, sentence: Said) -> None:
         """A sentence is written and joins the waiting ones, or the reply while a hold decides."""
         (self._reply if self._deciding else self._waiting).append(sentence)
 
-    def next_start(self) -> Start[Sentence] | Wait | None:
+    def next_start(self) -> Start[Said] | Wait | None:
         """The next sentence to start: ``Start``, ``Wait`` while a hold stands and a sentence
         waits, or nothing when none waits."""
         if not self._waiting:
@@ -241,7 +241,7 @@ class Floor[Sentence]:
         self._talk.forget_words()
         self._deciding = True
 
-    def end_hold(self, ending: HoldEnding) -> tuple[HoldStep[Sentence], ...]:
+    def end_hold(self, ending: HoldEnding) -> tuple[HoldStep[Said], ...]:
         """A decision gave ``ending``, or a wordless hold may go on: what it does to the sentences,
         as the steps the consumer carries out in order.
 
@@ -258,7 +258,7 @@ class Floor[Sentence]:
                 self._place = _NOTHING_PLAYS
         elif ending in _DROPPING_ENDINGS:
             self._waiting = []
-        steps: list[HoldStep[Sentence]] = [Wait()] if holds_on else []
+        steps: list[HoldStep[Said]] = [Wait()] if holds_on else []
         if (held := self._playing) is not None:
             if ending in _DROPPING_THE_HELD:
                 steps.append(Drop(held))
@@ -277,12 +277,12 @@ class Floor[Sentence]:
         return False
 
     @property
-    def playing(self) -> Sentence | None:
+    def playing(self) -> Said | None:
         """The sentence that started and has not ended: the held one while a hold stands."""
         return self._playing
 
     @property
-    def waiting(self) -> tuple[Sentence, ...]:
+    def waiting(self) -> tuple[Said, ...]:
         """The sentences written and not started, in written order."""
         return tuple(self._waiting)
 
