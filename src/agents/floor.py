@@ -3,8 +3,8 @@ order of the sentences the answer says.
 
 A talk-over holds the answer. The loop keeps one ``Floor`` per agent and place in memory and calls
 its methods as the events happen; the module reads no clock, runs no task and does no I/O, and
-sound never reaches it. A call that can start or keep a hold returns whether the consumer holds the
-answer; the consumer carries that out.
+sound never reaches it. ``hear_partials`` returns whether the consumer holds the answer; ``end_hold``
+returns the steps the consumer carries out, ``Wait`` among them while the hold stands on.
 
 The floor orders the sentences the consumer enters and hands back what the consumer enters, never
 reading it: the consumer's sentence stays its own text, sound and record. It works by position, so
@@ -46,7 +46,7 @@ from typing import Final
 
 from agents.member_speaking import HoldPlace, PartialSpeech, has_words, hold_place
 
-__all__ = ["Drop", "Floor", "HoldEnding", "PlayOn", "Start", "Wait"]
+__all__ = ["Drop", "Floor", "HoldEnding", "HoldStep", "PlayOn", "Start", "Wait"]
 
 
 class HoldEnding(StrEnum):
