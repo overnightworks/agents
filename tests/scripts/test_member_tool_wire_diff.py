@@ -478,7 +478,9 @@ def test_a_tool_whose_arguments_or_answers_differ_in_more_than_prose_is_named_as
     assert tool_line(before, after) == "**Member-tool wire:** changed: speak."
 
 
-def test_the_line_reads_as_the_body_of_the_item_gives_for_a_prose_only_release() -> None:
+def test_a_prose_only_release_with_a_gained_record_names_descriptions_only_then_fields_added() -> (
+    None
+):
     def tools(prose: str) -> Tools:
         return {
             "speak": tool_of(record("Speak", prose, one=(int, ...))),
