@@ -1,0 +1,7 @@
+claim_id = "39a3cbeecd014b44bbd1282f00e4c250"
+agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
+role = "builder"
+base = "1c1dae91b5a7b24d4ef5fc3a9c6c63b039131aac"
+branch = "claude/issue-1175-after-finish-a-hold-that-arises-as-the-f"
+scope = ["src/agents/voice/loop.py", "tests/test_voice_hold.py"]
+opened_commit = "fcee8c3e7a6515cd6741a7d0ee115f9c35a1e0a5"
