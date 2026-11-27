@@ -16,6 +16,7 @@ from logline import unit_trace
 
 from agents.agent_file import AgentDefinition, TurnRequest
 from agents.backend import AgentBackend, TurnPerson, TurnStopped
+from agents.floor import Floor
 from agents.member import HoldPlace, PartialSpeech, PlaceEntry, SpokenLanguage, hold_place
 from agents.voice import (
     DecisionEnded,
@@ -39,7 +40,6 @@ from agents.voice import (
 from agents.voice.conversation import Conversation
 from agents.voice.echo import is_echo
 from agents.voice.reply import PROTOCOL_TEXT, SILENT_REPLY, HoldMarker, Marker, Reading, ReplyReader
-from agents.voice.talk_over import TalkOver
 
 _RECORDED_ENDINGS: Final[dict[HoldEnding, str | None]] = {
     HoldEnding.CONTINUED: f"[{Marker.CONTINUE}]",
@@ -49,12 +49,6 @@ _RECORDED_ENDINGS: Final[dict[HoldEnding, str | None]] = {
     HoldEnding.DROPPED: None,
 }
 """What a hold decision is recorded as when it started no sentence; a drop leaves its lines."""
-
-_PLAYING_ENDINGS: Final = frozenset(
-    {HoldEnding.CONTINUED, HoldEnding.FINISHED, HoldEnding.ANSWERED}
-)
-
-_NOTHING_PLAYS: Final = hold_place(None, None)
 
 
 async def run_voice_loop[Audio](
@@ -229,10 +223,8 @@ class _VoiceLoop[Audio]:
         self._first_after_answer = False
         self._answer = _Answer()
         self._last_played: list[str] = []
-        self._talk = TalkOver()
-        self._held = False
+        self._floor = Floor()
         self._stopping: asyncio.Task[HoldPlace] | None = None
-        self._place = _NOTHING_PLAYS
         self._go = asyncio.Event()
         self._go.set()
         self._moved = asyncio.Event()
@@ -254,10 +246,8 @@ class _VoiceLoop[Audio]:
             await self._moved.wait()
 
     def _hear_partials(self, speech: tuple[PartialSpeech, ...]) -> None:
-        self._talk.partials(speech)
-        if self._held or not self._talk.standing:
+        if not self._floor.hear_partials(speech):
             return
-        self._held = True
         self._go.clear()
         self._held_now()
 
@@ -266,7 +256,7 @@ class _VoiceLoop[Audio]:
         self._report(Held())
         sentence = self._answer.playing
         if sentence is None:
-            self._place = _NOTHING_PLAYS
+            self._floor.nothing_played()
             return
         # Eager, so `pause` is entered while this sentence's `play` has not returned.
         self._stopping = self._group.create_task(self._stop_sound(sentence), eager_start=True)
@@ -278,9 +268,9 @@ class _VoiceLoop[Audio]:
     async def _where_the_sound_stopped(self) -> HoldPlace:
         """The latest place the sound stopped at, once the pause in flight has returned."""
         if self._stopping is not None:
-            self._place = await self._stopping
+            self._floor.sound_stopped_at(await self._stopping)
             self._stopping = None
-        return self._place
+        return self._floor.place
 
     async def _stop_stopping(self) -> None:
         if self._stopping is not None:
@@ -290,7 +280,7 @@ class _VoiceLoop[Audio]:
 
     def _hear_line(self, line: PlaceEntry) -> None:
         if not line.own:
-            self._talk.finished(line.name, line.text)
+            self._floor.hear_finished(line.name, line.text)
         if is_echo(line, self._latest_answer()):
             self._conversation.skip(line)
             self._report(EchoDropped(line.text))
@@ -323,7 +313,7 @@ class _VoiceLoop[Audio]:
     async def _decide(self) -> bool:
         """Run one decision to its end, its holds included; whether it played a sentence."""
         self._report(Woke())
-        self._talk.answer_begins()
+        self._floor.answer_begins()
         answer = self._answer = _Answer()
         self._stages = []
         try:
@@ -349,9 +339,8 @@ class _VoiceLoop[Audio]:
         return [stage.reading for stage in self._stages if stage.reading is not None]
 
     def _finish_answer(self) -> None:
-        self._held = False
         self._go.set()
-        self._talk.answer_ends()
+        self._floor.answer_ends()
 
     def _start_stage(self, *, holding: bool = False) -> _Stage:
         messages = self._conversation.open_decision()
@@ -372,7 +361,7 @@ class _VoiceLoop[Audio]:
         try:
             while play is not None:
                 await self._until(partial(self._held_or_done, play))
-                if not self._held:
+                if not self._floor.holding:
                     return await play
                 held = await self._hold(stage, play)
                 stage, play = held if held is not None else (stage, None)
@@ -381,7 +370,7 @@ class _VoiceLoop[Audio]:
                 await self._stop(play)
 
     def _held_or_done(self, play: asyncio.Task[None]) -> bool:
-        return self._held or play.done()
+        return self._floor.holding or play.done()
 
     async def _stop(self, play: asyncio.Task[None] | None) -> None:
         if play is not None:
@@ -396,23 +385,22 @@ class _VoiceLoop[Audio]:
         held_play: asyncio.Task[None] | None = play
         while True:
             place = await self._where_the_sound_stopped()
-            await self._until(lambda: self._talk.worded or self._talk.nobody_speaks)
-            if not self._talk.worded:
+            await self._until(lambda: self._floor.worded or self._floor.nobody_speaks)
+            if not self._floor.worded:
                 return await self._go_on(stage, held_play)
             await asyncio.wait(self._readings())
-            await self._until(lambda: not self._talk.standing)
-            self._talk.forget_words()
+            await self._until(lambda: not self._floor.standing)
+            self._floor.decision_opens()
             decision = self._open_hold(stage, place)
             ending = await decision.ending
             self._report(HoldEnded(ending))
             self._answer.marker = _RECORDED_ENDINGS[ending]
-            if ending not in _PLAYING_ENDINGS or not self._talk.standing:
+            if not self._floor.keeps_holding(ending):
                 return await self._end_hold(ending, stage, decision, held_play)
             self._report(Held())
             if ending is HoldEnding.ANSWERED:
                 await self._stop(held_play)
                 self._answer.drop_cancelled_paused()
-                self._place = _NOTHING_PLAYS
                 stage, held_play = decision, None
             elif ending is HoldEnding.FINISHED:
                 stage.cut = True
@@ -467,12 +455,10 @@ class _VoiceLoop[Audio]:
         """Play the stage's sentences on, starting its play when none runs, and hold the answer
         again if a talk-over stands, else release it."""
         play = play or self._start_play(stage)
-        if self._talk.standing:
+        if self._floor.answer_goes_on():
             self._held_now()
         else:
-            self._held = False
             self._go.set()
-            self._talk.forget_words()
         return stage, play
 
     async def _resumed(self, play: asyncio.Task[None] | None) -> bool:

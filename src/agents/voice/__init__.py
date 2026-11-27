@@ -11,10 +11,10 @@ no base module imports it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Protocol
 
 from agents.backend import TurnStopKind
+from agents.floor import HoldEnding
 from agents.member import PartialSpeech, PlaceEntry, SpokenLanguage
 from agents.turn import FailureCode, RejectionCode, StopOutcome, outcome_of_stop
 
@@ -196,21 +196,6 @@ class DecisionEnded:
 class Held:
     """A talk-over holds the answer: the sound playing is stopped by ``VoiceOut.pause`` and no
     other sentence starts. On the member wire this is Stopping."""
-
-
-class HoldEnding(StrEnum):
-    """How a hold ends: the answer goes on, finishes its sentence, stops, is replaced or dropped,
-    or goes on by itself because the talk-over held no word.
-
-    The first five are what a hold decision gave; ``WENT_ON`` is no choice of the agent.
-    """
-
-    CONTINUED = "continued"
-    FINISHED = "finished"
-    STOPPED = "stopped"
-    ANSWERED = "answered"
-    DROPPED = "dropped"
-    WENT_ON = "went_on"
 
 
 @dataclass(frozen=True)

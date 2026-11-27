@@ -57,6 +57,7 @@ source_modules =
     agents.config
     agents.errors
     agents.figure_vocabulary
+    agents.floor
     agents.front_matter
     agents.member
     agents.member_outcomes
@@ -97,6 +98,7 @@ source_modules =
     agents.config
     agents.errors
     agents.figure_vocabulary
+    agents.floor
     agents.front_matter
     agents.member
     agents.member_outcomes
@@ -133,6 +135,7 @@ source_modules =
     agents.config
     agents.errors
     agents.figure_vocabulary
+    agents.floor
     agents.front_matter
     agents.member
     agents.member_outcomes
@@ -182,6 +185,7 @@ source_modules =
     agents.config
     agents.errors
     agents.figure_vocabulary
+    agents.floor
     agents.front_matter
     agents.member
     agents.member_outcomes
@@ -218,6 +222,7 @@ source_modules =
     agents.config
     agents.errors
     agents.figure_vocabulary
+    agents.floor
     agents.front_matter
     agents.member
     agents.member_outcomes
@@ -242,13 +247,15 @@ forbidden_modules =
 
 # An app's core admits agents.calling and agents.member, so what they import stays pure: no module
 # that reaches a library an app has not chosen, and none of the libraries those modules would bring.
-# member_place, member_presentation and member_speaking are sources because member imports them.
+# member_place, member_presentation and member_speaking are sources because member imports them,
+# and floor because the voice loop and an app's own hold state share it.
 [importlinter:contract:calling-and-member-stay-pure]
 name = agents.calling and agents.member import no impure agents module and no library
 type = forbidden
 as_packages = False
 source_modules =
     agents.calling
+    agents.floor
     agents.member
     agents.member_outcomes
     agents.member_place
