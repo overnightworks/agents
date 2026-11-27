@@ -1,14 +1,4 @@
 [[code]]
-path = "src/agents/voice/conversation.py"
-item = "#803"
-reason = "The loop's decision window; only the loop builds a Conversation."
-
-[[code]]
-path = "src/agents/voice/echo.py"
-item = "#803"
-reason = "The echo rule; only the loop calls it."
-
-[[code]]
 path = "src/agents/voice/wake.py"
 item = "#803"
 reason = "The standard wake rule a host passes to the loop."

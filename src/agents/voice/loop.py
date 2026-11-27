@@ -16,7 +16,7 @@ from logline import unit_trace
 
 from agents.agent_file import AgentDefinition, TurnRequest
 from agents.backend import AgentBackend, TurnPerson, TurnStopped
-from agents.floor import Floor
+from agents.floor import Drop, Floor, HoldStep, Start, Wait
 from agents.member import HoldPlace, PartialSpeech, PlaceEntry, SpokenLanguage, hold_place
 from agents.voice import (
     DecisionEnded,
@@ -120,8 +120,8 @@ class _Answer:
     decision's, which starts at ``mark`` sentences started and is recorded on its own.
     """
 
+    floor: Floor[str]
     played: list[str] = field(default_factory=list[str])
-    playing: str | None = None
     openings: list[StayedSilent | ReplyUnreadable] = field(
         default_factory=list[StayedSilent | ReplyUnreadable]
     )
@@ -133,7 +133,8 @@ class _Answer:
 
     def started(self) -> list[str]:
         """Every sentence that started playing and was not refused, the one playing included."""
-        return self.played if self.playing is None else [*self.played, self.playing]
+        playing = self.floor.playing
+        return self.played if playing is None else [*self.played, playing]
 
     def segment(self) -> list[str]:
         """The sentences that started since the last hold decision opened."""
@@ -166,22 +167,15 @@ class _Answer:
 
 @dataclass
 class _Stage:
-    """One turn being read: its sentences, those written and not started, and its ending."""
+    """One turn being read: whether its reading has ended, and its ending."""
 
     holding: bool
     language: SpokenLanguage | None
-    sentences: asyncio.Queue[str | None] = field(default_factory=asyncio.Queue[str | None])
-    unsaid: list[str] = field(default_factory=list[str])
+    reading_ended: bool = False
     ending: asyncio.Future[HoldEnding] = field(
         default_factory=lambda: asyncio.get_running_loop().create_future()
     )
-    cut: bool = False
     reading: asyncio.Task[None] | None = None
-
-    def finish(self) -> None:
-        """``[finish]``: the sentence playing is the last; the unsaid ones are dropped."""
-        self.cut = True
-        self.unsaid.clear()
 
     def decide(self, ending: HoldEnding) -> None:
         """A hold decision's first opening or sentence ends the hold; later ones change nothing."""
@@ -191,6 +185,12 @@ class _Stage:
     @property
     def speaks(self) -> bool:
         return not self.holding or self.ending.result() is HoldEnding.ANSWERED
+
+
+_TURN_LEAVING_ENDINGS: Final = frozenset(
+    {HoldEnding.ANSWERED, HoldEnding.STOPPED, HoldEnding.DROPPED}
+)
+"""Endings after which the held turn's play task, with its render ahead, stops."""
 
 
 def _ending_of(opening: StayedSilent | ReplyUnreadable | HoldMarker) -> HoldEnding:
@@ -226,9 +226,9 @@ class _VoiceLoop[Audio]:
         self._woken = asyncio.Event()
         self._waking_traceparent: str | None = None
         self._first_after_answer = False
-        self._answer = _Answer()
+        self._floor = Floor[str]()
+        self._answer = _Answer(self._floor)
         self._last_played: list[str] = []
-        self._floor = Floor()
         self._stopping: asyncio.Task[HoldPlace] | None = None
         self._go = asyncio.Event()
         self._go.set()
@@ -259,12 +259,9 @@ class _VoiceLoop[Audio]:
     def _held_now(self) -> None:
         """Report the hold and start stopping the sentence playing, if one is."""
         self._report(Held())
-        sentence = self._answer.playing
-        if sentence is None:
-            self._floor.nothing_played()
-            return
-        # Eager, so `pause` is entered while this sentence's `play` has not returned.
-        self._stopping = self._group.create_task(self._stop_sound(sentence), eager_start=True)
+        if (sentence := self._floor.playing) is not None:
+            # Eager, so `pause` is entered while this sentence's `play` has not returned.
+            self._stopping = self._group.create_task(self._stop_sound(sentence), eager_start=True)
 
     async def _stop_sound(self, sentence: str) -> HoldPlace:
         """Stop the sound of ``sentence``; the place of the hold, from what every listener heard."""
@@ -319,7 +316,7 @@ class _VoiceLoop[Audio]:
         """Run one decision to its end, its holds included; whether it played a sentence."""
         self._report(Woke())
         self._floor.answer_begins()
-        answer = self._answer = _Answer()
+        answer = self._answer = _Answer(self._floor)
         self._stages = []
         try:
             await self._speak(self._start_stage())
@@ -396,52 +393,47 @@ class _VoiceLoop[Audio]:
             await asyncio.wait(self._readings())
             await self._until(lambda: not self._floor.standing)
             self._floor.decision_opens()
-            decision = self._open_hold(stage, place)
+            decision = self._open_hold(place)
             ending = await decision.ending
             self._report(HoldEnded(ending))
             self._answer.marker = _RECORDED_ENDINGS[ending]
-            if not self._floor.keeps_holding(ending):
-                return await self._end_hold(ending, stage, decision, held_play)
-            self._report(Held())
-            if ending is HoldEnding.ANSWERED:
-                await self._stop(held_play)
+            steps = self._floor.end_hold(ending)
+            if not await self._carry_out(steps, held_play):
+                return None
+            if ending in _TURN_LEAVING_ENDINGS:
+                await self._stop(held_play)  # also when no sentence is held
                 self._answer.drop_cancelled_paused()
+            if ending in (HoldEnding.STOPPED, HoldEnding.DROPPED):
+                self._finish_answer()
+                return None
+            if ending is HoldEnding.ANSWERED:
                 stage, held_play = decision, None
-            elif ending is HoldEnding.FINISHED:
-                stage.finish()
+            if Wait() not in steps:
+                return self._carry_on(stage, held_play)
 
-    def _open_hold(self, stage: _Stage, place: HoldPlace) -> _Stage:
+    def _open_hold(self, place: HoldPlace) -> _Stage:
         """Open the one decision on a talk-over over the held answer and the lines heard."""
         self._report(Woke())
         answer = self._answer
         self._conversation.close_decision(answer.recorded_at_pause())
         answer.begin_hold_segment()
-        self._conversation.note_hold(place, stage.unsaid)
+        self._conversation.note_hold(place, self._floor.waiting)
         self._woken.clear()
         return self._start_stage(holding=True)
 
-    async def _end_hold(
-        self,
-        ending: HoldEnding,
-        stage: _Stage,
-        decision: _Stage,
-        play: asyncio.Task[None] | None,
-    ) -> tuple[_Stage, asyncio.Task[None]] | None:
-        """Carry out an ending; the stage and play that go on, or ``None`` if the answer is over."""
-        if ending in (HoldEnding.CONTINUED, HoldEnding.FINISHED):
-            if ending is HoldEnding.FINISHED:
-                stage.finish()
-            if not await self._resumed(play):
-                return None
-        else:
-            await self._stop(play)
-            self._answer.drop_cancelled_paused()
-        if ending in (HoldEnding.STOPPED, HoldEnding.DROPPED):
-            self._finish_answer()
-            return None
-        if ending is HoldEnding.ANSWERED:
-            stage, play = decision, None
-        return self._carry_on(stage, play)
+    async def _carry_out(
+        self, steps: tuple[HoldStep[str], ...], play: asyncio.Task[None] | None
+    ) -> bool:
+        """Carry out an ending's steps in order; ``False`` once the host refused the resume and
+        the answer is over."""
+        for step in steps:
+            if isinstance(step, Wait):
+                self._report(Held())
+            elif isinstance(step, Drop):
+                await self._stop(play)
+            elif not await self._resumed(play, step.sentence):
+                return False
+        return True
 
     async def _go_on(
         self, stage: _Stage, play: asyncio.Task[None] | None
@@ -450,7 +442,7 @@ class _VoiceLoop[Audio]:
         is open, so the next one is told the agent went on."""
         self._report(HoldEnded(HoldEnding.WENT_ON))
         self._conversation.note_went_on()
-        if not await self._resumed(play):
+        if not await self._carry_out(self._floor.end_hold(HoldEnding.WENT_ON), play):
             return None
         return self._carry_on(stage, play)
 
@@ -466,11 +458,8 @@ class _VoiceLoop[Audio]:
             self._go.set()
         return stage, play
 
-    async def _resumed(self, play: asyncio.Task[None] | None) -> bool:
+    async def _resumed(self, play: asyncio.Task[None] | None, sentence: str) -> bool:
         """Resume the paused sound; ``False`` once the host refused and the answer is over."""
-        if play is None or not self._answer.playing:
-            return True
-        sentence = self._answer.playing
         try:
             await self._voice.resume()
         except VoiceRefused:
@@ -498,7 +487,8 @@ class _VoiceLoop[Audio]:
                     retry_after_s=stopped.retry_after_s,
                 )
             )
-        stage.sentences.put_nowait(None)
+        stage.reading_ended = True
+        self._signal()
         stage.decide(HoldEnding.DROPPED)
 
     def _take(self, reading: Reading, stage: _Stage) -> None:
@@ -514,24 +504,24 @@ class _VoiceLoop[Audio]:
         stage.decide(HoldEnding.ANSWERED)
         if stage.speaks:
             for sentence in reading.sentences:
-                stage.unsaid.append(sentence)
-                stage.sentences.put_nowait(sentence)
+                self._floor.enter(sentence)
+            self._signal()
 
     async def _play(self, stage: _Stage) -> None:
         """Play the sentences in written order; the next one renders while one plays."""
         ahead = self._group.create_task(self._render_next(stage))
         try:
-            while not stage.cut and (rendered := await ahead) is not None:
-                # A set event wakes its waiter even when it is cleared again before the waiter runs.
-                while not self._go.is_set():
-                    await self._go.wait()
-                if stage.cut:
+            while (self._floor.waiting or not stage.reading_ended) and (
+                rendered := await ahead
+            ) is not None:
+                if (start := await self._started()) is None:
                     return
                 if isinstance(rendered, SentenceRefused):
+                    self._floor.sentence_ended()
                     refused = rendered
                 else:
                     ahead = self._group.create_task(self._render_next(stage))
-                    refused = await self._play_one(*rendered, stage)
+                    refused = await self._play_one(start, rendered[1])
                 if refused is not None:
                     self._answer.ended_short = True
                     self._answer.sound_refused = True
@@ -541,26 +531,34 @@ class _VoiceLoop[Audio]:
             ahead.cancel()
             await asyncio.wait({ahead})
 
+    async def _started(self) -> Start[str] | None:
+        """The sentence that starts once no hold stands, or ``None`` when none waits."""
+        while isinstance(step := self._floor.next_start(), Wait):
+            # A set event wakes its waiter even when it is cleared again before the waiter runs.
+            await self._go.wait()
+        return step
+
     async def _render_next(self, stage: _Stage) -> tuple[str, Audio] | SentenceRefused | None:
-        """The next sentence and its sound, the refusal of its render, or ``None`` at the end."""
-        if (sentence := await stage.sentences.get()) is None:
+        """The head of the waiting sentences and its sound, the refusal of its render, or ``None``
+        at the end."""
+        await self._until(lambda: bool(self._floor.waiting) or stage.reading_ended)
+        if not (waiting := self._floor.waiting):
             return None
+        sentence = waiting[0]
         try:
             return sentence, await self._voice.render(sentence, language=stage.language)
         except VoiceRefused:
             return SentenceRefused(sentence)
 
-    async def _play_one(self, sentence: str, audio: Audio, stage: _Stage) -> SentenceRefused | None:
+    async def _play_one(self, start: Start[str], audio: Audio) -> SentenceRefused | None:
         """Play one rendered sentence; the refusal of its play, or ``None`` once it ended."""
-        answer = self._answer
-        answer.playing = sentence
-        stage.unsaid.pop(0)
+        sentence = start.sentence
         self._report(SentenceStarted(sentence))
         try:
             await self._voice.play(audio)
         except VoiceRefused:
             return SentenceRefused(sentence)
         finally:
-            answer.playing = None
-        answer.played.append(sentence)
+            self._floor.sentence_ended()
+        self._answer.played.append(sentence)
         return None

@@ -252,6 +252,19 @@ async def test_a_listing_is_kept_only_while_a_stream_that_honored_the_tools_noti
     assert (kept_in_the_stream, kept_after_it) == (honored, None)
 
 
+async def test_a_refused_listing_leaves_no_kept_list(gate: ScriptedGate, bearer: SecretStr) -> None:
+    gate.script(LISTEN, acknowledging(tools=True))
+    gate.script(LIST_TOOLS, listing("one", "one"))
+
+    async with opened(gate, bearer) as session:
+        async with session.listen():
+            with pytest.raises(UnusableAnswer):
+                await session.declared_tools()
+            kept = session.kept_tools()
+
+    assert kept is None
+
+
 async def test_a_tools_notice_drops_the_kept_list_and_counts(
     gate: ScriptedGate, bearer: SecretStr
 ) -> None:
