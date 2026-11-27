@@ -48,6 +48,8 @@ A_REFUSED_TURN: Final = DecisionFailed(
 A_SILENT_ROUND: Final = tool_round(tool_call("call-1", "look_up", {}), content="[silent]")
 """A tool round that calls ``look_up`` and says ``[silent]``."""
 THE_FIRST_ANSWER: Final = completion("Eins. Zwei.")
+HELD_AT_ONE: Final = {"held": {"heard": "unknown", "sentence": "Eins.", "unsaid": ["Zwei."]}}
+"""The row that tells a decision the answer was held at ``Eins.`` with ``Zwei.`` unsaid."""
 
 type Wait = Callable[[], Awaitable[object]]
 type StreamPart = bytes | Wait | Exception

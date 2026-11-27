@@ -352,7 +352,7 @@ app proves it.
   first and holds it on the second, so the first model call is spent for nothing and the hold
   decision waits for that reply to be written. On the member wire `continue_speaking` cannot express
   "finish": it plays the queue too. Proved by `tests/test_voice_hold.py`,
-  `tests/test_voice_hold_place.py` and `tests/test_voice_hold_without_words.py`; the app proves its partials and its `pause` and `resume`.
+  `tests/test_voice_hold_ending.py`, `tests/test_voice_hold_place.py` and `tests/test_voice_hold_without_words.py`; the app proves its partials and its `pause` and `resume`.
 
 ## When the voice fails
 
