@@ -123,8 +123,7 @@ def _compared_keyword(
         old_list, new_list = _list_of(old), _list_of(new)
         if old_list is not None and new_list is not None:
             return _compared_each(old_list, new_list)
-        if old_list is None and new_list is None:
-            return _compared_schemas(old, new)
+        return _compared_schemas(old, new)
     return _compared_bytes(old, new)
 
 
