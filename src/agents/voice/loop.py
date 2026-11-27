@@ -178,6 +178,11 @@ class _Stage:
     cut: bool = False
     reading: asyncio.Task[None] | None = None
 
+    def finish(self) -> None:
+        """``[finish]``: the sentence playing is the last; the unsaid ones are dropped."""
+        self.cut = True
+        self.unsaid.clear()
+
     def decide(self, ending: HoldEnding) -> None:
         """A hold decision's first opening or sentence ends the hold; later ones change nothing."""
         if self.holding and not self.ending.done():
@@ -403,8 +408,7 @@ class _VoiceLoop[Audio]:
                 self._answer.drop_cancelled_paused()
                 stage, held_play = decision, None
             elif ending is HoldEnding.FINISHED:
-                stage.cut = True
-                stage.unsaid.clear()
+                stage.finish()
 
     def _open_hold(self, stage: _Stage, place: HoldPlace) -> _Stage:
         """Open the one decision on a talk-over over the held answer and the lines heard."""
@@ -425,7 +429,8 @@ class _VoiceLoop[Audio]:
     ) -> tuple[_Stage, asyncio.Task[None]] | None:
         """Carry out an ending; the stage and play that go on, or ``None`` if the answer is over."""
         if ending in (HoldEnding.CONTINUED, HoldEnding.FINISHED):
-            stage.cut = stage.cut or ending is HoldEnding.FINISHED
+            if ending is HoldEnding.FINISHED:
+                stage.finish()
             if not await self._resumed(play):
                 return None
         else:
