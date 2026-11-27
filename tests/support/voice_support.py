@@ -91,10 +91,10 @@ class Trace:
 
     Voice events are recorded as reported; the support's own entries are tuples that start
     with their kind: ``render``, ``rendered`` (a render returned), ``unrendered`` (a render
-    cancelled), ``play``, ``played``,
-    ``stopped`` (a play cancelled), ``pause``, ``unpaused`` (a pause cancelled), ``resume``,
-    ``asked``, ``tool``, ``written``, ``closed``, ``cancelled``, ``ended`` (the loop's run is
-    over) and ``rendered_in`` (the language a sentence was rendered in).
+    cancelled), ``play``, ``played``, ``stopped`` (a play cancelled), ``pause``, ``unpaused``
+    (a pause cancelled), ``resume``, ``asked``, ``tool``, ``written``, ``closed``,
+    ``cancelled``, ``ended`` (the loop's run is over) and ``rendered_in`` (the language a
+    sentence was rendered in).
     """
 
     def __init__(self) -> None:
@@ -511,9 +511,12 @@ class VoicePlace:
         return wakes
 
 
-def an_answer_of_two_that_is_playing(place, *later_replies):
-    """A voice that plays ``Eins.`` until released and a gateway whose first reply has both."""
-    voice = RecordingVoice(place.trace, held={"Eins."})
+def an_answer_of_two_that_is_playing(place, *later_replies, hangs=()):
+    """A voice that plays ``Eins.`` until released and a gateway whose first reply has both.
+
+    A ``(call, sentence)`` pair in ``hangs`` is a voice call that never returns.
+    """
+    voice = RecordingVoice(place.trace, held={"Eins."}, hangs=hangs)
     return voice, FakeGateway(THE_FIRST_ANSWER, *later_replies)
 
 

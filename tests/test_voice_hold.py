@@ -246,8 +246,15 @@ def test_continue_after_a_pause_that_met_the_sounds_end_plays_the_rest_at_once(p
     assert place.trace.played == ["Eins.", "Zwei."]
 
 
-def test_finish_resumes_the_paused_sentence_and_drops_the_rest(place):
-    voice, gateway = an_answer_of_two_that_is_playing(place, completion("[finish]"))
+@pytest.mark.parametrize(
+    "hangs",
+    [
+        pytest.param((), id="the-next-render-returns"),
+        pytest.param({("render", "Zwei.")}, id="the-next-render-hangs"),
+    ],
+)
+def test_finish_resumes_the_paused_sentence_and_ends_the_answer_without_the_rest(place, hangs):
+    voice, gateway = an_answer_of_two_that_is_playing(place, completion("[finish]"), hangs=hangs)
 
     async def hearing(trace):
         async for event in the_hold_ends(trace, voice):
@@ -257,23 +264,6 @@ def test_finish_resumes_the_paused_sentence_and_drops_the_rest(place):
 
     assert place.trace.played == ["Eins."]
     assert ("resume", "Eins.") in place.trace.calls
-    assert ("play", "Zwei.") not in place.trace.calls
-    assert place.trace.events[-2:] == [HoldEnded(HoldEnding.FINISHED), DecisionEnded()]
-
-
-def test_finish_ends_the_answer_after_the_resumed_sentence_without_waiting_for_a_dropped_render(
-    place,
-):
-    voice = RecordingVoice(place.trace, held={"Eins."}, hangs={("render", "Zwei.")})
-    gateway = FakeGateway(THE_FIRST_ANSWER, completion("[finish]"))
-
-    async def hearing(trace):
-        async for event in the_hold_ends(trace, voice):
-            yield event
-
-    assert place.run(hearing, gateway, voice=voice) == RETURNED
-
-    assert place.trace.played == ["Eins."]
     assert ("play", "Zwei.") not in place.trace.calls
     assert place.trace.events[-2:] == [HoldEnded(HoldEnding.FINISHED), DecisionEnded()]
 
