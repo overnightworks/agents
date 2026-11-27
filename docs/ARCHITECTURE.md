@@ -23,6 +23,7 @@ flowchart TB
     mcp["mcp_server, mcp_wire<br/>the MCP person front"]
     member["member<br/>member records, place window, URIs"]
     calling["calling<br/>the calling and send-away decisions"]
+    floor["floor<br/>the talk-over and the hold it puts on an answer"]
     voice["voice<br/>the voice loop, reply markers, sentences"]
     place_store["redis_place_store<br/>the place store, the leases"]
     gateway["LiteLLM gateway<br/>(external)"]
@@ -49,7 +50,9 @@ flowchart TB
     place_store --> redis
     voice --> agent_file
     voice --> backend
+    voice --> floor
     voice --> member
+    floor --> member
     backend -->|"one streamed chat completion per round"| gateway
     person -->|"MCP 2026-07-28, JSON-RPC over POST"| mcp
 ```
@@ -67,8 +70,10 @@ flowchart TB
   and `member` (the records an app and an agent say to each other about a member, the place window
   and the place view) with `member_presentation` (an agent's looks, figure and voices),
   `member_place` (a place's reference and the URIs of its window and view) and `member_speaking`
-  (the records of speaking, stopping, continuing and being held), and `calling` (the
-  decisions of calling and sending away an agent, pure, on facts the app supplies); and
+  (the records of speaking, stopping, continuing and being held), `calling` (the
+  decisions of calling and sending away an agent, pure, on facts the app supplies) and `floor` (who
+  talks over an answer and the hold that puts on it, pure and in memory, on the partial speech the
+  voice loop or an app gives); and
   `member_outcomes`, the failures and codes of a call to an app's member endpoint, pure so that a
   runner's decisions read them without the client.
 - The **`backend` extra** adds `httpx2` for `backend.gateway.GatewayBackend`, the port's one
@@ -106,7 +111,7 @@ flowchart TB
   the reply markers and sentence release (`voice.reply`), the running conversation
   (`voice.conversation`), the standard wake rule and the echo rule that keeps the agent's own
   voice out of the conversation. The loop also holds its own answer when a person talks over it
-  (`voice.talk_over` decides what a talk-over is, from the partial speech the host gives), stops
+  (`floor` decides what a talk-over is, from the partial speech the host gives), stops
   the host's sound at the ruled place through `VoiceOut`, tells the decision where, and ends the
   hold with one more decision or, when the talk-over held no word, by itself once nobody speaks.
 
