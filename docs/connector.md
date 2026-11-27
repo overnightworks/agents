@@ -98,11 +98,19 @@ differ, and the release refuses a wheel whose member differs from the committed 
 `MEMBER_TOOL_RESULTS`, refusals included, and under `resources` the schema of each record a member
 resource carries, listed in `MEMBER_RESOURCE_RECORDS`. `scripts/generate_member_tool_wire.py` writes
 it and CI fails when it and the code differ. Every release note ends with a `**Member-tool wire:**`
-line that says `unchanged`, `fields added:` with the names of the resource records that only gained
-optional fields, or `changed` with the names of the tools whose arguments or results differ and,
-after `resources:`, of the resource records whose schema differs in anything else (followed by
-`Fields added:` when other records only gained fields), from the previous release's snapshot
-(`scripts/member_tool_wire_diff.py`), so a runner that serves an app reads it there. The guard
+line, made from the previous release's snapshot by `scripts/member_tool_wire_diff.py`, so a runner
+that serves an app reads it there. It says `unchanged`, or names in this order: `changed:` the
+tools added, removed or whose arguments or answers differ in anything but a `title` or
+`description` keyword (a gained optional property included), and after `resources:` the resource
+records whose schema differs in anything else; `descriptions only:` the tools that differ in those
+prose keywords alone, which reach the model but never change what a runner sends or accepts; and
+`fields added:` the resource records that only gained optional fields. The first part that is
+present follows the label in lower case, each later one starts upper case (`descriptions only:` or
+`Descriptions only:`, `fields added:` or `Fields added:`) and ends with a period, so a runner's
+check matches the labels without regard to case. A name under `descriptions only:` changes no
+shape, so a runner's check holds no release on it. The line names
+no side: "Rollout order" below owns which side takes a release first, and a release that needs
+another order says so there. The guard
 compares schemas: a rule across fields or a validator does not show in one, so its author names it.
 
 `AssistantTextEvent` is a piece of the assistant's text, yielded as the gateway streams it, before

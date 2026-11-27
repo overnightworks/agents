@@ -382,16 +382,147 @@ def test_a_record_added_or_removed_is_named_as_changed() -> None:
     )
 
 
-def test_an_added_optional_argument_still_changes_the_tool() -> None:
-    before = {"speak": {"arguments": record("A", one=(int, ...)).model_json_schema()}}
-    after = {
-        "speak": {
-            "arguments": record("A", one=(int, ...), extra=(str | None, None)).model_json_schema()
-        }
+def tool_of(arguments: type[StrictModel], *answers: type[StrictModel]) -> dict[str, object]:
+    return {
+        "arguments": arguments.model_json_schema(),
+        "results": [answer.model_json_schema() for answer in answers],
     }
 
-    assert diff.note_line(snapshot(before), snapshot(after)) == (
-        "**Member-tool wire:** changed: speak."
+
+def tool_line(before: dict[str, object], after: dict[str, object]) -> str:
+    return diff.note_line(snapshot({"speak": before}), snapshot({"speak": after}))
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        pytest.param(
+            tool_of(record("A", "Says.", one=(int, ...))),
+            tool_of(record("A", "Says it aloud.", one=(int, ...))),
+            id="the arguments' own description",
+        ),
+        pytest.param(
+            tool_of(record("A", one=(int, Field(description="First")))),
+            tool_of(record("A", one=(int, Field(description="Other")))),
+            id="an argument's description",
+        ),
+        pytest.param(
+            tool_of(record("A", one=(int, ...)), record("R", "Heard.", two=(int, ...))),
+            tool_of(record("A", one=(int, ...)), record("R", "Was heard.", two=(int, ...))),
+            id="an answer's description",
+        ),
+        pytest.param(
+            tool_of(record("A", one=(int, ...))),
+            tool_of(record("B", one=(int, ...))),
+            id="a title",
+        ),
+    ],
+)
+def test_a_tool_that_differs_only_in_prose_is_named_as_descriptions_only(
+    before: dict[str, object], after: dict[str, object]
+) -> None:
+    assert tool_line(before, after) == "**Member-tool wire:** descriptions only: speak."
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        pytest.param(
+            tool_of(record("A", one=(int, ...))),
+            tool_of(record("A", one=(str, ...))),
+            id="a retyped argument",
+        ),
+        pytest.param(
+            tool_of(record("A", one=(int, ...))),
+            tool_of(record("A", one=(int, ...), extra=(str | None, None))),
+            id="an added optional argument",
+        ),
+        pytest.param(
+            tool_of(record("A", one=(int, ...))),
+            tool_of(record("A", one=(int, ...), extra=(str, ...))),
+            id="an added required argument",
+        ),
+        pytest.param(
+            tool_of(record("A", one=(int, ...)), record("R", two=(int, ...))),
+            tool_of(record("A", one=(int, ...)), record("R", two=(str, ...))),
+            id="a retyped answer field",
+        ),
+        pytest.param(
+            tool_of(record("A", one=(int, ...)), record("R", two=(int, ...))),
+            tool_of(
+                record("A", one=(int, ...)),
+                record("R", two=(int, ...), extra=(str | None, None)),
+            ),
+            id="an added optional answer field",
+        ),
+        pytest.param(
+            tool_of(record("A", one=(int, ...)), record("R", two=(int, ...))),
+            tool_of(record("A", one=(int, ...))),
+            id="a removed answer",
+        ),
+        pytest.param(
+            tool_of(record("A", one=(int, ...), mood=(Mood | None, None))),
+            tool_of(record("A", one=(int, ...), mood=(MoodWithPanic | None, None))),
+            id="an added enum value",
+        ),
+        pytest.param(
+            tool_of(record("A", "Says.", one=(int, ...))),
+            tool_of(record("A", "Says it aloud.", one=(str, ...))),
+            id="a new description beside a retyped argument",
+        ),
+    ],
+)
+def test_a_tool_whose_arguments_or_answers_differ_in_more_than_prose_is_named_as_changed(
+    before: dict[str, object], after: dict[str, object]
+) -> None:
+    assert tool_line(before, after) == "**Member-tool wire:** changed: speak."
+
+
+def test_a_prose_only_release_with_a_gained_record_names_descriptions_only_then_fields_added() -> (
+    None
+):
+    def tools(prose: str) -> Tools:
+        return {
+            "speak": tool_of(record("Speak", prose, one=(int, ...))),
+            "stop_speaking": tool_of(record("Stop", prose)),
+            "gesture": tool_of(record("Gesture", one=(int, ...))),
+        }
+
+    before = snapshot(
+        tools("Before."), resources_of(PlaceWindow=record("PlaceWindow", a=(int, ...)))
+    )
+    after = snapshot(
+        tools("After."),
+        resources_of(PlaceWindow=record("PlaceWindow", a=(int, ...), b=(str | None, None))),
+    )
+
+    assert diff.note_line(before, after) == (
+        "**Member-tool wire:** descriptions only: speak, stop_speaking. Fields added: PlaceWindow."
+    )
+
+
+def test_the_parts_come_as_changed_then_descriptions_only_then_fields_added() -> None:
+    before = {
+        "speak": tool_of(record("S", "First.", one=(int, ...))),
+        "gesture": tool_of(record("G", one=(int, ...))),
+        "stop_speaking": tool_of(record("T", "First.")),
+    }
+    after = {
+        "speak": tool_of(record("S", "Second.", one=(int, ...))),
+        "gesture": tool_of(record("G", one=(str, ...))),
+        "stop_speaking": tool_of(record("T", "Second.")),
+    }
+    old_resources = resources_of(
+        Alpha=record("Alpha", one=(int, ...)), Beta=record("Beta", a=(int, ...))
+    )
+    new_resources = resources_of(
+        Alpha=record("Alpha", one=(int, ...), extra=(str | None, None)),
+        Beta=record("Beta", a=(str, ...)),
+    )
+
+    assert diff.note_line(snapshot(before, old_resources), snapshot(after, new_resources)) == (
+        "**Member-tool wire:** changed: gesture; resources: Beta."
+        " Descriptions only: speak, stop_speaking. Fields added: Alpha."
     )
 
 
