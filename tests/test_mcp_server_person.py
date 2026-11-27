@@ -16,6 +16,7 @@ import pytest
 from mcp_types import (
     HEADER_MISMATCH,
     INVALID_PARAMS,
+    INVALID_REQUEST,
     METHOD_NOT_FOUND,
     PARSE_ERROR,
     UNSUPPORTED_PROTOCOL_VERSION,
@@ -241,8 +242,9 @@ def test_a_body_with_a_repeated_member_or_a_non_json_number_is_refused_before_di
         (rpc_body("tools/list"), (b"mcp-method", b"tools/call"), 400, HEADER_MISMATCH),
         (rpc_body("tools/list", enveloped=False), None, 400, INVALID_PARAMS),
         (rpc_body("no/such/method"), None, 404, METHOD_NOT_FOUND),
+        (b"[]", None, 400, INVALID_REQUEST),
     ],
-    ids=["header mismatch", "missing meta", "unknown method"],
+    ids=["header mismatch", "missing meta", "unknown method", "body that is no object"],
 )
 def test_the_sdk_ladder_answers_a_malformed_request_with_its_standard_error(
     front: McpPersonFront,
@@ -443,6 +445,21 @@ def test_a_result_carrying_another_tokens_signature_is_answered_as_usual(
 
     assert reply.status == 200
     assert "sigOfAnother" in reply.json()["result"]["content"][0]["text"]
+
+
+def test_a_result_carrying_the_credential_of_another_scheme_is_answered_as_usual(
+    front: McpPersonFront, person: Person
+) -> None:
+    person.outcome = ToolOutcome("debug: head.payload.sigOfTheRequest", is_error=False)
+
+    reply = post(
+        front,
+        rpc_body("tools/call", call_params("read_note")),
+        (b"authorization", b"Basic head.payload.sigOfTheRequest"),
+    )
+
+    assert reply.status == 200
+    assert "sigOfTheRequest" in reply.json()["result"]["content"][0]["text"]
 
 
 def test_an_outcome_that_cannot_be_written_answers_the_failed_result_and_leaks_nothing(
