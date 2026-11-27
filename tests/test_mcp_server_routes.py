@@ -454,6 +454,7 @@ def answer_with(content: object) -> Registration:
         body_with(
             {"application/json": {"schema": {"type": "object", "properties": {}, "required": 3}}}
         ),
+        body_with({"application/json": {"schema": {"type": "array", "properties": {}}}}),
         with_document("GET", {"parameters": "q"}),
         with_document("GET", {"parameters": ["q"]}),
         query_with({"name": ["q"]}),
@@ -497,6 +498,7 @@ def answer_with(content: object) -> Registration:
         "request body schema not an object",
         "request body properties not an object",
         "request body required names not a list",
+        "request body with properties but no object type",
         "parameters not a list",
         "parameter not an object",
         "parameter name not a string",
