@@ -22,7 +22,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    JsonValue,
     PositiveInt,
     StrictInt,
     StrictStr,
@@ -103,11 +102,10 @@ class _FrontMatter(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _refuse_keys_without_a_value(cls, data: JsonValue) -> JsonValue:
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if value is None:
-                    raise ValueError(f"{key}: has no value")
+    def _refuse_keys_without_a_value(cls, data: dict[str, object]) -> dict[str, object]:
+        for key, value in data.items():
+            if value is None:
+                raise ValueError(f"{key}: has no value")
         return data
 
 
