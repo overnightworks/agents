@@ -432,34 +432,32 @@ def test_a_handler_rewriting_the_scope_headers_cannot_keep_the_request_bearer_in
     assert (reply.status, reply.body) == (500, b"")
 
 
-def test_a_result_carrying_another_tokens_signature_is_answered_as_usual(
-    front: McpPersonFront, person: Person
+@pytest.mark.parametrize(
+    ("header", "leaked_word"),
+    [
+        pytest.param(
+            b"Bearer head.payload.sigOfTheRequest", "sigOfAnother", id="another bearers signature"
+        ),
+        pytest.param(
+            b"Basic head.payload.sigOfTheRequest",
+            "sigOfTheRequest",
+            id="a credential of another scheme",
+        ),
+    ],
+)
+def test_a_result_carrying_no_credential_of_the_request_is_answered_as_usual(
+    front: McpPersonFront, person: Person, header: bytes, leaked_word: str
 ) -> None:
-    person.outcome = ToolOutcome("debug: head.payload.sigOfAnother", is_error=False)
+    person.outcome = ToolOutcome(f"debug: head.payload.{leaked_word}", is_error=False)
 
     reply = post(
         front,
         rpc_body("tools/call", call_params("read_note")),
-        (b"authorization", b"Bearer head.payload.sigOfTheRequest"),
+        (b"authorization", header),
     )
 
     assert reply.status == 200
-    assert "sigOfAnother" in reply.json()["result"]["content"][0]["text"]
-
-
-def test_a_result_carrying_the_credential_of_another_scheme_is_answered_as_usual(
-    front: McpPersonFront, person: Person
-) -> None:
-    person.outcome = ToolOutcome("debug: head.payload.sigOfTheRequest", is_error=False)
-
-    reply = post(
-        front,
-        rpc_body("tools/call", call_params("read_note")),
-        (b"authorization", b"Basic head.payload.sigOfTheRequest"),
-    )
-
-    assert reply.status == 200
-    assert "sigOfTheRequest" in reply.json()["result"]["content"][0]["text"]
+    assert leaked_word in reply.json()["result"]["content"][0]["text"]
 
 
 def test_an_outcome_that_cannot_be_written_answers_the_failed_result_and_leaks_nothing(

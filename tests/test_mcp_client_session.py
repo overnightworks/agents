@@ -521,14 +521,15 @@ async def test_a_status_failure_names_the_method_and_the_answers_kind_and_none_o
     assert "html" not in repr(failure.value) + str(failure.value)
 
 
+async def drops_after_an_event_with_an_id(reply: GateReply) -> None:
+    await reply.open_stream()
+    await reply.event({"jsonrpc": "2.0", "method": "notifications/message"}, event_id="1")
+    await reply.end()
+
+
 async def test_a_status_failure_of_a_stream_reconnect_names_no_method(
     app: MemberApp, gate: ScriptedGate, bearer: SecretStr
 ) -> None:
-    async def drops_after_an_event_with_an_id(reply: GateReply) -> None:
-        await reply.open_stream()
-        await reply.event({"jsonrpc": "2.0", "method": "notifications/message"}, event_id="1")
-        await reply.end()
-
     stands(app)
     gate.script(READ, drops_after_an_event_with_an_id)
     gate.script(
@@ -551,11 +552,6 @@ async def a_json_answer(reply: GateReply) -> None:
 async def test_a_call_whose_stream_reconnect_is_answered_with_json_is_unreachable(
     app: MemberApp, gate: ScriptedGate, bearer: SecretStr
 ) -> None:
-    async def drops_after_an_event_with_an_id(reply: GateReply) -> None:
-        await reply.open_stream()
-        await reply.event({"jsonrpc": "2.0", "method": "notifications/message"}, event_id="1")
-        await reply.end()
-
     stands(app)
     gate.script(READ, drops_after_an_event_with_an_id)
     gate.script(NO_METHOD, a_json_answer, a_json_answer)
