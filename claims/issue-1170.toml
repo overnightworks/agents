@@ -1,0 +1,7 @@
+claim_id = "a12a4533ae9048e1a5e2282128d81271"
+agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
+role = "builder"
+base = "6093ee9f0a55465bf72d66496d3cf2b247b07441"
+branch = "claude/issue-1170-the-member-tool-wire-line-tells-a-descri"
+scope = ["docs/connector.md", "scripts/member_tool_wire_diff.py", "tests/scripts/test_member_tool_wire_diff.py"]
+opened_commit = "dcb09fa1d93e0f45eeb28de3f09c0f2736f8c19b"
