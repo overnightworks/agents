@@ -70,11 +70,6 @@ reason = "model_entry and model_info, the scripted answer of model_prices; perso
 
 [[code]]
 path = "src/agents/floor.py"
-item = "overnightworks/hopin#1211"
-reason = "The member wire's side of a hold: the order of the sentences, tickets, the refusals, the stop and the continue; hopin#1211 moves participation/speaking.py's order and hold onto it and deletes its copy."
-
-[[code]]
-path = "src/agents/floor.py"
 item = "overnightworks/hopin#1186"
 reason = "Floor.wordless, Floor.may_go_on and Floor.went_on; hopin#1186 reads them for the hold's going on by itself."
 
