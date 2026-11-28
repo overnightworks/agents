@@ -332,7 +332,6 @@ class _VoiceLoop[Audio]:
 
     def _hear_line(self, line: PlaceEntry) -> None:
         told_already = not line.own and self._floor.hear_finished(line.name, line.text)
-        self._settle_the_choice()
         if is_echo(line, self._latest_answer()):
             self._conversation.skip(line)
             self._report(EchoDropped(line.text))

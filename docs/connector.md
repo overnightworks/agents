@@ -1836,8 +1836,8 @@ The events of a hold follow this order:
 Woke  [StayedSilent|ReplyUnreadable]*  SentenceStarted*      the answer
   Held                                                        a talk-over holds it
   Woke  [StayedSilent|ReplyUnreadable|DecisionFailed]?        the hold decision, from its first word
-  (Woke  [..]?)*                                              decided again over new words
-  (Held  Woke  [..]?)*                                        a voided choice: no HoldEnded between
+  (Held?  Woke  [..]?)*                                       decided again over new words; a voided
+                                                              choice's Held, no HoldEnded between
   HoldEnded(continued)  SentenceStarted*                      the queue
 | HoldEnded(finished)                                         the resumed sentence plays out
 | HoldEnded(said_then_continued)  SentenceStarted*            the short line, then the queue
