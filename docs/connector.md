@@ -1830,13 +1830,14 @@ reader made for a hold reads `[continue]` and `[finish]`; in any other decision 
 unreadable. No timer ends a hold: a talk-over that never ends keeps it, and when hearing ends
 while held the loop closes the turns, stops the sound and returns.
 
-The events of a hold follow this order, and `Held` and `HoldEnded` alternate strictly:
+The events of a hold follow this order:
 
 ```text
 Woke  [StayedSilent|ReplyUnreadable]*  SentenceStarted*      the answer
   Held                                                        a talk-over holds it
   Woke  [StayedSilent|ReplyUnreadable|DecisionFailed]?        the hold decision, from its first word
   (Woke  [..]?)*                                              decided again over new words
+  (Held  Woke  [..]?)*                                        a voided choice: no HoldEnded between
   HoldEnded(continued)  SentenceStarted*                      the queue
 | HoldEnded(finished)                                         the resumed sentence plays out
 | HoldEnded(said_then_continued)  SentenceStarted*            the short line, then the queue
@@ -1849,8 +1850,8 @@ Woke  [StayedSilent|ReplyUnreadable]*  SentenceStarted*      the answer
 Held  HoldEnded(went_on)  SentenceStarted*                    no word: no Woke, the hold goes on
 ```
 
-`HoldEnded(went_on)` follows `Held` with no `Woke` between, also after the `Held` of a deferred
-ending below, and what plays after it is what that ending would play.
+`HoldEnded(went_on)` follows `Held` with no `Woke` between, also after the `Held` of a voided
+choice.
 
 The decision opens while the talk-over may still speak, told what its people are saying. An
 ending that plays something (`continued`, `finished`, `said_then_continued`, `answered`) waits
