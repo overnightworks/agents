@@ -285,7 +285,7 @@ class Floor[Said]:
 
     def render_begins(self) -> RenderTicket:
         """A sentence's render begins; the consumer ends the ticket however the render returns."""
-        self._judge_the_span()
+        self._close_the_span_once_silent()
         if not self._talk.span_open:
             self._talk.span_opens()
         ticket = RenderTicket()
@@ -306,14 +306,14 @@ class Floor[Said]:
             return SpeakRefusal.NOT_INTERRUPTED
         return None
 
-    def _judge_the_span(self) -> None:
+    def _close_the_span_once_silent(self) -> None:
         """Close the span of a render once nothing plays, waits or renders and no hold stands."""
         if self._talk.span_open and not self._answer_open and self._silent:
             self._talk.span_closes()
 
     def utterance_began(self, key: str) -> None:
         """A person's turn begins; it is part of a talk-over if the span is open now."""
-        self._judge_the_span()
+        self._close_the_span_once_silent()
         self._talk.utterance_began(key)
 
     def utterance_ended(self, key: str) -> None:
@@ -322,7 +322,7 @@ class Floor[Said]:
 
     def hear_partial(self, key: str, text: str) -> bool:
         """A person's voice lasted the bound; whether a hold arises with it."""
-        self._judge_the_span()
+        self._close_the_span_once_silent()
         began_in_span = self._talk.partial(key, text)
         self._wordless = self._wordless and not self._talk.worded
         if not began_in_span or self._hold is not None:
