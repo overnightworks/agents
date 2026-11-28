@@ -404,6 +404,7 @@ async def test_a_continue_with_finish_goes_to_an_app_that_declares_it_with_the_f
         assert await session.continue_speaking(place, "hold-2", finish=True) is None
 
     assert [call["finish"] for call in tools.called(CONTINUE_SPEAKING_TOOL)] == [True, True]
+    assert gate.count(LIST_TOOLS) == 1
 
 
 @pytest.mark.parametrize(
@@ -437,6 +438,7 @@ async def test_keeps_queue_lists_first_in_a_cold_session_and_is_left_out_of_an_a
 
     assert [call.get("keeps_queue") for call in tools.called(SPEAK_TOOL)] == [None, None]
     assert [call["interrupted"] for call in tools.called(SPEAK_TOOL)] == ["hold-1", "hold-2"]
+    assert gate.count(LIST_TOOLS) == 1
     assert left_out == [ArgumentLeftOut(SPEAK_TOOL, "keeps_queue")]
 
 

@@ -84,19 +84,21 @@ def test_speak_arguments_with_a_malformed_text_field_are_refused(field: str, val
         SpeakArguments.model_validate_json(wire_text)
 
 
-def test_keeps_queue_is_read_back_beside_the_hold_it_names_and_absent_while_false() -> None:
-    wire = speak_wire(interrupted="h-1", keeps_queue=True)
+@pytest.mark.parametrize(
+    ("stated", "read_back"),
+    [({"keeps_queue": True}, True), ({}, False), ({"keeps_queue": False}, False)],
+    ids=["true-is-kept", "absent-reads-false", "stated-false-reads-false"],
+)
+def test_keeps_queue_is_read_back_beside_the_hold_it_names_and_absent_while_false(
+    stated: dict[str, bool], read_back: bool
+) -> None:
+    wire = speak_wire(interrupted="h-1", **stated)
     arguments = SpeakArguments.model_validate_json(json.dumps(wire))
 
-    assert arguments.keeps_queue is True
-    assert json.loads(arguments.model_dump_json()) == wire
-    without = SpeakArguments.model_validate_json(json.dumps(speak_wire(interrupted="h-1")))
-    assert without.keeps_queue is False
-    assert "keeps_queue" not in json.loads(without.model_dump_json())
-    stated_false = SpeakArguments.model_validate_json(
-        json.dumps(speak_wire(interrupted="h-1", keeps_queue=False))
+    assert arguments.keeps_queue is read_back
+    assert json.loads(arguments.model_dump_json()) == speak_wire(
+        interrupted="h-1", **({"keeps_queue": True} if read_back else {})
     )
-    assert "keeps_queue" not in json.loads(stated_false.model_dump_json())
 
 
 @pytest.mark.parametrize(
@@ -187,17 +189,20 @@ def test_continue_speaking_arguments_name_the_hold_on_the_wire() -> None:
     assert CONTINUE_SPEAKING_TOOL == "continue_speaking"
 
 
-def test_continue_speaking_arguments_carry_finish_only_while_true() -> None:
-    finishing = ContinueSpeakingArguments.model_validate_json(
-        json.dumps(continue_wire(finish=True))
-    )
+@pytest.mark.parametrize(
+    ("stated", "read_back"),
+    [({"finish": True}, True), ({}, False), ({"finish": False}, False)],
+    ids=["true-is-kept", "absent-reads-false", "stated-false-reads-false"],
+)
+def test_continue_speaking_arguments_carry_finish_only_while_true(
+    stated: dict[str, bool], read_back: bool
+) -> None:
+    arguments = ContinueSpeakingArguments.model_validate_json(json.dumps(continue_wire(**stated)))
 
-    assert finishing.finish is True
-    assert json.loads(finishing.model_dump_json()) == continue_wire(finish=True)
-    for wire in (continue_wire(), continue_wire(finish=False)):
-        plain = ContinueSpeakingArguments.model_validate_json(json.dumps(wire))
-        assert plain.finish is False
-        assert json.loads(plain.model_dump_json()) == continue_wire()
+    assert arguments.finish is read_back
+    assert json.loads(arguments.model_dump_json()) == continue_wire(
+        **({"finish": True} if read_back else {})
+    )
 
 
 @pytest.mark.parametrize(

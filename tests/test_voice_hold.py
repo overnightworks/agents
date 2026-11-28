@@ -266,6 +266,29 @@ def test_continue_with_words_says_them_instead_of_the_held_rest_then_the_rest_of
     ]
 
 
+def test_continue_with_words_still_being_written_when_chosen_plays_them_before_the_rest(place):
+    trace = place.trace
+    voice = RecordingVoice(trace, held={"Eins."})
+    gateway = PacedGateway(
+        trace,
+        [piece("Eins. Zwei."), finish()],
+        [
+            piece("[continue] Also, wie gesagt. Noch"),
+            lambda: trace.until(lambda: HoldEnded(HoldEnding.SAID_THEN_CONTINUED) in trace.entries),
+            piece(" ein Satz."),
+            finish(),
+        ],
+    )
+
+    async def hearing(trace):
+        async for event in the_hold_ends(trace, voice):
+            yield event
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert trace.played == ["Also, wie gesagt.", "Noch ein Satz.", "Zwei."]
+
+
 def test_a_bare_continue_whose_turn_fails_before_its_round_ends_goes_on(place):
     trace = place.trace
     voice = RecordingVoice(trace, held={"Eins."})

@@ -75,6 +75,11 @@ reason = "The member wire's side of a hold: the order of the sentences, tickets,
 
 [[code]]
 path = "src/agents/floor.py"
+item = "overnightworks/hopin#1218"
+reason = "The wire's finish on continue_speaking and the short line's end_hold and reply_ended; hopin#1218 serves them."
+
+[[code]]
+path = "src/agents/floor.py"
 item = "overnightworks/hopin#1186"
 reason = "Floor.wordless, Floor.may_go_on and Floor.went_on; hopin#1186 reads them for the hold's going on by itself."
 
