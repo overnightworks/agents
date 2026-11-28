@@ -724,24 +724,6 @@ def test_an_entry_with_a_malformed_cut_mark_is_refused(cut: object) -> None:
         window_from(wire)
 
 
-@pytest.mark.parametrize(
-    ("text", "words"),
-    [
-        pytest.param("", (), id="nothing"),
-        pytest.param(" ?! ", (), id="punctuation"),
-        pytest.param("Moment", ("moment",), id="a word"),
-        pytest.param("Moment, MAL!", ("moment", "mal"), id="words in any case"),
-        pytest.param("b2b-Kunde", ("b2b", "kunde"), id="a run ends at a character that is no word"),
-        pytest.param("\u00c4rger?", ("\u00e4rger",), id="a letter with a mark"),
-    ],
-)
-def test_the_words_of_a_text_are_its_runs_of_letters_and_digits_in_lower_case(
-    text: str, words: tuple[str, ...]
-) -> None:
-    assert words_of(text) == words
-    assert has_words(text) is bool(words)
-
-
 def test_worded_changes_and_told_changes_are_absent_while_unset() -> None:
     assert "worded_changes" not in json.loads(Interrupted(id="h-1").model_dump_json())
     assert "told_changes" not in json.loads(

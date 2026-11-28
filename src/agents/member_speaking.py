@@ -83,10 +83,19 @@ SpokenLanguage = Annotated[str, StringConstraints(pattern=r"^[a-z]{2}$")]
 decision."""
 
 
-def require_hold_to_keep_queue(*, keeps_queue: bool, interrupted: str | None) -> None:
-    """Raises ``ValueError`` when ``keeps_queue`` is set without the hold the sentence answers."""
-    if keeps_queue and interrupted is None:
-        raise ValueError("keeps_queue needs the hold the sentence answers")
+ChangeCount = Annotated[int, Field(ge=1)]
+"""A count of worded changes: how many ``Interrupted.worded_changes`` a decision was told."""
+
+
+def require_the_hold_the_sentence_answers(
+    *, interrupted: str | None, keeps_queue: bool, told_changes: int | None
+) -> None:
+    """Raises ``ValueError`` when ``keeps_queue`` or ``told_changes`` is set without the hold the
+    sentence answers."""
+    if interrupted is None:
+        for name, given in (("keeps_queue", keeps_queue), ("told_changes", told_changes)):
+            if given:
+                raise ValueError(f"{name} needs the hold the sentence answers")
 
 
 class SpeakArguments(StrictModel):
@@ -98,7 +107,9 @@ class SpeakArguments(StrictModel):
     the held rest; without it, a held member refuses the sentence. ``keeps_queue``, valid only with
     ``interrupted``, makes the sentence a short own line: it takes the head of the queue and the
     queued sentences stay behind it, none of them answering ``stopped``; absent while false, the
-    sentence replaces the queue. An app that does not declare it leaves the queue to ``stopped``."""
+    sentence replaces the queue. An app that does not declare it leaves the queue to ``stopped``.
+    ``told_changes``, valid only with ``interrupted``, is the ``Interrupted.worded_changes`` the
+    runner's decision was told; absent, the app does not check it."""
 
     place: PlaceRef
     text: NonEmptyUnicodeText
@@ -109,10 +120,15 @@ class SpeakArguments(StrictModel):
     )
     interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
     keeps_queue: bool = Field(default=False, exclude_if=is_false)
+    told_changes: ChangeCount | None = Field(default=None, exclude_if=is_none)
 
     @model_validator(mode="after")
-    def _keep_the_queue_only_of_a_named_hold(self) -> Self:
-        require_hold_to_keep_queue(keeps_queue=self.keeps_queue, interrupted=self.interrupted)
+    def _keep_the_queue_and_the_count_only_of_a_named_hold(self) -> Self:
+        require_the_hold_the_sentence_answers(
+            interrupted=self.interrupted,
+            keeps_queue=self.keeps_queue,
+            told_changes=self.told_changes,
+        )
         return self
 
 
@@ -143,10 +159,12 @@ class SpeakRefusal(StrEnum):
     ``style`` by the voice (it takes none, it is too long or it is not supported), ``stopped``
     for a queued sentence that a ``stop_speaking`` or a ``speak`` naming the hold dropped,
     ``held`` when the member is held and the sentence names no hold, ``not_interrupted`` when the
-    sentence names a hold that does not stand, and ``unavailable`` when the app neither voices nor
-    writes the sentence now: a social reason, a limit of its own or a failed voice at a place
-    without a chat. ``held`` and ``not_interrupted`` change nothing and answer at once. No
-    refusal is ever turned into a written line."""
+    sentence names a hold that does not stand or its waiting choice was voided or replaced,
+    ``stale`` when the sentence's ``told_changes`` is below the ``worded_changes`` the app
+    counted, and ``unavailable`` when the app neither voices nor writes the sentence now: a
+    social reason, a limit of its own or a failed voice at a place without a chat. ``held`` and
+    ``stale`` change nothing and answer at once, as does ``not_interrupted`` for a hold that does
+    not stand. No refusal is ever turned into a written line."""
 
     NOT_ACTIVE = "not_active"
     TOO_LONG = "too_long"
@@ -155,6 +173,7 @@ class SpeakRefusal(StrEnum):
     STOPPED = "stopped"
     HELD = "held"
     NOT_INTERRUPTED = "not_interrupted"
+    STALE = "stale"
     UNAVAILABLE = "unavailable"
 
 
@@ -166,11 +185,13 @@ class SpeakRefused(StrictModel):
 
 class StopSpeakingArguments(StrictModel):
     """The arguments of ``stop_speaking``: the place whose sentence and queue of the member are
-    cut, and optionally ``interrupted``, the hold (``PlaceWindow.interrupted``) the stop ends; a
-    stale one is refused."""
+    cut, and optionally ``interrupted``, the hold (``PlaceWindow.interrupted``) the stop ends; one
+    that does not stand is refused. ``told_changes`` is the ``Interrupted.worded_changes`` the
+    runner's decision was told; absent, the app does not check it."""
 
     place: PlaceRef
     interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
+    told_changes: ChangeCount | None = Field(default=None, exclude_if=is_none)
 
 
 class StoppedSpeaking(StrictModel):
@@ -196,11 +217,13 @@ waiting ones were dropped."""
 class StopSpeakingRefusal(StrEnum):
     """Why the app does not stop: ``not_active`` when the member left, was removed or is paused;
     ``nothing_playing`` when the member is silent, so nothing was cut or dropped;
-    ``not_interrupted`` when ``interrupted`` names a hold that does not stand."""
+    ``not_interrupted`` when ``interrupted`` names a hold that does not stand; ``stale`` when
+    ``told_changes`` is below the ``worded_changes`` the app counted."""
 
     NOT_ACTIVE = "not_active"
     NOTHING_PLAYING = "nothing_playing"
     NOT_INTERRUPTED = "not_interrupted"
+    STALE = "stale"
 
 
 class StopSpeakingRefused(StrictModel):
@@ -213,16 +236,19 @@ class ContinueSpeakingArguments(StrictModel):
     """The arguments of ``continue_speaking``: the place and the hold (``PlaceWindow.interrupted``)
     whose held sentence goes on. With ``finish``, only the held sentence's rest plays and the queue
     is dropped, each dropped ``speak`` answering ``stopped``; absent while false, the queue plays
-    too."""
+    too. ``told_changes`` is the ``Interrupted.worded_changes`` the runner's decision was told;
+    absent, the app does not check it."""
 
     place: PlaceRef
     interrupted: NonEmptyUnicodeText
     finish: bool = Field(default=False, exclude_if=is_false)
+    told_changes: ChangeCount | None = Field(default=None, exclude_if=is_none)
 
 
 class ContinuedSpeaking(StrictModel):
-    """What ``continue_speaking`` answers on success, as JSON: the held sentence's rest plays,
-    faded back in, then the queue unless the call finished; the field is exactly the JSON
+    """What ``continue_speaking`` answers on success, as JSON, when the held sentence's rest plays
+    on, faded back in, then the queue unless the call finished: the answer comes when it plays,
+    which waits until no person of the hold's talk-over speaks; the field is exactly the JSON
     ``true``."""
 
     continued: MarkerTrue
@@ -230,10 +256,13 @@ class ContinuedSpeaking(StrictModel):
 
 class ContinueSpeakingRefusal(StrEnum):
     """Why the app does not continue: ``not_active`` when the member left, was removed or is
-    paused; ``not_interrupted`` when ``interrupted`` names a hold that does not stand."""
+    paused; ``not_interrupted`` when ``interrupted`` names a hold that does not stand, or a
+    waiting call that a later choice, a stop or a voice that went on voided; ``stale`` when
+    ``told_changes`` is below the ``worded_changes`` the app counted."""
 
     NOT_ACTIVE = "not_active"
     NOT_INTERRUPTED = "not_interrupted"
+    STALE = "stale"
 
 
 class ContinueSpeakingRefused(StrictModel):
@@ -320,11 +349,15 @@ class Interrupted(StrictModel):
     (``has_words``) of its talk-over has been heard; the app then owns the hold's end and ends it
     by itself (``PlaceWindow.went_on``), and a runner starts no decision for it. It leaves in
     the change in which the first word is heard, and never returns for this ``id``; it is
-    absent while false."""
+    absent while false. ``worded_changes`` counts the partials and lines of the talk-over's people
+    whose words (``words_of``) differ from what that person was last heard to say; it states the
+    count from the change in which the first word is heard, only rises, and is absent while the
+    app states none. A choice names the count its decision was told as ``told_changes``."""
 
     id: NonEmptyUnicodeText
     place: HoldPlace | None = Field(default=None, exclude_if=is_none)
     wordless: bool = Field(default=False, exclude_if=is_false)
+    worded_changes: ChangeCount | None = Field(default=None, exclude_if=is_none)
 
 
 class WentOn(StrictModel):

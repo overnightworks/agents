@@ -335,19 +335,20 @@ REFUSALS = [
             "stopped",
             "held",
             "not_interrupted",
+            "stale",
         ),
         id="speak",
     ),
     pytest.param(
         StopSpeakingRefused,
         StopSpeakingRefusal,
-        ("not_active", "nothing_playing", "not_interrupted"),
+        ("not_active", "nothing_playing", "not_interrupted", "stale"),
         id="stop-speaking",
     ),
     pytest.param(
         ContinueSpeakingRefused,
         ContinueSpeakingRefusal,
-        ("not_active", "not_interrupted"),
+        ("not_active", "not_interrupted", "stale"),
         id="continue-speaking",
     ),
     pytest.param(
