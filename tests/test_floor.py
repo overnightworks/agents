@@ -608,9 +608,11 @@ def test_a_ticket_that_ends_with_nothing_entered_leaves_the_member_silent() -> N
 
 def test_a_name_the_snapshot_lists_again_after_its_line_begins_anew_during_the_answer() -> None:
     member = loop_floor()
+    assert member.hear_partials((partial("ann", "Ja"),)) is False
     member.answer_begins()
     member.enter(FIRST)
     member.next_start()
+    assert member.hear_partials((partial("ann", "Ja"),)) is False
     member.hear_finished("ann", "Ja.")
     assert member.hear_partials((partial("ann", "Moment"),)) is True
     assert member.standing is True
@@ -619,6 +621,9 @@ def test_a_name_the_snapshot_lists_again_after_its_line_begins_anew_during_the_a
 def test_a_name_the_snapshot_lists_again_outside_an_answer_holds_nothing() -> None:
     member = loop_floor()
     member.answer_begins()
+    member.enter(FIRST)
+    member.next_start()
+    member.hear_partials((partial("ann", "Ja"),))
     member.answer_ends()
     member.hear_finished("ann", "Ja.")
     assert member.hear_partials((partial("ann", "Moment"),)) is False
