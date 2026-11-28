@@ -33,7 +33,6 @@ from agents.member import (
     DeclineInvitationRefusal,
     DeclineInvitationRefused,
     FigureLook,
-    FigureRef,
     HttpsFileRef,
     PlaceRef,
     SetTurnStateArguments,
@@ -59,7 +58,7 @@ from agents.member_outcomes import (
 from agents.tools import ToolOutcome
 from tests.support import member_session_support
 from tests.support.mcp_server_support import MemberApp
-from tests.support.member_session_support import MemberTools, opened, served
+from tests.support.member_session_support import MemberTools, a_figure, accepting, opened, served
 from tests.support.scripted_gate import CALL, LIST_TOOLS, GateReply, ScriptedGate
 
 pytestmark = pytest.mark.anyio
@@ -83,14 +82,6 @@ async def gate(app: MemberApp, tools: MemberTools, caplog: pytest.LogCaptureFixt
 
 def arguments_of(call: dict[str, Any], record: type[AcceptInvitationArguments]) -> Any:
     return member_arguments(record, call)
-
-
-def a_figure() -> FigureRef:
-    return FigureRef(url="https://figures.test/figure.glb", sha256=secrets.token_hex(32))
-
-
-def accepting(place: PlaceRef, **fields: Any) -> AcceptInvitationArguments:
-    return AcceptInvitationArguments(place=place, invitation="inv-3", epoch=2, **fields)
 
 
 def refusing(tools: MemberTools, tool: str, text: str, *, is_error: bool = True) -> None:

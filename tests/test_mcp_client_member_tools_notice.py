@@ -4,7 +4,6 @@ tools: an argument the app does not declare is left out, and the omission is tol
 from __future__ import annotations
 
 import asyncio
-import secrets
 from typing import Any
 
 import pytest
@@ -13,16 +12,27 @@ from pydantic import SecretStr
 from agents.member import (
     ACCEPT_INVITATION_TOOL,
     SPEAK_TOOL,
-    STANDING_URI,
-    AcceptInvitationArguments,
-    FigureRef,
     PlaceRef,
 )
 from agents.member_outcomes import ArgumentLeftOut
 from tests.support import member_session_support
 from tests.support.mcp_server_support import MemberApp
-from tests.support.member_session_support import LIMIT_SECONDS, MemberTools, opened, served
-from tests.support.scripted_gate import LIST_TOOLS, LISTEN, GateReply, ScriptedGate, hangs, listing
+from tests.support.member_session_support import (
+    LIMIT_SECONDS,
+    MemberTools,
+    a_figure,
+    accepting,
+    opened,
+    served,
+)
+from tests.support.scripted_gate import (
+    LIST_TOOLS,
+    LISTEN,
+    GateReply,
+    ScriptedGate,
+    acknowledging,
+    listing,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -43,11 +53,6 @@ async def gate(app: MemberApp, tools: MemberTools, caplog: pytest.LogCaptureFixt
         yield gate
 
 
-def accepting_with_a_figure(place: PlaceRef) -> AcceptInvitationArguments:
-    figure = FigureRef(url="https://figures.test/figure.glb", sha256=secrets.token_hex(32))
-    return AcceptInvitationArguments(place=place, invitation="inv-3", epoch=2, figure=figure)
-
-
 @pytest.mark.parametrize(
     ("tools", "tool", "argument", "calls"),
     [
@@ -55,7 +60,7 @@ def accepting_with_a_figure(place: PlaceRef) -> AcceptInvitationArguments:
             {"undeclared": frozenset({"figure"})},
             ACCEPT_INVITATION_TOOL,
             "figure",
-            lambda session, place: session.accept(accepting_with_a_figure(place)),
+            lambda session, place: session.accept(accepting(place, figure=a_figure())),
             id="an-accept-with-a-figure",
         ),
         pytest.param(
@@ -83,13 +88,10 @@ async def test_an_undeclared_argument_is_left_out_though_a_tools_notice_came_whi
     left_out: list[ArgumentLeftOut] = []
 
     async def notifies_while_listing(reply: GateReply) -> None:
-        await reply.open_stream()
-        await reply.acknowledge([STANDING_URI], tools=True)
         async with asyncio.timeout(LIMIT_SECONDS):
             await listing_started.wait()
         await reply.tools_notice()
         noticed.set()
-        await hangs(reply)
 
     async def lists_after_the_notice(reply: GateReply) -> None:
         listing_started.set()
@@ -97,7 +99,7 @@ async def test_an_undeclared_argument_is_left_out_though_a_tools_notice_came_whi
             await notice_taken.wait()
         await listing(*tools.served())(reply)
 
-    gate.script(LISTEN, notifies_while_listing)
+    gate.script(LISTEN, acknowledging(tools=True, then=notifies_while_listing))
     gate.script(LIST_TOOLS, lists_after_the_notice)
 
     async with opened(gate, bearer, on_argument_left_out=left_out.append) as session:
