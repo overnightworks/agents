@@ -1,0 +1,8 @@
+claim_id = "3806c2c594824c02904e9855fd39ec6b"
+agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
+role = "builder"
+base = "0febab33f27abf1af9eb24dc7e1535828b8ca2f5"
+branch = "claude/issue-1205-a-choice-told-too-few-of-the-talk-over-s"
+scope = [".aco/ahead-of-caller.toml", "docs/connector.md", "docs/hearing.md", "scripts/member-tool-wire.json", "src/agents/floor.py", "src/agents/mcp_client/arguments.py", "src/agents/mcp_client/results.py", "src/agents/mcp_client/session.py", "src/agents/member_speaking.py", "tests"]
+opened_commit = "40196972a3d682f621eae5292e858b6778c9a647"
+whole_reason = "The wire half of one staleness check crosses the floor's wire answers, the member records and the client; it lands as one change so no app declares a count the floor does not check."
