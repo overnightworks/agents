@@ -1,8 +1,0 @@
-claim_id = "3f126ed8da3f4349bc7adcfc16cd5fc7"
-agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
-role = "builder"
-base = "27cbad093273677fcf2fe82a5e38466512e2c8ff"
-branch = "claude/issue-1181-coverage-outside-the-voice-loop"
-scope = ["docs/connector.md", "pyproject.toml", "scripts/member_tool_wire_diff.py", "src/agents/agent_file.py", "src/agents/mcp_client/exchange.py", "src/agents/mcp_client/session.py", "src/agents/mcp_server/listen.py", "src/agents/mcp_server/person.py", "src/agents/mcp_server/redis_place_store.py", "src/agents/mcp_server/route_call.py", "src/agents/mcp_server/routes.py", "src/agents/turn.py", "tests/scripts/test_check_forbidden_imports_exist.py", "tests/support/scripted_gate.py", "tests/test_backend_config.py", "tests/test_backend_gateway_pictures.py", "tests/test_mcp_client_listen.py", "tests/test_mcp_client_member_calls.py", "tests/test_mcp_client_session.py", "tests/test_mcp_server_listen_liveness.py", "tests/test_mcp_server_person.py", "tests/test_mcp_server_routes.py", "tests/test_skills.py"]
-opened_commit = "77f38af2c24ded2e7b2d1e37ed9a9bfc2001366d"
-whole_reason = "One pass over the coverage gaps outside the voice loop: every row ends in the same floor raise in pyproject.toml, which serialises any split at landing."
