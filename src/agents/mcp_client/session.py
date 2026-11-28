@@ -554,15 +554,14 @@ class _McpMemberSession:
         """``_called`` without the ``optional`` arguments its tool's declared schema does not name.
 
         The schema is the app's latest list as ``declared_tools`` read it. A call that carries an
-        optional argument and has none yet asks for the list only when it ``lists``; a turn's own
-        statements do not, since the turn lists beside them. An argument left out is reported once
-        per session.
+        optional argument and has none yet asks for the list only when it ``lists``, and then
+        reads the parameters ``_declared_parameters`` decides; a turn's own statements do not,
+        since the turn lists beside them. An argument left out is reported once per session.
         """
         if optional.isdisjoint(arguments):
             return await self._called(name, arguments)
-        if self._declared_arguments is None and lists:
-            await self.declared_tools()
-        schema = (self._declared_arguments or {}).get(name)
+        declared = await self._declared_parameters() if lists else self._declared_arguments
+        schema = (declared or {}).get(name)
         if schema is None:
             return await self._called(name, arguments)
         sent, left_out = split_undeclared(arguments, schema, optional)

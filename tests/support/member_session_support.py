@@ -25,6 +25,8 @@ from agents.member import (
     MEMBER_TOOL_ARGUMENTS,
     SPEAK_TOOL,
     STANDING_URI,
+    AcceptInvitationArguments,
+    FigureRef,
     MemberStanding,
     PlaceEntry,
     PlaceRef,
@@ -39,6 +41,14 @@ from tests.support.scripted_gate import GateReply, ScriptedGate
 SUBJECT = "agent-subject"
 LIMIT_SECONDS = 10
 ROOM = "room-7"
+
+
+def a_figure() -> FigureRef:
+    return FigureRef(url="https://figures.test/figure.glb", sha256=secrets.token_hex(32))
+
+
+def accepting(place: PlaceRef, **fields: Any) -> AcceptInvitationArguments:
+    return AcceptInvitationArguments(place=place, invitation="inv-3", epoch=2, **fields)
 
 
 @pytest.fixture

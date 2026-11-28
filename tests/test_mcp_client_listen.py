@@ -12,7 +12,6 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from mcp_types import ListToolsResult, Tool
 from pydantic import SecretStr
 
 from agents.mcp_client import (
@@ -41,8 +40,9 @@ from tests.support.scripted_gate import (
     READ,
     GateReply,
     ScriptedGate,
-    hangs,
+    acknowledging,
     hangs_once_entered,
+    listing,
 )
 
 pytestmark = pytest.mark.anyio
@@ -66,20 +66,6 @@ async def wake_of(wakes: AsyncIterator[MemberWake]) -> MemberWake:
 async def listens(gate: ScriptedGate, bearer: SecretStr, **keywords: Any) -> None:
     async with opened(gate, bearer, **keywords) as session, session.listen():
         pass
-
-
-def acknowledging(*, tools: bool, prompts: bool = False, then: Any = None) -> Any:
-    """A stream the app opens and acknowledges with the standing and, if ``tools`` or ``prompts``,
-    that notice honored; ``then`` writes what comes after."""
-
-    async def streams(reply: GateReply) -> None:
-        await reply.open_stream()
-        await reply.acknowledge([STANDING_URI], tools=tools, prompts=prompts)
-        if then is not None:
-            await then(reply)
-        await hangs(reply)
-
-    return streams
 
 
 # Entering the stream.
@@ -219,17 +205,6 @@ async def test_an_error_the_callers_own_body_raises_in_the_listen_is_not_told_as
 async def raises_inside_the_listen(session: Any) -> None:
     async with session.listen():
         raise OSError("the host's own")
-
-
-def listing(*names: str) -> Any:
-    async def lists(reply: GateReply) -> None:
-        await reply.result(ListToolsResult(tools=[declaration_of(name) for name in names]))
-
-    return lists
-
-
-def declaration_of(name: str) -> Tool:
-    return Tool(name=name, description=name, input_schema={"type": "object"})
 
 
 async def kept_after_listing(session: MemberSession) -> bool:

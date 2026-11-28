@@ -19,6 +19,7 @@ from mcp.shared.subscriptions import SUBSCRIPTION_ID_META_KEY
 from mcp_types import (
     ErrorData,
     JSONRPCError,
+    ListToolsResult,
     NotificationParams,
     PromptListChangedNotification,
     ResourceUpdatedNotification,
@@ -27,12 +28,14 @@ from mcp_types import (
     SubscriptionsAcknowledgedNotification,
     SubscriptionsAcknowledgedNotificationParams,
     SubscriptionsListenResult,
+    Tool,
     ToolListChangedNotification,
 )
 from pydantic import BaseModel
 
 from agents.mcp_server import McpPersonFront, OfferedTools, PersonTool, ResourceChanges
 from agents.mcp_wire import MCP_ENDPOINT_PATH
+from agents.member import STANDING_URI
 from agents.tools import Principal
 from tests.support.mcp_server_support import (
     ISSUER,
@@ -200,6 +203,41 @@ type Handler = Callable[[GateReply], Awaitable[None]]
 
 async def hangs(_reply: GateReply) -> None:
     await asyncio.Event().wait()
+
+
+def acknowledging(*, tools: bool, prompts: bool = False, then: Handler | None = None) -> Handler:
+    """A stream the app opens and acknowledges with the standing and, if ``tools`` or ``prompts``,
+    that notice honored; ``then`` writes what comes after."""
+
+    async def streams(reply: GateReply) -> None:
+        await reply.open_stream()
+        await reply.acknowledge([STANDING_URI], tools=tools, prompts=prompts)
+        if then is not None:
+            await then(reply)
+        await hangs(reply)
+
+    return streams
+
+
+def listing(*served: str | PersonTool) -> Handler:
+    """The answer to a tools listing: each named tool with a bare declaration, or each served tool
+    with its own."""
+
+    async def lists(reply: GateReply) -> None:
+        await reply.result(ListToolsResult(tools=[_declared(each) for each in served]))
+
+    return lists
+
+
+def _declared(each: str | PersonTool) -> Tool:
+    if isinstance(each, str):
+        return Tool(name=each, description=each, input_schema={"type": "object"})
+    declaration = each.declaration
+    return Tool(
+        name=declaration.name,
+        description=declaration.description,
+        input_schema=declaration.parameters,
+    )
 
 
 def hangs_once_entered(entered: asyncio.Event) -> Handler:
