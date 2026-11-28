@@ -323,6 +323,44 @@ def test_new_words_while_a_choice_waits_void_it_and_the_hold_is_decided_again_at
     assert [call for call in trace.calls if call[0] == "pause"] == [("pause", "Eins.")]
 
 
+def test_a_choice_plays_in_the_step_of_the_snapshot_that_ends_the_talk_over_before_a_fresh_voice_holds(
+    place,
+):
+    voice, gateway = an_answer_of_two_that_is_playing(
+        place, completion("[continue]"), completion("[continue]")
+    )
+    trace = place.trace
+
+    async def hearing(trace):
+        async for event in interjection_while_playing(trace, words="Moment mal"):
+            yield event
+        await trace.until(lambda: trace.count(Woke()) == 2)
+        await trace.settled()
+        yield speaking()
+        yield speaking(("Cy", "Eine Frage"))
+        await trace.settled()
+        yield speaking()
+        await trace.settled()
+        voice.release("Eins.")
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice, waking={"Erzähl."}) == RETURNED
+
+    assert trace.events == [
+        Woke(),
+        SentenceStarted("Eins."),
+        Held(),
+        Woke(),
+        HoldEnded(HoldEnding.CONTINUED),
+        Held(),
+        Woke(),
+        HoldEnded(HoldEnding.CONTINUED),
+        SentenceStarted("Zwei."),
+        DecisionEnded(),
+    ]
+    assert len(gateway.requests) == 3
+
+
 def test_a_shorter_voice_while_a_choice_waits_reaches_the_next_decision_only_as_its_line(place):
     voice, gateway = an_answer_of_two_that_is_playing(
         place, completion("[continue]"), completion("Gut.")

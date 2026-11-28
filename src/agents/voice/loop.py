@@ -262,6 +262,7 @@ class _VoiceLoop[Audio]:
         self._go.set()
         self._moved = asyncio.Event()
         self._stages: list[_Stage] = []
+        self._choice_decided: asyncio.Future[tuple[HoldStep[str], ...] | None] | None = None
 
     def hear(self, event: HearingEvent) -> None:
         if isinstance(event, PartialsChanged):
@@ -278,9 +279,26 @@ class _VoiceLoop[Audio]:
         while not holds():
             await self._moved.wait()
 
+    def _settle_the_choice(self) -> None:
+        """Give the decision that waits its choice's steps in the step of the event that let the
+        choice play, or ``None`` once the event voided it: a later event of the same step, such as
+        a fresh voice's first partial, then finds the floor with the choice taken."""
+        if self._choice_decided is None:
+            return
+        if self._floor.choice_may_play:
+            steps = self._floor.play_choice()
+        elif not self._floor.choice_waits:
+            steps = None
+        else:
+            return
+        self._choice_decided.set_result(steps)
+        self._choice_decided = None
+
     def _hear_partials(self, speech: tuple[PartialSpeech, ...]) -> None:
         voids_a_choice = self._floor.choice_waits
-        if not self._floor.hear_partials(speech):
+        arises = self._floor.hear_partials(speech)
+        self._settle_the_choice()
+        if not arises:
             return
         self._go.clear()
         if voids_a_choice:
@@ -314,6 +332,7 @@ class _VoiceLoop[Audio]:
 
     def _hear_line(self, line: PlaceEntry) -> None:
         told_already = not line.own and self._floor.hear_finished(line.name, line.text)
+        self._settle_the_choice()
         if is_echo(line, self._latest_answer()):
             self._conversation.skip(line)
             self._report(EchoDropped(line.text))
@@ -457,12 +476,20 @@ class _VoiceLoop[Audio]:
         reported, choice = _endings_of(decided)
         steps = self._floor.end_hold(choice, told_changes=None if decided is None else told.changes)
         if steps == (Wait(),):
-            await self._until(lambda: self._floor.choice_may_play or not self._floor.choice_waits)
-            steps = self._floor.play_choice() if self._floor.choice_may_play else Stale()
-        if isinstance(steps, Stale):
+            steps = await self._the_choice_plays()
+        if steps is None or isinstance(steps, Stale):
             await self._close_turn(decision)
             return None
         return decision, reported, choice, steps
+
+    async def _the_choice_plays(self) -> tuple[HoldStep[str], ...] | None:
+        """The steps of the waiting choice, taken when hearing let it play; ``None`` when a voice
+        that went on voided it."""
+        self._choice_decided = asyncio.get_running_loop().create_future()
+        try:
+            return await self._choice_decided
+        finally:
+            self._choice_decided = None
 
     async def _close_turn(self, stage: _Stage) -> None:
         """Cancel the stage's turn and wait until it has ended."""
