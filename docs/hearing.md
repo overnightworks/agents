@@ -205,11 +205,8 @@ app proves it.
   only waits or the member is Held, and turns false in the change that adds `interrupted`. The `id` is
   the app's, never repeats within the window's `generation` and stays fixed from the record's
   appearance to its removal; a second person who starts speaking meanwhile adds a partial under the
-  same `id`, and `speech` keeps the order in which they started. A runner names in each choice the
-  `Interrupted.worded_changes` its decision was told (`told_changes`); the app refuses a choice told
-  fewer changes than it counted, `stale`, and the runner decides again with what was said since. A
-  later choice for the same `id` replaces a waiting one. A stop the runner sends for no decision
-  names no `told_changes`. The app updates the partials as the words come and `playing` as the agent's sentences end
+  same `id`, and `speech` keeps the order in which they started. A runner takes at most one decision
+  per `id`. The app updates the partials as the words come and `playing` as the agent's sentences end
   and start: `playing` stays false while the agent is Held, returns to true when a new sentence of the
   member starts while the record stands, and the `id` stays the same. A sentence that plays is not in
   the window yet: when it ends or is cut without a hold, its line enters in the same window change in
@@ -321,9 +318,6 @@ app proves it.
       been heard. It leaves in the change in which the first word is heard, whereupon a runner
       decides as for any hold; `interrupted` and its `place` stay, and `wordless` never returns for
       that `id`. A hold whose first word came while Stopping never carries it.
-    - From the change in which the first word of the talk-over is heard, `interrupted` carries
-      `worded_changes`: `agents.floor`'s count of the talk-over people's partials and lines whose
-      words (`words_of`) differ from what that person was last heard to say. It only rises.
     - While `wordless` stands, the app owns the hold's end and a runner starts no decision for it. A
       `continue_speaking`, a `stop_speaking` or a `speak` with the id that comes anyway acts as in
       Held; a `speak` without the id is refused `held`.
@@ -360,9 +354,6 @@ app proves it.
 - HEARING-31: (L+A) `continue_speaking(place, interrupted)` with the standing id is the agent's
   choice to go on, and with `finish` its choice to finish only the held sentence (HEARING-33).
 
-  A choice told fewer changes than the app has counted (`told_changes` below
-  `Interrupted.worded_changes`) is refused `stale` at once and changes nothing.
-
   A choice that plays something, these and a `speak` naming the hold (HEARING-14), starts only once
   no person of the hold's talk-over speaks: no partial of theirs stands, and a finished line whose
   partial still stands ends nothing. Until then it waits, plays and drops nothing, and the hold
@@ -378,8 +369,7 @@ app proves it.
   - when a person of the talk-over voices the app's bound (HEARING-21) after it arrived. A new hold
     then stands, Held at once with a new `id` and the same `place`, decided as the first (HEARING-30's
     going on by itself included), and the call answers `not_interrupted`;
-  - when a later choice for the same `id` replaces it, which answers it `not_interrupted`; a later
-    choice told too few changes is refused `stale` and the waiting one stands;
+  - when a later choice for the same `id` replaces it, which answers it `not_interrupted`;
   - at a `stop_speaking` with the id or a new generation, which act as at any hold. A waiting
     continue then answers `not_interrupted`, a waiting `speak` `stopped`;
   - at the member's pause or end, or the place's end, answering `not_active`.
@@ -393,17 +383,14 @@ app proves it.
     earlier choice of its own played, so it decides nothing;
   - no hold means the hold ended (a stop or a new generation), so there is nothing to decide.
 
-  After `stale` it decides the same `id` again, told what was said since.
-
   It refuses `not_active`, or `not_interrupted` when no hold or another one stands. The fade and the
   resume belong to the app's speech service. A hold that goes on by itself (HEARING-30) plays the
-  same way, with no call and no answer. `agents.floor` decides what plays on, when a choice plays,
-  when it is stale and when it is void, proved by `test_a_continue_plays_the_held_sentence_on_then_the_waiting_ones`,
+  same way, with no call and no answer. `agents.floor` decides what plays on, when a choice plays
+  and when it is void, proved by `test_a_continue_plays_the_held_sentence_on_then_the_waiting_ones`,
   `test_a_continue_starts_the_first_waiting_sentence_when_none_is_held`,
   `test_a_continue_with_finish_plays_the_held_sentence_on_and_drops_the_waiting_ones`, in
   `tests/test_floor_waiting_choice.py`
   `test_a_playing_choice_waits_while_a_talk_over_person_speaks_and_plays_once_they_have_ended`,
-  `test_a_choice_told_fewer_changes_than_counted_is_refused_stale_and_changes_nothing`,
   `test_a_fresh_speakers_first_partial_after_the_choice_voids_it_and_a_new_hold_stands` and
   `test_a_second_choice_for_the_hold_replaces_the_waiting_one`; the app proves the fade and the
   resume, and its bound after a choice for a person already speaking at it (`voice_went_on`), which
@@ -473,17 +460,15 @@ app proves it.
   `continue_speaking` with `finish`); a short own line and then go on (`said_then_continued`:
   `[continue]` followed by words, `speak` naming the hold with `keeps_queue`); say something else
   instead (`answered`: speech, `speak` naming the hold); stop (`stopped`: `[silent]`,
-  `stop_speaking`). Every runner decides a hold from its first word on, while its talk-over may still
-  speak, and decides again with what was said since when people speak on: the voice loop as
-  HEARING-32 says, a runner of the member wire from an `interrupted` without `wordless`. The choice
-  plays only as HEARING-31 says. A bare go on continues exactly where every seat heard it to; any other form, a
+  `stop_speaking`). The voice loop decides a hold from its first word on, while its talk-over may still
+  speak, and decides again with what was said since when people speak on, as HEARING-32 says. The
+  choice plays only as HEARING-31 says. A bare go on continues exactly where every seat heard it to; any other form, a
   part anew or a bridge, is the agent's own words, and no form follows from the interruption by
   itself. Without a choice nothing more is said, except a hold whose talk-over held no word, which
   goes on by itself (`went_on`, HEARING-30). A runner's member client sends `finish` only to an app
   whose `continue_speaking` declares it, and otherwise answers `not served` and sends nothing. It
   leaves `keeps_queue` out of a call to an app whose `speak` does not declare it, listing the tools
-  first; the queue then answers `stopped`. It leaves `told_changes` out of a call to an app whose
-  tool declares none, once the tools were listed, and does not list them for it. Proved by
+  first; the queue then answers `stopped`. Proved by
   `test_a_choice_leaves_the_held_turn_exactly_when_it_drops_the_held_sentence`,
   `test_continue_with_words_says_them_instead_of_the_held_rest_then_the_rest_of_the_answer`,
   `test_a_finish_to_an_app_whose_continue_declares_none_sends_nothing_and_is_not_served` and

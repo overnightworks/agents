@@ -23,7 +23,7 @@ their turn. ``end_hold`` and the calls that wrap it return ``Wait`` first and ke
 waiting; it plays and drops nothing until ``choice_may_play``, when the consumer takes its steps
 with ``play_choice`` in the step of the event that made it true. A choice that carries the count
 its decision was told (``told_changes``) is refused ``Stale`` when the floor counted more
-``worded_changes`` since: nothing is applied, and the consumer decides again. A waiting choice is
+``worded_changes`` since: nothing is applied, and the loop decides again. A waiting choice is
 void, and a new hold stands at the same place, when a person who began after it arrived voices the
 bound (their first partial), when a person speaking at it whose words changed does in a snapshot,
 or when the consumer reports ``voice_went_on``.
@@ -425,30 +425,19 @@ class Floor[Said]:
         return ticket
 
     def render_ended(
-        self,
-        ticket: RenderTicket,
-        interrupted: str | None = None,
-        told_changes: int | None = None,
+        self, ticket: RenderTicket, interrupted: str | None = None
     ) -> SpeakRefusal | None:
         """A render ended: ``STOPPED`` when a stop or an answer dropped the ticket meanwhile, then,
-        for a named hold, ``NOT_INTERRUPTED`` when it no longer stands and ``STALE`` when the
-        sentence's ``told_changes`` is below ``worded_changes``. Otherwise the consumer calls
-        ``end_hold(ANSWERED)``, or ``end_hold(SAID_THEN_CONTINUED)`` when the sentence keeps the
-        queue, and ``answer_goes_on`` when it named one and the choice plays, then ``enter`` and,
-        after the second, ``reply_ended``, or enters nothing."""
+        for a named hold, ``NOT_INTERRUPTED`` when it no longer stands. Otherwise the consumer
+        calls ``end_hold(ANSWERED)``, or ``end_hold(SAID_THEN_CONTINUED)`` when the sentence keeps
+        the queue, and ``answer_goes_on`` when it named one and the choice plays, then ``enter``
+        and, after the second, ``reply_ended``, or enters nothing."""
         if ticket not in self._tickets:
             return SpeakRefusal.STOPPED
         self._tickets.remove(ticket)
-        if interrupted is None:
-            return None
-        return self._refusal_of_a_named_hold(interrupted, told_changes)
-
-    def _refusal_of_a_named_hold(
-        self, interrupted: str, told_changes: int | None
-    ) -> SpeakRefusal | None:
-        if not self._stands(interrupted):
+        if interrupted is not None and not self._stands(interrupted):
             return SpeakRefusal.NOT_INTERRUPTED
-        return SpeakRefusal.STALE if self._is_stale(told_changes) else None
+        return None
 
     def _close_the_span_once_silent(self) -> None:
         """Close the span of a render once nothing plays, waits or renders and no hold stands."""
@@ -589,26 +578,19 @@ class Floor[Said]:
         self._deciding = True
         return self._talk.told()
 
-    def speak_refusal(
-        self, interrupted: str | None, told_changes: int | None = None
-    ) -> SpeakRefusal | None:
+    def speak_refusal(self, interrupted: str | None) -> SpeakRefusal | None:
         """Why a ``speak`` naming ``interrupted`` is refused now, if it is: ``HELD`` while Held and
-        no id is named, ``NOT_INTERRUPTED`` for any id that is not the standing one, ``STALE`` when
-        ``told_changes`` is below ``worded_changes``."""
+        no id is named, ``NOT_INTERRUPTED`` for any id that is not the standing one."""
         if interrupted is not None:
-            return self._refusal_of_a_named_hold(interrupted, told_changes)
+            return None if self._stands(interrupted) else SpeakRefusal.NOT_INTERRUPTED
         return SpeakRefusal.HELD if self._held else None
 
-    def stop(
-        self, interrupted: str | None, place: HoldPlace, told_changes: int | None = None
-    ) -> Drop[Said] | StopSpeakingRefusal:
+    def stop(self, interrupted: str | None, place: HoldPlace) -> Drop[Said] | StopSpeakingRefusal:
         """A stop: what it cuts and drops, or why it is refused. ``place`` is where the started
         sentence's sound was cut; the held place stands while Held. The member is Silent after it:
         every open ticket is dropped, a waiting choice is void and the hold is over."""
         if interrupted is not None and not self._stands(interrupted):
             return StopSpeakingRefusal.NOT_INTERRUPTED
-        if self._is_stale(told_changes):
-            return StopSpeakingRefusal.STALE
         if self._silent:
             return StopSpeakingRefusal.NOTHING_PLAYING
         dropped = self._dropped(_EFFECTS[HoldEnding.STOPPED], self._place if self._held else place)
@@ -619,18 +601,14 @@ class Floor[Said]:
         return dropped
 
     def continue_speaking(
-        self, interrupted: str, *, finish: bool = False, told_changes: int | None = None
+        self, interrupted: str, *, finish: bool = False
     ) -> tuple[HoldStep[Said], ...] | ContinueSpeakingRefusal:
         """A continue naming ``interrupted``: the steps of ``CONTINUED``, or of ``FINISHED`` when
         ``finish`` is set, with the hold ended, ``Wait`` while the choice waits for the talk-over,
         or why it is refused."""
         if not self._stands(interrupted):
             return ContinueSpeakingRefusal.NOT_INTERRUPTED
-        steps = self.end_hold(
-            HoldEnding.FINISHED if finish else HoldEnding.CONTINUED, told_changes=told_changes
-        )
-        if isinstance(steps, Stale):
-            return ContinueSpeakingRefusal.STALE
+        steps = self._ending_of(HoldEnding.FINISHED if finish else HoldEnding.CONTINUED)
         if not self.choice_waits:
             self.answer_goes_on()
         return steps
@@ -650,6 +628,9 @@ class Floor[Said]:
         """
         if self._is_stale(told_changes):
             return Stale()
+        return self._ending_of(choice)
+
+    def _ending_of(self, choice: HoldChoice) -> tuple[HoldStep[Said], ...]:
         if not _EFFECTS[choice].plays:
             return self._ending(choice)
         if self._choice is not None:

@@ -1524,11 +1524,8 @@ and a new generation end such a hold as any hold, with no `went_on`
 
 **Rollout order.** Answers and arguments are strict: a runner takes the release before its app
 answers `DroppedSpeaking`, `held` or `not_interrupted`, and an app on an older release refuses a
-`speak` with `interrupted`, so a runner sends it only once its app has shipped the hold. An app
-that counts `worded_changes`, waits a choice for the talk-over's end and refuses `stale` does so only
-once every runner it serves has adopted this release: a runner of an older release names no
-`told_changes`, so its choice is never stale, and it plays a choice at once only where the app
-waits for nothing. Runners take each release first; then apps fill `place`, drop the line of a sentence that not every seat
+`speak` with `interrupted`, so a runner sends it only once its app has shipped the hold. Runners
+take each release first; then apps fill `place`, drop the line of a sentence that not every seat
 heard a word of, and declare what they add later. An app drops that line only in the same change in
 which it starts to state `place` on its holds, and only once every runner it serves has adopted this
 release; a runner whose app states no place builds `hold_place(its playing sentence, None)` and
@@ -1568,8 +1565,7 @@ Proved by `tests/test_member.py` (among them
   `end_hold(SAID_THEN_CONTINUED)` when it keeps the queue, then `answer_goes_on`, `enter` and, after
   the second, `reply_ended`. A choice that plays waits in the floor until the talk-over has ended
   (`play_choice`); a person who begins after it arrived and already speaks at it is reported with
-  `voice_went_on`, the others by their first partial. A choice told too few `worded_changes` is
-  `Stale`. It holds a member
+  `voice_went_on`, the others by their first partial. It holds a member
   talked over for the bound at once, as Stopping and then Held, stops the playing sentence at its next
   word end or lets it finish under the bound, reports where the sound stopped with the hold's id
   (`sound_stopped_at`), writes `interrupted` with its `place` exactly while it is held, and continues
