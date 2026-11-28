@@ -37,9 +37,8 @@ from tests.support.voice_support import (
 place = voice_support.place
 
 
-@pytest.mark.parametrize("words", ["Noch eine Frage", ""], ids=["with words", "without words"])
-def test_an_ending_waits_while_a_newer_talk_over_stands_and_that_talk_over_gets_its_own_decision(
-    place, words
+def test_a_newer_talk_over_with_words_during_the_decision_makes_its_choice_stale_and_gets_its_own(
+    place,
 ):
     trace = place.trace
     voice = RecordingVoice(trace, held={"Eins."})
@@ -60,15 +59,66 @@ def test_an_ending_waits_while_a_newer_talk_over_stands_and_that_talk_over_gets_
         async for event in the_person_finishes(trace):
             yield event
         await trace.until(lambda: trace.count(Woke()) == 2)
-        yield speaking(("Cy", words))
+        yield speaking(("Cy", "Noch eine Frage"))
         trace.record(("newer",))
-        await trace.until(lambda: trace.count(Held()) == 2)
-        assert [call for call in trace.calls if call[0] == "resume"] == []
+        await trace.until(lambda: HoldEnded(HoldEnding.STOPPED) in trace.entries)
         yield a_line(3, "Noch eine Frage, bitte.", name="Cy")
         yield speaking()
         await trace.settled()
 
-    assert place.run(hearing, gateway, voice=voice) == RETURNED
+    assert place.run(hearing, gateway, voice=voice, waking={"Erzähl."}) == RETURNED
+
+    assert trace.events == [
+        Woke(),
+        SentenceStarted("Eins."),
+        Held(),
+        Woke(),
+        Woke(),
+        StayedSilent(),
+        HoldEnded(HoldEnding.STOPPED),
+        DecisionEnded(),
+    ]
+    assert [call for call in trace.calls if call[0] == "pause"] == [("pause", "Eins.")]
+    assert conversation_of(gateway.requests[2])[-1][1] == [
+        "Moment, wie meinst du das?",
+        {
+            "held": HELD_AT_ONE["held"]
+            | {"talked_over": [{"name": "Cy", "text": "Noch eine Frage"}]}
+        },
+    ]
+
+
+def test_a_newer_talk_over_without_words_during_the_decision_delays_its_choice_until_it_ends(place):
+    trace = place.trace
+    voice = RecordingVoice(trace, held={"Eins."})
+    gateway = PacedGateway(
+        trace,
+        [piece("Eins. Zwei."), finish()],
+        [
+            lambda: trace.until(lambda: ("newer",) in trace.entries),
+            piece("[continue]"),
+            finish(),
+        ],
+    )
+
+    async def hearing(trace):
+        async for event in interjection_while_playing(trace):
+            yield event
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.until(lambda: trace.count(Woke()) == 2)
+        yield speaking(("Cy", ""))
+        trace.record(("newer",))
+        await trace.settled()
+        assert HoldEnded(HoldEnding.CONTINUED) not in trace.events
+        assert [call for call in trace.calls if call[0] == "resume"] == []
+        yield a_line(3, "Noch eine Frage, bitte.", name="Cy")
+        yield speaking()
+        await trace.until(lambda: HoldEnded(HoldEnding.CONTINUED) in trace.entries)
+        voice.release("Eins.")
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice, waking={"Erzähl."}) == RETURNED
 
     assert trace.events == [
         Woke(),
@@ -76,17 +126,10 @@ def test_an_ending_waits_while_a_newer_talk_over_stands_and_that_talk_over_gets_
         Held(),
         Woke(),
         HoldEnded(HoldEnding.CONTINUED),
-        Held(),
-        Woke(),
-        StayedSilent(),
-        HoldEnded(HoldEnding.STOPPED),
+        SentenceStarted("Zwei."),
         DecisionEnded(),
     ]
     assert [call for call in trace.calls if call[0] == "pause"] == [("pause", "Eins.")]
-    assert conversation_of(gateway.requests[2])[-2:] == [
-        ("assistant", "[continue]"),
-        ("user", ["Noch eine Frage, bitte.", HELD_AT_ONE]),
-    ]
 
 
 def test_a_second_hold_decision_waits_while_the_first_one_is_still_being_written(place):
@@ -123,7 +166,7 @@ def test_a_second_hold_decision_waits_while_the_first_one_is_still_being_written
 
 
 @pytest.mark.parametrize("more_words_after_the_ending", [False, True])
-def test_a_newer_talk_over_after_a_stopping_ending_holds_nothing_and_its_line_wakes_as_any_line(
+def test_a_newer_talk_over_without_words_after_a_stopping_ending_holds_nothing_and_its_line_wakes(
     place, more_words_after_the_ending
 ):
     trace = place.trace
@@ -145,7 +188,7 @@ def test_a_newer_talk_over_after_a_stopping_ending_holds_nothing_and_its_line_wa
         async for event in the_person_finishes(trace):
             yield event
         await trace.until(lambda: trace.count(Woke()) == 2)
-        yield speaking(("Cy", "Noch eine Frage"))
+        yield speaking(("Cy", ""))
         trace.record(("newer",))
         await trace.until(lambda: HoldEnded(HoldEnding.STOPPED) in trace.entries)
         if more_words_after_the_ending:

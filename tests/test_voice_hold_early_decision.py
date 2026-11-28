@@ -153,7 +153,7 @@ def test_a_line_with_new_words_before_the_choice_makes_it_stale_and_the_next_dec
         SentenceStarted("Zwei."),
         DecisionEnded(),
     ]
-    assert last_user_message(gateway, 2) == ["Moment, wie meinst du das?", HELD]
+    assert last_user_message(gateway, 2) == ["Moment, wie meinst du das?", HELD_AT_ONE]
 
 
 def test_a_stale_choice_plays_nothing_and_the_next_decision_opens_once_its_turn_closed(
@@ -185,7 +185,7 @@ def test_a_stale_choice_plays_nothing_and_the_next_decision_opens_once_its_turn_
     closed, answered = ("closed",), ("second request answered",)
     assert trace.order_of(closed, answered)[:3] == [closed, closed, answered]
     assert conversation_of(gateway.requests[2])[:-1] == conversation_of(gateway.requests[1])[:-1]
-    assert last_user_message(gateway, 2)[-1] == HELD
+    assert last_user_message(gateway, 2)[-1] == HELD_AT_ONE
 
 
 def test_silent_over_words_its_decision_was_not_told_is_decided_again(place):

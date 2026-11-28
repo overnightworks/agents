@@ -62,8 +62,8 @@ def test_the_first_words_of_a_talk_over_pause_the_playing_sentence_and_start_no_
     assert place.trace.calls[:3] == [("render", "Eins."), ("play", "Eins."), ("render", "Zwei.")]
     assert ("pause", "Eins.") in place.trace.calls
     assert ("play", "Zwei.") not in place.trace.calls
-    assert place.trace.events == [Woke(), SentenceStarted("Eins."), Held()]
-    assert len(gateway.requests) == 1
+    assert place.trace.events == [Woke(), SentenceStarted("Eins."), Held(), Woke()]
+    assert len(gateway.requests) == 2
 
 
 @pytest.mark.parametrize("text", ["", "…", " ?! "])
@@ -116,7 +116,7 @@ def test_a_second_person_who_starts_during_the_answer_holds_it_while_an_earlier_
     assert place.run(hearing, gateway, voice=voice) == RETURNED
 
     assert ("pause", "Eins.") in place.trace.calls
-    assert place.trace.events == [Woke(), SentenceStarted("Eins."), Held()]
+    assert place.trace.events == [Woke(), SentenceStarted("Eins."), Held(), Woke()]
 
 
 def test_a_talk_over_while_the_reply_is_still_written_starts_no_sentence_until_the_ending(place):
@@ -133,32 +133,6 @@ def test_a_talk_over_while_the_reply_is_still_written_starts_no_sentence_until_t
         DecisionEnded(),
     ]
     assert all(call[0] not in {"pause", "resume"} for call in trace.calls)
-
-
-def test_the_hold_decision_starts_once_the_last_speaker_finished_and_sends_what_was_said_and_unsaid(
-    place,
-):
-    voice, gateway = an_answer_of_two_that_is_playing(place, completion("[continue]"))
-
-    async def hearing(trace):
-        async for event in interjection_while_playing(trace):
-            yield event
-        yield speaking(("Ben", "Moment"), ("Cy", "Warte"))
-        yield a_line(2, "Moment mal.", name="Ben")
-        yield speaking(("Cy", "Warte"))
-        await trace.settled()
-        assert len(gateway.requests) == 1
-        yield a_line(3, "Warte bitte.", name="Cy")
-        yield speaking()
-        await trace.settled()
-
-    assert place.run(hearing, gateway, voice=voice) == RETURNED
-
-    assert conversation_of(gateway.requests[1]) == [
-        ("user", ["Erzähl."]),
-        ("assistant", "Eins."),
-        ("user", ["Moment mal.", "Warte bitte.", HELD_AT_ONE]),
-    ]
 
 
 def test_a_persons_finished_line_ends_their_part_of_the_talk_over_before_their_partial_goes(place):
@@ -368,13 +342,18 @@ def test_a_hold_between_sentences_never_plays_the_sentence_rendered_ahead(place,
         yield speaking(("Ben", "Moment"))
         await trace.until(lambda: Held() in trace.entries)
         assert ("render", "Zwei.") in trace.entries
-        await trace.until(lambda: ("rendered", "Zwei.") in trace.entries)
+        await trace.until(
+            lambda: (
+                ("rendered", "Zwei.") in trace.entries
+                or any(isinstance(event, HoldEnded) for event in trace.events)
+            )
+        )
         async for event in the_person_finishes(trace):
             yield event
         await trace.until(lambda: trace.events[-1] == DecisionEnded())
         await trace.settled()
 
-    assert place.run(hearing, gateway, voice=voice) == RETURNED
+    assert place.run(hearing, gateway, voice=voice, waking={"Erzähl."}) == RETURNED
 
     assert trace.played == played
     assert ("play", "Zwei.") not in trace.calls
@@ -623,8 +602,7 @@ def test_a_hold_stands_while_any_person_of_the_talk_over_still_speaks_and_no_tim
 
     assert place.run(hearing, gateway, voice=voice) == RETURNED
 
-    assert len(gateway.requests) == 1
-    assert place.trace.events == [Woke(), SentenceStarted("Eins."), Held()]
+    assert not any(isinstance(event, HoldEnded) for event in place.trace.events)
     assert [call for call in place.trace.calls if call[0] == "resume"] == []
 
 
