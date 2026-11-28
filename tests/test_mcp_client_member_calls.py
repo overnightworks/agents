@@ -7,6 +7,7 @@ test needs the app to misbehave.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 from http import HTTPStatus
@@ -22,6 +23,7 @@ from agents.member import (
     DECLINE_INVITATION_TOOL,
     SET_TURN_STATE_TOOL,
     SPEAK_TOOL,
+    STANDING_URI,
     STOP_SPEAKING_TOOL,
     AcceptInvitationArguments,
     AcceptInvitationRefusal,
@@ -59,8 +61,15 @@ from agents.member_outcomes import (
 from agents.tools import ToolOutcome
 from tests.support import member_session_support
 from tests.support.mcp_server_support import MemberApp
-from tests.support.member_session_support import MemberTools, opened, served
-from tests.support.scripted_gate import CALL, LIST_TOOLS, GateReply, ScriptedGate
+from tests.support.member_session_support import LIMIT_SECONDS, MemberTools, opened, served
+from tests.support.scripted_gate import (
+    CALL,
+    LIST_TOOLS,
+    LISTEN,
+    GateReply,
+    ScriptedGate,
+    hangs,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -95,6 +104,82 @@ def accepting(place: PlaceRef, **fields: Any) -> AcceptInvitationArguments:
 
 def refusing(tools: MemberTools, tool: str, text: str, *, is_error: bool = True) -> None:
     tools.outcomes.setdefault(tool, []).append(ToolOutcome(text, is_error))
+
+
+@pytest.mark.parametrize(
+    ("tools", "tool", "argument", "calls"),
+    [
+        pytest.param(
+            {"undeclared": frozenset({"figure"})},
+            ACCEPT_INVITATION_TOOL,
+            "figure",
+            lambda session, place: session.accept(accepting(place, figure=a_figure())),
+            id="an-accept-with-a-figure",
+        ),
+        pytest.param(
+            {"undeclared": frozenset({"keeps_queue"})},
+            SPEAK_TOOL,
+            "keeps_queue",
+            lambda session, place: session.speak(
+                place, "hello", interrupted="hold-1", keeps_queue=True
+            ),
+            id="a-speak-that-keeps-the-queue",
+        ),
+    ],
+    indirect=["tools"],
+)
+async def test_an_undeclared_argument_is_left_out_though_a_tools_notice_came_while_listing(
+    gate: ScriptedGate,
+    bearer: SecretStr,
+    tools: MemberTools,
+    place: PlaceRef,
+    tool: str,
+    argument: str,
+    calls: Any,
+) -> None:
+    listing_started, noticed, notice_taken = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    left_out: list[ArgumentLeftOut] = []
+
+    async def notifies_while_listing(reply: GateReply) -> None:
+        await reply.open_stream()
+        await reply.acknowledge([STANDING_URI], tools=True)
+        async with asyncio.timeout(LIMIT_SECONDS):
+            await listing_started.wait()
+        await reply.tools_notice()
+        noticed.set()
+        await hangs(reply)
+
+    async def lists_after_the_notice(reply: GateReply) -> None:
+        listing_started.set()
+        async with asyncio.timeout(LIMIT_SECONDS):
+            await notice_taken.wait()
+        await reply.result(
+            ListToolsResult(
+                tools=[
+                    Tool(
+                        name=each.declaration.name,
+                        description=each.declaration.description,
+                        input_schema=each.declaration.parameters,
+                    )
+                    for each in tools.served()
+                ]
+            )
+        )
+
+    gate.script(LISTEN, notifies_while_listing)
+    gate.script(LIST_TOOLS, lists_after_the_notice)
+
+    async with opened(gate, bearer, on_argument_left_out=left_out.append) as session:
+        async with session.listen() as stream:
+            call = asyncio.create_task(calls(session, place))
+            async with asyncio.timeout(LIMIT_SECONDS):
+                await noticed.wait()
+                await anext(stream)
+            notice_taken.set()
+            await call
+
+    assert [argument in sent for sent in tools.called(tool)] == [False]
+    assert ArgumentLeftOut(tool, argument) in left_out
 
 
 # Accepting and declining an invitation.
