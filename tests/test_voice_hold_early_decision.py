@@ -361,6 +361,39 @@ def test_a_choice_plays_in_the_step_that_ends_the_talk_over_before_a_fresh_voice
     assert len(gateway.requests) == 3
 
 
+def test_a_choice_keeps_waiting_while_the_heard_talk_over_changes_nothing(place):
+    voice, gateway = an_answer_of_two_that_is_playing(
+        place, completion("[continue]"), completion("[continue]")
+    )
+    trace = place.trace
+
+    async def hearing(trace):
+        async for event in interjection_while_playing(trace, words="Moment mal"):
+            yield event
+        await trace.until(lambda: trace.count(Woke()) == 2)
+        await trace.settled()
+        yield speaking(("Ben", "Moment mal"))
+        await trace.settled()
+        assert HoldEnded(HoldEnding.CONTINUED) not in trace.events
+        yield speaking()
+        await trace.until(lambda: HoldEnded(HoldEnding.CONTINUED) in trace.entries)
+        voice.release("Eins.")
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice, waking={"Erzähl."}) == RETURNED
+
+    assert trace.events == [
+        Woke(),
+        SentenceStarted("Eins."),
+        Held(),
+        Woke(),
+        HoldEnded(HoldEnding.CONTINUED),
+        SentenceStarted("Zwei."),
+        DecisionEnded(),
+    ]
+    assert len(gateway.requests) == 2
+
+
 def test_a_shorter_voice_while_a_choice_waits_reaches_the_next_decision_only_as_its_line(place):
     voice, gateway = an_answer_of_two_that_is_playing(
         place, completion("[continue]"), completion("Gut.")
