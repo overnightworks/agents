@@ -299,7 +299,8 @@ def test_a_choice_told_as_many_changes_as_counted_or_none_is_not_refused(
     ("texts", "counted"),
     [
         pytest.param(["Moment"], 1, id="a first word"),
-        pytest.param(["Moment", "Moment!"], 1, id="the same word in other letters"),
+        pytest.param(["Moment", "Moment!"], 1, id="the same word with other punctuation"),
+        pytest.param(["Moment", "moment"], 1, id="the same word in other letters"),
         pytest.param(["Moment", "Moment doch"], 2, id="a new word"),
         pytest.param(["", "..."], 0, id="no word"),
     ],
