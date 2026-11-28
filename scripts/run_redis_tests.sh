@@ -33,10 +33,15 @@ load_above_limit() {
     esac
 }
 
+read_load() {
+    cut -d' ' -f1 /proc/loadavg || { echo 'could not read /proc/loadavg' >&2; exit 2; }
+}
+
 wait_for_low_load() {
     local limit waited=0 load
-    limit=$(awk -v cores="$(nproc)" 'BEGIN { print 1.5 * cores }')
-    load=$(cut -d' ' -f1 /proc/loadavg)
+    limit=$(awk -v cores="$(nproc)" 'BEGIN { print 1.5 * cores }') ||
+        { echo 'could not compute the load limit' >&2; exit 2; }
+    load=$(read_load) || exit 2
     while load_above_limit "${load}" "${limit}"; do
         if [[ "${waited}" -ge "${LOAD_WAIT_SECONDS}" ]]; then
             echo "load ${load} stayed above ${limit}" >&2
@@ -44,7 +49,7 @@ wait_for_low_load() {
         fi
         sleep 10
         waited=$((waited + 10))
-        load=$(cut -d' ' -f1 /proc/loadavg)
+        load=$(read_load) || exit 2
     done
 }
 
