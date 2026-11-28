@@ -703,7 +703,7 @@ async def test_a_required_argument_is_never_left_out_whatever_the_app_declares(
         ),
     ],
 )
-async def test_told_changes_goes_to_an_app_that_declares_it_without_listing_the_tools_first(
+async def test_told_changes_goes_to_an_app_that_declares_it(
     gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef, tool: str, call: Any
 ) -> None:
     async with opened(gate, bearer) as session:
@@ -711,7 +711,6 @@ async def test_told_changes_goes_to_an_app_that_declares_it_without_listing_the_
 
     [sent] = tools.called(tool)
     assert sent["told_changes"] == 3
-    assert gate.count(LIST_TOOLS) == 0
 
 
 @pytest.mark.parametrize("tools", [{"undeclared": frozenset({"told_changes"})}], indirect=True)
@@ -749,3 +748,38 @@ async def test_told_changes_is_left_out_of_an_app_declaring_none_and_reported_on
 
     assert [sent.get("told_changes") for sent in tools.called(tool)] == [None, None]
     assert left_out == [ArgumentLeftOut(tool, "told_changes")]
+
+
+@pytest.mark.parametrize("tools", [{"undeclared": frozenset({"told_changes"})}], indirect=True)
+@pytest.mark.parametrize(
+    ("tool", "call"),
+    [
+        pytest.param(
+            CONTINUE_SPEAKING_TOOL,
+            lambda session, place: session.continue_speaking(place, "hold-1", told_changes=3),
+            id="continue_speaking",
+        ),
+        pytest.param(
+            STOP_SPEAKING_TOOL,
+            lambda session, place: session.stop_speaking(place, "hold-1", told_changes=3),
+            id="stop_speaking",
+        ),
+        pytest.param(
+            SPEAK_TOOL,
+            lambda session, place: session.speak(
+                place, "Ja?", interrupted="hold-1", told_changes=3
+            ),
+            id="speak",
+        ),
+    ],
+)
+async def test_told_changes_is_sent_before_the_tools_were_listed_and_never_lists_them_first(
+    gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef, tool: str, call: Any
+) -> None:
+    left_out: list[ArgumentLeftOut] = []
+
+    async with opened(gate, bearer, on_argument_left_out=left_out.append) as session:
+        await call(session, place)
+
+    assert [sent["told_changes"] for sent in tools.called(tool)] == [3]
+    assert left_out == []

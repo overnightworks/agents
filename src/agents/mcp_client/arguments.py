@@ -10,10 +10,12 @@ from agents.tools import JsonObject
 
 ACCEPT_OPTIONAL: Final = frozenset({"figure", "voices", "looks", "looks[].room"})
 """An argument is named by its path: ``looks[].room`` is the ``room`` of each entry of ``looks``."""
-SPEAK_OPTIONAL: Final = frozenset({"style", "interrupted", "keeps_queue"})
+SPEAK_OPTIONAL: Final = frozenset({"style", "interrupted", "keeps_queue", "told_changes"})
+DECISION_OPTIONAL: Final = frozenset({"told_changes"})
 TURN_STATE_OPTIONAL: Final = frozenset({"thinking"})
 """The arguments the runner builds itself that a call may leave out; every other one of the three
-tools is required."""
+tools is required. ``DECISION_OPTIONAL`` is what ``continue_speaking`` and ``stop_speaking`` may
+leave out."""
 
 
 def _property_schemas(schema: JsonValue) -> tuple[JsonObject, ...]:

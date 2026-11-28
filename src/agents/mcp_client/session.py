@@ -32,6 +32,7 @@ from pydantic import SecretStr, ValidationError
 from agents.http_client import policy_client
 from agents.mcp_client.arguments import (
     ACCEPT_OPTIONAL,
+    DECISION_OPTIONAL,
     SPEAK_OPTIONAL,
     TURN_STATE_OPTIONAL,
     declares,
@@ -99,7 +100,7 @@ from agents.member_outcomes import (
     UnrecognisedRefusal,
     UnusableAnswer,
 )
-from agents.member_speaking import require_hold_to_keep_queue
+from agents.member_speaking import require_the_hold_the_sentence_answers
 from agents.skills import (
     SKILLS_EXTENSION,
     SKILLS_GET_METHOD,
@@ -208,6 +209,7 @@ class MemberSession(Protocol):
         interrupted: str | None = None,
         *,
         keeps_queue: bool = False,
+        told_changes: int | None = None,
     ) -> SpeakAnswer | SpeakRefusal:
         """That the sentence starts to play, that the app wrote it at the place instead, or why it
         does not speak it.
@@ -216,24 +218,44 @@ class MemberSession(Protocol):
         sentence answers instead of the held rest; ``keeps_queue``, with ``interrupted``, keeps
         the queue behind the sentence. An app whose ``speak`` does not declare ``keeps_queue``
         is sent the call without it, the tools listed first, and the queue then answers
-        ``stopped``. ``keeps_queue`` without ``interrupted`` raises ``ValueError`` before anything
-        is sent, against every app. An answer that is none of these is an ``UnusableAnswer``.
+        ``stopped``. ``told_changes``, with ``interrupted``, is the ``Interrupted.worded_changes``
+        the decision was told; an app that declares none is sent the call without it, and the app
+        refuses ``stale`` a sentence told fewer than it counted. A sentence that names a hold
+        answers when it plays, so its answer can come late and as ``not_interrupted``.
+        ``keeps_queue`` or ``told_changes`` without ``interrupted`` raises ``ValueError`` before
+        anything is sent, against every app. An answer that is none of these is an
+        ``UnusableAnswer``.
         """
         ...
 
     async def continue_speaking(
-        self, place: PlaceRef, interrupted: str, *, finish: bool = False
+        self,
+        place: PlaceRef,
+        interrupted: str,
+        *,
+        finish: bool = False,
+        told_changes: int | None = None,
     ) -> ContinueSpeakingRefusal | Literal[Delivery.NOT_SERVED] | None:
         """``None`` when the held sentence goes on, else the refusal.
 
-        With ``finish``, only the held sentence's rest plays and the queue is dropped. It is sent
-        only to an app whose ``continue_speaking`` declares ``finish``, the tools listed first;
-        otherwise nothing is sent and the outcome is ``Delivery.NOT_SERVED``.
+        The answer comes when the sentence plays on, which waits until no person of the hold's
+        talk-over speaks, so it can come late and as ``not_interrupted``. With ``finish``, only
+        the held sentence's rest plays and the queue is dropped. It is sent only to an app whose
+        ``continue_speaking`` declares ``finish``, the tools listed first; otherwise nothing is
+        sent and the outcome is ``Delivery.NOT_SERVED``. ``told_changes`` is the
+        ``Interrupted.worded_changes`` the decision was told; an app that declares none is sent
+        the call without it, and the app refuses ``stale`` a call told fewer than it counted.
         """
         ...
 
-    async def stop_speaking(self, place: PlaceRef, interrupted: str) -> StopSpeakingRefusal | None:
-        """``None`` when the hold ended with nothing more said, else the refusal."""
+    async def stop_speaking(
+        self, place: PlaceRef, interrupted: str, *, told_changes: int | None = None
+    ) -> StopSpeakingRefusal | None:
+        """``None`` when the hold ended with nothing more said, else the refusal.
+
+        ``told_changes`` is the ``Interrupted.worded_changes`` the decision was told; an app that
+        declares none is sent the call without it, and the app refuses ``stale`` a call told
+        fewer than it counted. A stop that ends no decision of its own names none."""
         ...
 
     async def set_turn_state(self, statement: SetTurnStateArguments) -> SetTurnStateRefusal | None:
@@ -429,8 +451,11 @@ class _McpMemberSession:
         interrupted: str | None = None,
         *,
         keeps_queue: bool = False,
+        told_changes: int | None = None,
     ) -> SpeakAnswer | SpeakRefusal:
-        require_hold_to_keep_queue(keeps_queue=keeps_queue, interrupted=interrupted)
+        require_the_hold_the_sentence_answers(
+            interrupted=interrupted, keeps_queue=keeps_queue, told_changes=told_changes
+        )
         # The arguments are the wire shape of ``SpeakArguments``, built unvalidated: a refusal of a
         # sentence is the app's, and a validation error would carry the sentence.
         arguments: JsonObject = {"place": place.model_dump(mode="json"), "text": sentence}
@@ -440,25 +465,40 @@ class _McpMemberSession:
             arguments["interrupted"] = interrupted
         if keeps_queue:
             arguments["keeps_queue"] = True
+        if told_changes is not None:
+            arguments["told_changes"] = told_changes
         result = await self._called_declared(
             SPEAK_TOOL, arguments, optional=SPEAK_OPTIONAL, lists=keeps_queue
         )
         return speak_answer_of(result)
 
     async def continue_speaking(
-        self, place: PlaceRef, interrupted: str, *, finish: bool = False
+        self,
+        place: PlaceRef,
+        interrupted: str,
+        *,
+        finish: bool = False,
+        told_changes: int | None = None,
     ) -> ContinueSpeakingRefusal | Literal[Delivery.NOT_SERVED] | None:
         if finish and not declares(
             (await self._declared_parameters()).get(CONTINUE_SPEAKING_TOOL), "finish"
         ):
             return Delivery.NOT_SERVED
-        result = await self._called(
-            CONTINUE_SPEAKING_TOOL, naming_hold(place, interrupted, finish=finish)
+        result = await self._called_declared(
+            CONTINUE_SPEAKING_TOOL,
+            naming_hold(place, interrupted, finish=finish, told_changes=told_changes),
+            optional=DECISION_OPTIONAL,
         )
         return refusal_in(ContinueSpeakingRefused, result).refused if result.is_error else None
 
-    async def stop_speaking(self, place: PlaceRef, interrupted: str) -> StopSpeakingRefusal | None:
-        result = await self._called(STOP_SPEAKING_TOOL, naming_hold(place, interrupted))
+    async def stop_speaking(
+        self, place: PlaceRef, interrupted: str, *, told_changes: int | None = None
+    ) -> StopSpeakingRefusal | None:
+        result = await self._called_declared(
+            STOP_SPEAKING_TOOL,
+            naming_hold(place, interrupted, told_changes=told_changes),
+            optional=DECISION_OPTIONAL,
+        )
         return refusal_in(StopSpeakingRefused, result).refused if result.is_error else None
 
     async def set_turn_state(self, statement: SetTurnStateArguments) -> SetTurnStateRefusal | None:

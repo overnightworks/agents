@@ -87,10 +87,15 @@ ChangeCount = Annotated[int, Field(ge=1)]
 """A count of worded changes: how many ``Interrupted.worded_changes`` a decision was told."""
 
 
-def require_hold_to_keep_queue(*, keeps_queue: bool, interrupted: str | None) -> None:
-    """Raises ``ValueError`` when ``keeps_queue`` is set without the hold the sentence answers."""
-    if keeps_queue and interrupted is None:
-        raise ValueError("keeps_queue needs the hold the sentence answers")
+def require_the_hold_the_sentence_answers(
+    *, interrupted: str | None, keeps_queue: bool, told_changes: int | None
+) -> None:
+    """Raises ``ValueError`` when ``keeps_queue`` or ``told_changes`` is set without the hold the
+    sentence answers."""
+    if interrupted is None:
+        for name, given in (("keeps_queue", keeps_queue), ("told_changes", told_changes)):
+            if given:
+                raise ValueError(f"{name} needs the hold the sentence answers")
 
 
 class SpeakArguments(StrictModel):
@@ -119,9 +124,11 @@ class SpeakArguments(StrictModel):
 
     @model_validator(mode="after")
     def _keep_the_queue_and_the_count_only_of_a_named_hold(self) -> Self:
-        require_hold_to_keep_queue(keeps_queue=self.keeps_queue, interrupted=self.interrupted)
-        if self.told_changes is not None and self.interrupted is None:
-            raise ValueError("told_changes needs the hold the sentence answers")
+        require_the_hold_the_sentence_answers(
+            interrupted=self.interrupted,
+            keeps_queue=self.keeps_queue,
+            told_changes=self.told_changes,
+        )
         return self
 
 
