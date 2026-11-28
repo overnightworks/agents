@@ -766,8 +766,12 @@
     "continue_speaking": {
       "arguments": {
         "additionalProperties": false,
-        "description": "The arguments of ``continue_speaking``: the place and the hold (``PlaceWindow.interrupted``)\nwhose held sentence goes on.",
+        "description": "The arguments of ``continue_speaking``: the place and the hold (``PlaceWindow.interrupted``)\nwhose held sentence goes on. With ``finish``, only the held sentence's rest plays and the queue\nis dropped, each dropped ``speak`` answering ``stopped``; absent while false, the queue plays\ntoo.",
         "properties": {
+          "finish": {
+            "default": false,
+            "type": "boolean"
+          },
           "interrupted": {
             "minLength": 1,
             "type": "string"
@@ -801,7 +805,7 @@
       "results": [
         {
           "additionalProperties": false,
-          "description": "What ``continue_speaking`` answers on success, as JSON: the held sentence's rest plays,\nfaded back in, then the queue; the field is exactly the JSON ``true``.",
+          "description": "What ``continue_speaking`` answers on success, as JSON: the held sentence's rest plays,\nfaded back in, then the queue unless the call finished; the field is exactly the JSON\n``true``.",
           "properties": {
             "continued": {
               "title": "Continued",
@@ -1146,7 +1150,7 @@
     "speak": {
       "arguments": {
         "additionalProperties": false,
-        "description": "The arguments of ``speak``: the place and one sentence, whose length the app bounds, and\noptionally the ``language`` of that sentence, the ``style`` it should sound in, which the app\npasses on unchanged, and the ``mood`` the agent's figure shows while it speaks; an absent one\nmeans the app's own default, and an app that draws no figure ignores the ``mood``.\n``interrupted`` names the hold (``PlaceWindow.interrupted``) the sentence answers instead of\nthe held rest; without it, a held member refuses the sentence.",
+        "description": "The arguments of ``speak``: the place and one sentence, whose length the app bounds, and\noptionally the ``language`` of that sentence, the ``style`` it should sound in, which the app\npasses on unchanged, and the ``mood`` the agent's figure shows while it speaks; an absent one\nmeans the app's own default, and an app that draws no figure ignores the ``mood``.\n``interrupted`` names the hold (``PlaceWindow.interrupted``) the sentence answers instead of\nthe held rest; without it, a held member refuses the sentence. ``keeps_queue``, valid only with\n``interrupted``, makes the sentence a short own line: it takes the head of the queue and the\nqueued sentences stay behind it, none of them answering ``stopped``; absent while false, the\nsentence replaces the queue. An app that does not declare it leaves the queue to ``stopped``.",
         "properties": {
           "interrupted": {
             "anyOf": [
@@ -1159,6 +1163,10 @@
               }
             ],
             "default": null
+          },
+          "keeps_queue": {
+            "default": false,
+            "type": "boolean"
           },
           "language": {
             "anyOf": [

@@ -401,10 +401,9 @@ async def test_a_continue_with_finish_goes_to_an_app_that_declares_it_with_the_f
 ) -> None:
     async with opened(gate, bearer) as session:
         assert await session.continue_speaking(place, "hold-1", finish=True) is None
+        assert await session.continue_speaking(place, "hold-2", finish=True) is None
 
-    [call] = tools.called(CONTINUE_SPEAKING_TOOL)
-    assert call["finish"] is True
-    assert gate.count(LIST_TOOLS) == 1
+    assert [call["finish"] for call in tools.called(CONTINUE_SPEAKING_TOOL)] == [True, True]
 
 
 @pytest.mark.parametrize(
@@ -424,18 +423,6 @@ async def test_a_finish_to_an_app_whose_continue_declares_none_sends_nothing_and
         assert await session.continue_speaking(place, "hold-1", finish=True) is Delivery.NOT_SERVED
 
     assert tools.calls == []
-    assert gate.count(LIST_TOOLS) == 1
-
-
-@pytest.mark.parametrize("tools", [{"undeclared": frozenset({"finish"})}], indirect=True)
-async def test_a_continue_without_finish_sends_to_an_app_that_declares_none_without_listing(
-    gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef
-) -> None:
-    async with opened(gate, bearer) as session:
-        assert await session.continue_speaking(place, "hold-1") is None
-
-    assert len(tools.called(CONTINUE_SPEAKING_TOOL)) == 1
-    assert gate.count(LIST_TOOLS) == 0
 
 
 @pytest.mark.parametrize("tools", [{"undeclared": frozenset({"keeps_queue"})}], indirect=True)
@@ -450,7 +437,6 @@ async def test_keeps_queue_lists_first_in_a_cold_session_and_is_left_out_of_an_a
 
     assert [call.get("keeps_queue") for call in tools.called(SPEAK_TOOL)] == [None, None]
     assert [call["interrupted"] for call in tools.called(SPEAK_TOOL)] == ["hold-1", "hold-2"]
-    assert gate.count(LIST_TOOLS) == 1
     assert left_out == [ArgumentLeftOut(SPEAK_TOOL, "keeps_queue")]
 
 

@@ -76,9 +76,9 @@ class UnrecognisedRefusal(StrEnum):
     UNRECOGNISED = "unrecognised"
 
 
-class DeclineOutcome(Enum):
-    """How a decline that was not refused ended: sent, or left to run out because the app lists no
-    tool to send it with."""
+class Delivery(Enum):
+    """How a call that was not refused ended: ``SENT``, or ``NOT_SERVED``, because the app does not
+    serve what the call needs, so nothing was sent."""
 
     SENT = auto()
     NOT_SERVED = auto()

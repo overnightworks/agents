@@ -10,7 +10,7 @@ from agents.tools import JsonObject
 
 ACCEPT_OPTIONAL: Final = frozenset({"figure", "voices", "looks", "looks[].room"})
 """An argument is named by its path: ``looks[].room`` is the ``room`` of each entry of ``looks``."""
-SPEAK_OPTIONAL: Final = frozenset({"style", "interrupted"})
+SPEAK_OPTIONAL: Final = frozenset({"style", "interrupted", "keeps_queue"})
 TURN_STATE_OPTIONAL: Final = frozenset({"thinking"})
 """The arguments the runner builds itself that a call may leave out; every other one of the three
 tools is required."""
@@ -31,6 +31,11 @@ def _property_schemas(schema: JsonValue) -> tuple[JsonObject, ...]:
             )
     found.extend(_property_schemas(schema.get("items")))
     return tuple(found)
+
+
+def declares(schema: JsonValue, argument: str) -> bool:
+    """Whether the tool's declared ``schema`` names ``argument`` at its top level."""
+    return any(argument in properties for properties in _property_schemas(schema))
 
 
 def split_undeclared(
