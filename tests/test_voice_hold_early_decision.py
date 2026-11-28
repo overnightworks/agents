@@ -101,10 +101,10 @@ def test_a_talk_over_line_that_repeats_what_the_early_decision_was_told_wakes_no
         async for event in interjection_while_playing(trace, words="Moment mal"):
             yield event
         await trace.until(lambda: trace.count(Woke()) == 2)
+        yield a_line(2, "Moment mal.", name="Ben")
         yield speaking()
         trace.record(("decided",))
         await trace.until(lambda: HoldEnded(HoldEnding.CONTINUED) in trace.entries)
-        yield a_line(2, "Moment mal.", name="Ben")
         voice.release("Eins.")
         await trace.settled()
         assert trace.count(DecisionEnded()) == 1
@@ -116,6 +116,34 @@ def test_a_talk_over_line_that_repeats_what_the_early_decision_was_told_wakes_no
     assert trace.count(Woke()) == 3
     assert [text for text, _ in trace.asked] == ["Erzähl.", "Und weiter?"]
     assert last_user_message(gateway, 2)[-2:] == ["Moment mal.", "Und weiter?"]
+
+
+def test_a_told_partial_that_ends_with_no_line_does_not_silence_a_later_line_of_its_words(place):
+    trace = place.trace
+    voice = RecordingVoice(trace, held={"Eins."})
+    gateway = PacedGateway(
+        trace,
+        [piece("Eins. Zwei."), finish()],
+        [after(trace, ("decided",)), piece("[continue]"), finish()],
+        [piece("Gern."), finish()],
+    )
+
+    async def hearing(trace):
+        async for event in interjection_while_playing(trace, words="Moment mal"):
+            yield event
+        await trace.until(lambda: trace.count(Woke()) == 2)
+        yield speaking()
+        trace.record(("decided",))
+        await trace.until(lambda: HoldEnded(HoldEnding.CONTINUED) in trace.entries)
+        voice.release("Eins.")
+        await trace.settled()
+        yield a_line(2, "Moment mal.", name="Ben")
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert [text for text, _ in trace.asked] == ["Erzähl.", "Moment mal."]
+    assert trace.played[-1] == "Gern."
 
 
 def test_a_line_with_new_words_before_the_choice_makes_it_stale_and_the_next_decision_is_told_it(

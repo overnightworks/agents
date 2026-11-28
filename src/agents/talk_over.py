@@ -70,6 +70,7 @@ class TalkOver:
         self._began_in_span.pop(key, None)
         self._speaking.discard(key)
         self._standing.pop(key, None)
+        self._told.pop(key, None)
 
     def in_utterance(self, key: str) -> bool:
         """The key's utterance began and neither its line nor its end came since."""
@@ -110,7 +111,7 @@ class TalkOver:
 
     def told(self) -> ToldTalkOver:
         """What a decision is told: the count and the standing partials with words, which a line
-        of theirs may repeat later without a change."""
+        of theirs may repeat until their utterance ends, without a change."""
         speech = tuple(
             PartialSpeech(name=key, text=text)
             for key, text in self._standing.items()

@@ -365,7 +365,6 @@ def test_a_line_tells_whether_it_repeats_what_the_decision_was_told(
 ) -> None:
     member = held_while_speaking(SECOND, text="Moment doch")
     member.decision_opens()
-    member.utterance_ended("ann")
 
     assert member.hear_finished("ann", line) is repeats
     assert member.worded_changes == (1 if repeats else 2)
