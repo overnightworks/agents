@@ -737,7 +737,7 @@ def test_worded_changes_and_told_changes_are_absent_while_unset() -> None:
     )
 
 
-@pytest.mark.parametrize(
+CHANGE_COUNT_RECORDS = pytest.mark.parametrize(
     ("record", "wire"),
     [
         pytest.param(Interrupted, interrupted_wire, id="worded_changes"),
@@ -750,19 +750,35 @@ def test_worded_changes_and_told_changes_are_absent_while_unset() -> None:
         ),
     ],
 )
+
+
+def count_field(record: type[Any]) -> str:
+    return "worded_changes" if record is Interrupted else "told_changes"
+
+
+@CHANGE_COUNT_RECORDS
 @pytest.mark.parametrize("count", [1, 7], ids=["one", "seven"])
-def test_a_count_of_changes_is_read_back_and_a_count_below_one_is_refused(
-    record: type[Any], wire: Any, count: int
-) -> None:
-    name = "worded_changes" if record is Interrupted else "told_changes"
+def test_a_count_of_changes_is_read_back(record: type[Any], wire: Any, count: int) -> None:
+    name = count_field(record)
 
     read = record.model_validate_json(json.dumps(wire(**{name: count})))
 
     assert json.loads(read.model_dump_json())[name] == count
-    for refused in (0, -1, "1", 1.5):
-        refused_wire = json.dumps(wire(**{name: refused}))
-        with pytest.raises(ValidationError):
-            record.model_validate_json(refused_wire)
+
+
+@CHANGE_COUNT_RECORDS
+@pytest.mark.parametrize(
+    "refused",
+    [0, -1, "1", 1.5],
+    ids=["zero", "negative", "text", "fraction"],
+)
+def test_a_count_of_changes_below_one_or_not_a_whole_number_is_refused(
+    record: type[Any], wire: Any, refused: object
+) -> None:
+    refused_wire = json.dumps(wire(**{count_field(record): refused}))
+
+    with pytest.raises(ValidationError):
+        record.model_validate_json(refused_wire)
 
 
 def test_told_changes_of_a_speak_without_the_hold_it_answers_is_refused() -> None:
