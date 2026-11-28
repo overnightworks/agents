@@ -4,7 +4,55 @@
     {
       "run": "rel-0.84.0",
       "start_tip": "e937c64bbda91848f992966810d4d59c35046384",
-      "follows": false
+      "follows": false,
+      "end_tip": "db7c362d530b9864e987c0abf4f80c681c844732",
+      "ran": [
+        "build",
+        "fix",
+        "review"
+      ],
+      "record": {
+        "version": 1,
+        "stages": {
+          "build": "haiku/medium",
+          "fix": "opus/medium",
+          "review": "sonnet/high",
+          "test": "none",
+          "gate": "none",
+          "land": "haiku/low"
+        },
+        "fix_rounds": {
+          "review": 1,
+          "gate": 0,
+          "ci": 0,
+          "test": 0
+        },
+        "blocking": {
+          "review": 1,
+          "gate": 0,
+          "ci": 0,
+          "test": 0
+        },
+        "misses": {
+          "review": 0,
+          "gate": 0,
+          "ci": 0,
+          "test": 0
+        },
+        "verdicts": [
+          {
+            "stage": "review",
+            "verdict": "revise",
+            "sha": "db7c362d530b9864e987c0abf4f80c681c844732"
+          },
+          {
+            "stage": "review",
+            "verdict": "approve",
+            "sha": "db7c362d530b9864e987c0abf4f80c681c844732"
+          }
+        ],
+        "risk": "normal"
+      }
     }
   ]
 }
