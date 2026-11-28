@@ -445,29 +445,31 @@ async def test_keeps_queue_lists_first_in_a_cold_session_and_is_left_out_of_an_a
 @pytest.mark.parametrize(
     "tools",
     [
-        pytest.param({}, id="an-app-declaring-keeps-queue"),
-        pytest.param({"undeclared": frozenset({"keeps_queue"})}, id="an-app-declaring-none"),
+        pytest.param({}, id="an-app-declaring-the-argument"),
+        pytest.param(
+            {"undeclared": frozenset({"keeps_queue", "told_changes"})}, id="an-app-declaring-none"
+        ),
     ],
     indirect=True,
 )
-async def test_keeps_queue_without_the_hold_is_refused_before_anything_is_sent(
-    gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef
+@pytest.mark.parametrize(
+    "argument",
+    [
+        pytest.param({"keeps_queue": True}, id="keeps_queue"),
+        pytest.param({"told_changes": 0}, id="a-zero-count"),
+        pytest.param({"told_changes": 3}, id="a-count"),
+    ],
+)
+async def test_a_hold_argument_without_the_hold_is_refused_before_anything_is_sent(
+    gate: ScriptedGate,
+    bearer: SecretStr,
+    tools: MemberTools,
+    place: PlaceRef,
+    argument: dict[str, bool | int],
 ) -> None:
     async with opened(gate, bearer) as session:
-        with pytest.raises(ValueError, match="keeps_queue"):
-            await session.speak(place, "first", keeps_queue=True)
-
-    assert tools.calls == []
-    assert gate.count(LIST_TOOLS) == 0
-
-
-@pytest.mark.parametrize("told_changes", [0, 3], ids=["a zero count", "a count"])
-async def test_told_changes_without_the_hold_is_refused_before_anything_is_sent(
-    gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef, told_changes: int
-) -> None:
-    async with opened(gate, bearer) as session:
-        with pytest.raises(ValueError, match="told_changes"):
-            await session.speak(place, "first", told_changes=told_changes)
+        with pytest.raises(ValueError, match=next(iter(argument))):
+            await session.speak(place, "first", **argument)  # type: ignore[arg-type]
 
     assert tools.calls == []
     assert gate.count(LIST_TOOLS) == 0
