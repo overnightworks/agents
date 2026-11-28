@@ -66,6 +66,7 @@ source_modules =
     agents.member_speaking
     agents.mcp_wire
     agents.skills
+    agents.talk_over
     agents.tools
     agents.turn
     agents.turn_events
@@ -107,6 +108,7 @@ source_modules =
     agents.member_speaking
     agents.mcp_wire
     agents.skills
+    agents.talk_over
     agents.tools
     agents.turn
     agents.turn_events
@@ -144,6 +146,7 @@ source_modules =
     agents.member_speaking
     agents.mcp_wire
     agents.skills
+    agents.talk_over
     agents.tools
     agents.turn
     agents.turn_events
@@ -194,6 +197,7 @@ source_modules =
     agents.member_speaking
     agents.mcp_wire
     agents.skills
+    agents.talk_over
     agents.tools
     agents.turn
     agents.turn_events
@@ -231,6 +235,7 @@ source_modules =
     agents.member_speaking
     agents.mcp_wire
     agents.skills
+    agents.talk_over
     agents.tools
     agents.turn
     agents.turn_events
@@ -261,6 +266,7 @@ source_modules =
     agents.member_place
     agents.member_presentation
     agents.member_speaking
+    agents.talk_over
 forbidden_modules =
     agents.agent_file
     agents.backend
