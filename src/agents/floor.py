@@ -500,6 +500,7 @@ class Floor[Said]:
             self._reply.clear()
         if self._talk.talk_over_speaks:
             self._choice = _WaitingChoice(choice, set(self._talk.speaking))
+            self._deciding = True  # the wire's speak enters its sentence after this call
             return (Wait(),)
         return self._ending(choice)
 

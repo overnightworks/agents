@@ -83,6 +83,36 @@ def test_a_playing_choice_waits_while_a_talk_over_person_speaks_and_plays_once_t
     assert member.waiting == waiting
 
 
+@pytest.mark.parametrize(
+    ("choice", "steps", "waiting"),
+    [
+        pytest.param(
+            HoldEnding.ANSWERED,
+            (Drop(FIRST, (SECOND,), CUT),),
+            (REPLY,),
+            id="a speak naming the hold",
+        ),
+        pytest.param(
+            HoldEnding.SAID_THEN_CONTINUED,
+            (Drop(FIRST, (), CUT),),
+            (REPLY, SECOND),
+            id="a short line",
+        ),
+    ],
+)
+def test_the_wires_speak_enters_its_sentence_as_the_reply_of_the_choice_that_waits(
+    choice: HoldChoice, steps: tuple[object, ...], waiting: tuple[str, ...]
+) -> None:
+    member = held_while_speaking(SECOND)
+    assert member.end_hold(choice) == (Wait(),)
+    member.enter(REPLY)
+    member.utterance_ended("ann")
+
+    assert member.play_choice() == steps
+    member.reply_ended()
+    assert member.waiting == waiting
+
+
 def test_a_waiting_choice_applies_nothing_until_it_plays() -> None:
     member = held_while_speaking(SECOND)
     _decides(member, HoldEnding.ANSWERED, REPLY)
