@@ -22,7 +22,7 @@ fi
 wait_for_low_load() {
     local limit waited=0 load
     limit=$(awk -v cores="$(nproc)" 'BEGIN { print 1.5 * cores }')
-    while load=$(cut -d' ' -f1 /proc/loadavg) && awk -v load="${load}" -v limit="${limit}" 'BEGIN { exit !(load > limit) }'; do
+    while load=$(cut -d' ' -f1 /proc/loadavg) && awk -v current="${load}" -v limit="${limit}" 'BEGIN { exit !(current > limit) }'; do
         if [[ "${waited}" -ge "${LOAD_WAIT_SECONDS}" ]]; then
             echo "load ${load} stayed above ${limit}" >&2
             exit 1
