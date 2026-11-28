@@ -1563,9 +1563,12 @@ Proved by `tests/test_member.py` (among them
   the continue's steps and answers (`continue_speaking(..., finish)`), and `wordless`, `may_go_on` and
   `went_on`. A `speak` naming the hold ends with `end_hold(ANSWERED)`, or with
   `end_hold(SAID_THEN_CONTINUED)` when it keeps the queue, then `answer_goes_on`, `enter` and, after
-  the second, `reply_ended`. A choice that plays waits in the floor until the talk-over has ended
-  (`play_choice`); a person who begins after it arrived and already speaks at it is reported with
-  `voice_went_on`, the others by their first partial. It holds a member
+  the second, `reply_ended`. A choice that plays waits in the floor while a person of the talk-over
+  speaks (`choice_waits`); the app calls `play_choice()` in the same synchronous step as the event
+  that made `choice_may_play` true, carries out its steps and then calls `answer_goes_on`. It
+  reports `voice_went_on(key)` for a person already speaking at a waiting choice whose voice lasts
+  its bound after it; a fresh speaker's first `hear_partial` comes before any `voice_went_on` of
+  theirs, and voids the choice. It holds a member
   talked over for the bound at once, as Stopping and then Held, stops the playing sentence at its next
   word end or lets it finish under the bound, reports where the sound stopped with the hold's id
   (`sound_stopped_at`), writes `interrupted` with its `place` exactly while it is held, and continues

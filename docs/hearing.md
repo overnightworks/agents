@@ -425,11 +425,12 @@ app proves it.
   failed decision or none drops the rest and nothing more is said.
 
   The loop's choice carries the count its decision was told: when the talk-over said new words
-  since, `[silent]` included, the floor refuses it (`stale`). The loop carries out nothing, closes
+  since, `[silent]` included, the floor refuses it (`Stale`). The loop carries out nothing, closes
   that turn, and opens the next decision at the same place, told as the first. A talk-over line that
   repeats what a decision was told wakes nothing.
 
-  A choice that plays something then waits as HEARING-31 says. While it waits, a talk-over person's
+  A choice that plays something then waits as HEARING-31 says; the loop takes its steps in the
+  step of the hearing event that ended the talk-over, before the next event is heard. While it waits, a talk-over person's
   first partial, or a partial of a person speaking at the choice whose words changed, stands for
   their voice going on for the bound: the choice is void, its turn is closed, and a new hold stands
   at the same place (`Held`), decided as the first. `[silent]` stops at once; a failed or unreadable

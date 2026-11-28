@@ -74,8 +74,9 @@ flowchart TB
   decisions of calling and sending away an agent, pure, on facts the app supplies) and `floor` (who
   talks over an agent, the hold that puts on it, the refusals and answers of the member wire's hold
   and the order of its sentences, pure and in memory, on the turns, partial speech and sentences the
-  voice loop or an app gives; it imports only `member_speaking` from `agents`, and keeps the
-  talk-over's state in `talk_over`, which only `floor` imports); and
+  voice loop or an app gives; it imports `member_speaking` and `talk_over` from `agents`;
+  `talk_over` keeps the talk-over's state, imports only `member_speaking`, and only `floor` imports
+  it); and
   `member_outcomes`, the failures and codes of a call to an app's member endpoint, pure so that a
   runner's decisions read them without the client.
 - The **`backend` extra** adds `httpx2` for `backend.gateway.GatewayBackend`, the port's one
