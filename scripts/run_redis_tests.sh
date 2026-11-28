@@ -21,13 +21,13 @@ fi
 
 # Exit 0 when the load is above the limit, 1 when not; any other awk status ends the script.
 load_above_limit() {
-    local status=0
-    awk -v current="$1" -v limit="$2" 'BEGIN { exit !(current > limit) }' || status=$?
+    local current="$1" limit="$2" status=0
+    awk -v current="${current}" -v limit="${limit}" 'BEGIN { exit !(current > limit) }' || status=$?
     case "${status}" in
         0) return 0 ;;
         1) return 1 ;;
         *)
-            echo "could not compare load $1 with limit $2: awk exited ${status}" >&2
+            echo "could not compare load ${current} with limit ${limit}: awk exited ${status}" >&2
             exit 2
             ;;
     esac
