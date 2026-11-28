@@ -1,7 +1,0 @@
-claim_id = "4da99ecc15794acb8eaa73edc6c745cd"
-agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
-role = "builder"
-base = "a261b61b5a561d4e299a9417f6ee31ce7cfb3930"
-branch = "fix/drop-floor-entry-hopin-1211"
-scope = [".aco/ahead-of-caller.toml"]
-opened_commit = "5ad24dc8d70b4d93f02eb81ff2ae51fb32ca651c"
