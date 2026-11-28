@@ -114,6 +114,20 @@ def test_the_wires_speak_enters_its_sentence_as_the_reply_of_the_choice_that_wai
     assert member.waiting == waiting
 
 
+@pytest.mark.parametrize(
+    "talk_over_speaks", [False, True], ids=["no choice waits", "a person speaks"]
+)
+def test_a_choice_that_may_not_play_cannot_be_taken(talk_over_speaks: bool) -> None:
+    member = held_while_speaking(SECOND)
+    if talk_over_speaks:
+        _decides(member, HoldEnding.CONTINUED, None)
+    else:
+        member.utterance_ended("ann")
+
+    with pytest.raises(ValueError, match="no waiting choice may play"):
+        member.play_choice()
+
+
 def test_a_waiting_choice_applies_nothing_until_it_plays() -> None:
     member = held_while_speaking(SECOND)
     _decides(member, HoldEnding.ANSWERED, REPLY)

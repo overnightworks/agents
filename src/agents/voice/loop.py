@@ -200,7 +200,7 @@ class _Stage:
     ending: asyncio.Future[HoldChoice | None] = field(
         default_factory=lambda: asyncio.get_running_loop().create_future()
     )
-    reading: asyncio.Task[None] | None = None
+    reading: asyncio.Task[None] = field(init=False)
 
     def decide(self, choice: HoldChoice | None) -> None:
         """A hold decision's first opening or sentence ends the hold; later ones change nothing."""
@@ -388,7 +388,7 @@ class _VoiceLoop[Audio]:
 
     def _readings(self) -> list[asyncio.Task[None]]:
         """Every turn of the answer so far, a hold decision's still being written included."""
-        return [stage.reading for stage in self._stages if stage.reading is not None]
+        return [stage.reading for stage in self._stages]
 
     def _finish_answer(self) -> None:
         self._go.set()
@@ -424,10 +424,10 @@ class _VoiceLoop[Audio]:
     def _held_or_done(self, play: asyncio.Task[None]) -> bool:
         return self._floor.holding or play.done()
 
-    async def _stop(self, play: asyncio.Task[None] | None) -> None:
-        if play is not None:
-            play.cancel()
-            await asyncio.wait({play})
+    async def _stop(self, task: asyncio.Task[None]) -> None:
+        """Cancel the task and wait until it has ended."""
+        task.cancel()
+        await asyncio.wait({task})
 
     async def _hold(
         self, stage: _Stage, play: asyncio.Task[None]
@@ -437,12 +437,11 @@ class _VoiceLoop[Audio]:
 
         A decision opens at the first word, while the talk-over may still speak, and decides again
         when its choice was told too few of their words or a voice that goes on voids it."""
-        held_play: asyncio.Task[None] | None = play
         while True:
             place = await self._where_the_sound_stopped()
             await self._until(lambda: not self._floor.wordless or self._floor.may_go_on)
             if self._floor.wordless:
-                return await self._go_on(stage, held_play)
+                return await self._go_on(stage, play)
             await asyncio.wait(self._readings())
             decided = await self._decide_the_hold(place)
             if decided is None:
@@ -452,17 +451,17 @@ class _VoiceLoop[Audio]:
             self._answer.marker = _RECORDED_ENDINGS[reported]
             decision.carried_out = True
             self._reply_over(decision)
-            if not await self._carry_out(steps, held_play):
+            if not await self._carry_out(steps, play):
                 return None
             if leaves_the_turn(choice):
-                await self._stop(held_play)  # also when no sentence is held
+                await self._stop(play)  # also when no sentence is held
                 self._answer.drop_cancelled_paused()
             if choice is HoldEnding.STOPPED:
                 self._finish_answer()
                 return None
             if replies(choice):
-                stage, held_play = decision, None
-            return self._carry_on(stage, held_play)
+                return self._carry_on(decision, None)
+            return self._carry_on(stage, play)
 
     async def _decide_the_hold(
         self, place: HoldPlace
@@ -478,7 +477,7 @@ class _VoiceLoop[Audio]:
         if steps == (Wait(),):
             steps = await self._the_choice_plays()
         if steps is None or isinstance(steps, Stale):
-            await self._close_turn(decision)
+            await self._stop(decision.reading)
             return None
         return decision, reported, choice, steps
 
@@ -490,12 +489,6 @@ class _VoiceLoop[Audio]:
             return await self._choice_decided
         finally:
             self._choice_decided = None
-
-    async def _close_turn(self, stage: _Stage) -> None:
-        """Cancel the stage's turn and wait until it has ended."""
-        if stage.reading is not None:
-            stage.reading.cancel()
-            await asyncio.wait({stage.reading})
 
     def _open_hold(self, place: HoldPlace, told: ToldTalkOver) -> _Stage:
         """Open the one decision on a talk-over over the held answer, the lines heard and what the
@@ -514,9 +507,7 @@ class _VoiceLoop[Audio]:
         if stage.carried_out and stage.reading_ended:
             self._floor.reply_ended()
 
-    async def _carry_out(
-        self, steps: tuple[HoldStep[str], ...], play: asyncio.Task[None] | None
-    ) -> bool:
+    async def _carry_out(self, steps: tuple[HoldStep[str], ...], play: asyncio.Task[None]) -> bool:
         """Carry out an ending's steps in order; ``False`` once the host refused the resume and
         the answer is over. A ``Drop`` needs nothing here: the held turn is stopped once, after
         the steps."""
@@ -526,7 +517,7 @@ class _VoiceLoop[Audio]:
         return True
 
     async def _go_on(
-        self, stage: _Stage, play: asyncio.Task[None] | None
+        self, stage: _Stage, play: asyncio.Task[None]
     ) -> tuple[_Stage, asyncio.Task[None]] | None:
         """End a hold whose talk-over held no word by itself, as ``[continue]`` would; no decision
         is open, so the next one is told the agent went on."""
@@ -548,7 +539,7 @@ class _VoiceLoop[Audio]:
             self._go.set()
         return stage, play
 
-    async def _resumed(self, play: asyncio.Task[None] | None, sentence: str) -> bool:
+    async def _resumed(self, play: asyncio.Task[None], sentence: str) -> bool:
         """Resume the paused sound; ``False`` once the host refused and the answer is over."""
         try:
             await self._voice.resume()

@@ -323,7 +323,7 @@ def test_new_words_while_a_choice_waits_void_it_and_the_hold_is_decided_again_at
     assert [call for call in trace.calls if call[0] == "pause"] == [("pause", "Eins.")]
 
 
-def test_a_choice_plays_in_the_step_of_the_snapshot_that_ends_the_talk_over_before_a_fresh_voice_holds(
+def test_a_choice_plays_in_the_step_that_ends_the_talk_over_before_a_fresh_voice_holds(
     place,
 ):
     voice, gateway = an_answer_of_two_that_is_playing(
