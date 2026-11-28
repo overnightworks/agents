@@ -192,8 +192,9 @@ section; tools and MCP handlers are ports. Nothing defaults; a malformed value f
 `FakeGateway`'s scripted transport, `load_agent` against files, and the person front as an ASGI app
 driven with the SDK's `Client`. Pure rules are called directly; the suite needs no live provider.
 Two processes of a minimal host on real Redis prove the wake, listen record and member lease across
-pods (`scripts/run_redis_tests.sh`). CI measures line coverage of the default suite, which skips
-that layer, and `quality / verdict` holds the import contracts and size and clone ratchets.
+pods (`scripts/run_redis_tests.sh`). CI measures branch coverage of the default suite and of
+the two pods together, judges the floor once on that sum, and `quality / verdict` holds the
+import contracts and size and clone ratchets.
 
 ## Constraints and reasons
 
