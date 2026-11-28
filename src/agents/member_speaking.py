@@ -93,9 +93,10 @@ def require_the_hold_the_sentence_answers(
     """Raises ``ValueError`` when ``keeps_queue`` or ``told_changes`` is set without the hold the
     sentence answers."""
     if interrupted is None:
-        for name, given in (("keeps_queue", keeps_queue), ("told_changes", told_changes)):
-            if given:
-                raise ValueError(f"{name} needs the hold the sentence answers")
+        if keeps_queue:
+            raise ValueError("keeps_queue needs the hold the sentence answers")
+        if told_changes is not None:
+            raise ValueError("told_changes needs the hold the sentence answers")
 
 
 class SpeakArguments(StrictModel):

@@ -461,6 +461,18 @@ async def test_keeps_queue_without_the_hold_is_refused_before_anything_is_sent(
     assert gate.count(LIST_TOOLS) == 0
 
 
+@pytest.mark.parametrize("told_changes", [0, 3], ids=["a zero count", "a count"])
+async def test_told_changes_without_the_hold_is_refused_before_anything_is_sent(
+    gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef, told_changes: int
+) -> None:
+    async with opened(gate, bearer) as session:
+        with pytest.raises(ValueError, match="told_changes"):
+            await session.speak(place, "first", told_changes=told_changes)
+
+    assert tools.calls == []
+    assert gate.count(LIST_TOOLS) == 0
+
+
 async def test_keeps_queue_goes_to_an_app_that_declares_it(
     gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef
 ) -> None:
@@ -681,7 +693,7 @@ async def test_a_required_argument_is_never_left_out_whatever_the_app_declares(
     assert {"place", "invitation", "epoch"} <= set(json.loads(json.dumps(sent)))
 
 
-@pytest.mark.parametrize(
+TOLD_CHANGES_CALLS = pytest.mark.parametrize(
     ("tool", "call"),
     [
         pytest.param(
@@ -703,6 +715,9 @@ async def test_a_required_argument_is_never_left_out_whatever_the_app_declares(
         ),
     ],
 )
+
+
+@TOLD_CHANGES_CALLS
 async def test_told_changes_goes_to_an_app_that_declares_it(
     gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef, tool: str, call: Any
 ) -> None:
@@ -714,28 +729,7 @@ async def test_told_changes_goes_to_an_app_that_declares_it(
 
 
 @pytest.mark.parametrize("tools", [{"undeclared": frozenset({"told_changes"})}], indirect=True)
-@pytest.mark.parametrize(
-    ("tool", "call"),
-    [
-        pytest.param(
-            CONTINUE_SPEAKING_TOOL,
-            lambda session, place: session.continue_speaking(place, "hold-1", told_changes=3),
-            id="continue_speaking",
-        ),
-        pytest.param(
-            STOP_SPEAKING_TOOL,
-            lambda session, place: session.stop_speaking(place, "hold-1", told_changes=3),
-            id="stop_speaking",
-        ),
-        pytest.param(
-            SPEAK_TOOL,
-            lambda session, place: session.speak(
-                place, "Ja?", interrupted="hold-1", told_changes=3
-            ),
-            id="speak",
-        ),
-    ],
-)
+@TOLD_CHANGES_CALLS
 async def test_told_changes_is_left_out_of_an_app_declaring_none_and_reported_once(
     gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef, tool: str, call: Any
 ) -> None:
@@ -751,28 +745,7 @@ async def test_told_changes_is_left_out_of_an_app_declaring_none_and_reported_on
 
 
 @pytest.mark.parametrize("tools", [{"undeclared": frozenset({"told_changes"})}], indirect=True)
-@pytest.mark.parametrize(
-    ("tool", "call"),
-    [
-        pytest.param(
-            CONTINUE_SPEAKING_TOOL,
-            lambda session, place: session.continue_speaking(place, "hold-1", told_changes=3),
-            id="continue_speaking",
-        ),
-        pytest.param(
-            STOP_SPEAKING_TOOL,
-            lambda session, place: session.stop_speaking(place, "hold-1", told_changes=3),
-            id="stop_speaking",
-        ),
-        pytest.param(
-            SPEAK_TOOL,
-            lambda session, place: session.speak(
-                place, "Ja?", interrupted="hold-1", told_changes=3
-            ),
-            id="speak",
-        ),
-    ],
-)
+@TOLD_CHANGES_CALLS
 async def test_told_changes_is_sent_before_the_tools_were_listed_and_never_lists_them_first(
     gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef, tool: str, call: Any
 ) -> None:
