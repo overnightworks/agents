@@ -99,6 +99,7 @@ from agents.member_outcomes import (
     UnrecognisedRefusal,
     UnusableAnswer,
 )
+from agents.member_speaking import require_hold_to_keep_queue
 from agents.skills import (
     SKILLS_EXTENSION,
     SKILLS_GET_METHOD,
@@ -215,7 +216,8 @@ class MemberSession(Protocol):
         sentence answers instead of the held rest; ``keeps_queue``, with ``interrupted``, keeps
         the queue behind the sentence. An app whose ``speak`` does not declare ``keeps_queue``
         is sent the call without it, the tools listed first, and the queue then answers
-        ``stopped``. An answer that is none of these is an ``UnusableAnswer``.
+        ``stopped``. ``keeps_queue`` without ``interrupted`` raises ``ValueError`` before anything
+        is sent, against every app. An answer that is none of these is an ``UnusableAnswer``.
         """
         ...
 
@@ -430,6 +432,7 @@ class _McpMemberSession:
     ) -> SpeakAnswer | SpeakRefusal:
         # The arguments are the wire shape of ``SpeakArguments``, built unvalidated: a refusal of a
         # sentence is the app's, and a validation error would carry the sentence.
+        require_hold_to_keep_queue(keeps_queue=keeps_queue, interrupted=interrupted)
         arguments: JsonObject = {"place": place.model_dump(mode="json"), "text": sentence}
         if style is not None:
             arguments["style"] = style

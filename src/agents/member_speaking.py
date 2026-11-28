@@ -75,6 +75,12 @@ SpokenLanguage = Annotated[str, StringConstraints(pattern=r"^[a-z]{2}$")]
 decision."""
 
 
+def require_hold_to_keep_queue(*, keeps_queue: bool, interrupted: str | None) -> None:
+    """Raises ``ValueError`` when ``keeps_queue`` is set without the hold the sentence answers."""
+    if keeps_queue and interrupted is None:
+        raise ValueError("keeps_queue needs the hold the sentence answers")
+
+
 class SpeakArguments(StrictModel):
     """The arguments of ``speak``: the place and one sentence, whose length the app bounds, and
     optionally the ``language`` of that sentence, the ``style`` it should sound in, which the app
@@ -98,8 +104,7 @@ class SpeakArguments(StrictModel):
 
     @model_validator(mode="after")
     def _keep_the_queue_only_of_a_named_hold(self) -> Self:
-        if self.keeps_queue and self.interrupted is None:
-            raise ValueError("keeps_queue needs the hold the sentence answers")
+        require_hold_to_keep_queue(keeps_queue=self.keeps_queue, interrupted=self.interrupted)
         return self
 
 

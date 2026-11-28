@@ -442,6 +442,25 @@ async def test_keeps_queue_lists_first_in_a_cold_session_and_is_left_out_of_an_a
     assert left_out == [ArgumentLeftOut(SPEAK_TOOL, "keeps_queue")]
 
 
+@pytest.mark.parametrize(
+    "tools",
+    [
+        pytest.param({}, id="an-app-declaring-keeps-queue"),
+        pytest.param({"undeclared": frozenset({"keeps_queue"})}, id="an-app-declaring-none"),
+    ],
+    indirect=True,
+)
+async def test_keeps_queue_without_the_hold_is_refused_before_anything_is_sent(
+    gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef
+) -> None:
+    async with opened(gate, bearer) as session:
+        with pytest.raises(ValueError, match="keeps_queue"):
+            await session.speak(place, "first", keeps_queue=True)
+
+    assert tools.calls == []
+    assert gate.count(LIST_TOOLS) == 0
+
+
 async def test_keeps_queue_goes_to_an_app_that_declares_it(
     gate: ScriptedGate, bearer: SecretStr, tools: MemberTools, place: PlaceRef
 ) -> None:
