@@ -1,8 +1,0 @@
-claim_id = "692b9930acd04f948b65e0ec69cdd439"
-agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
-role = "builder"
-base = "ea5d324c646296e802f20dab06cb7323286d4e06"
-branch = "claude/issue-1197-one-vocabulary-of-the-agent-s-choices-at"
-scope = [".aco/ahead-of-caller.toml", "docs/connector.md", "docs/hearing.md", "scripts/member-tool-wire.json", "src/agents/floor.py", "src/agents/mcp_client/arguments.py", "src/agents/mcp_client/results.py", "src/agents/mcp_client/session.py", "src/agents/member_outcomes.py", "src/agents/member_speaking.py", "src/agents/voice/__init__.py", "src/agents/voice/loop.py", "src/agents/voice/reply.py", "tests"]
-opened_commit = "08545b0218de9bdbb015e19275fa2d16fa9f4626"
-whole_reason = "One vocabulary of the agent's hold choices crosses the floor, the voice loop's reader and effects, and the member wire's arguments and client, and v3's S3a keeps them in one change so no side ships a choice the other cannot read"
