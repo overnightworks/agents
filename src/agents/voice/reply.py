@@ -4,6 +4,8 @@ This module is the one owner of the marker words and of the reply's rules (``REP
 the protocol text is composed from them.
 A reply is read per round: a round opening with ``[`` holds until its marker
 closes within 16 characters, and any other round is speech, released sentence by sentence.
+A reader of a hold decision reads ``[continue]`` as a bare marker once its round ends, and as the
+opening of a short own line, ``ContinueSaying``, at the first word after it.
 """
 
 from __future__ import annotations
@@ -55,8 +57,11 @@ HOLD_RULES: Final = (
     'not known how far it was heard, "sentence" is the whole sentence); without "heard", no '
     'sentence was left part way. "unsaid" lists the sentences you had written and not yet '
     f"said. Open that reply with [{Marker.CONTINUE}] to go on from where you stopped, "
-    f"[{Marker.FINISH}] to finish the sentence you were saying and stop, {SILENT_REPLY} to stop, "
-    "or with the words to say instead, which stop what you were saying. A line with the key "
+    f"[{Marker.FINISH}] to finish the sentence you were saying and stop, "
+    f"[{Marker.CONTINUE}] followed by your own words to say them instead of the rest of that "
+    f"sentence and then go on with what you had not yet said, {SILENT_REPLY} to stop, or with "
+    f"the words to say instead, which stop what you were saying. Words after [{Marker.FINISH}] "
+    f"or {SILENT_REPLY}, and every later round of that reply, are not said. A line with the key "
     '"went_on" says that a sound without words held you and you went on by yourself from where '
     "you stopped."
 )
@@ -139,17 +144,24 @@ class SentenceRelease:
 
 
 @dataclass(frozen=True)
+class ContinueSaying:
+    """A hold decision's ``[continue]`` that words follow: those words are the reply's first
+    sentences, said instead of the held sentence's rest, before the sentences that waited."""
+
+
+@dataclass(frozen=True)
 class Reading:
-    """What one event of the turn released: whole sentences, and a round's marker once read."""
+    """What one event of the turn released: whole sentences, and a round's opening once read."""
 
     sentences: tuple[str, ...] = ()
-    opening: StayedSilent | ReplyUnreadable | HoldMarker | None = None
+    opening: StayedSilent | ReplyUnreadable | HoldMarker | ContinueSaying | None = None
 
 
 class _Round(Enum):
     OPENING = auto()
     SPEECH = auto()
     MUTED = auto()
+    CONTINUING = auto()
 
 
 class ReplyReader:
@@ -160,24 +172,40 @@ class ReplyReader:
     ASCII lower case, is the marker. ``silent`` mutes the round; any other word, no ``]`` in
     reach or a round that ends first mutes it as unreadable. Any other round is speech, and a
     ``[`` inside it is text, except that a sentence that is nothing but the ``silent`` marker is
-    dropped; the sentences before it were released and are spoken. A reader made with
-    ``holding`` also reads ``continue`` and ``finish`` as their markers, which mute the round
-    too; any other reader reads them as unreadable.
+    dropped; the sentences before it were released and are spoken.
+
+    A reader made with ``holding`` also reads ``continue`` and ``finish``; any other reader reads
+    them as unreadable. ``finish`` mutes its round. ``continue`` waits for what follows it: a
+    non-space character makes it ``ContinueSaying`` and the rest of the round speech; the end of
+    the round, or ``ended`` for a turn that ended without one, makes it the bare marker. Every
+    round after one whose opening was read is muted.
     """
 
     def __init__(self, *, holding: bool = False) -> None:
         self._holding = holding
+        self._opened = False
         self._start_round()
 
     def read(self, event: TurnEvent) -> Reading:
         if isinstance(event, AssistantTextEvent):
-            return self._piece(event.text)
+            return self._noted(self._piece(event.text))
         if isinstance(event, ToolCallEvent | FinalEvent):
-            return self._end_round()
+            reading = self._noted(self._end_round())
+            self._start_round()
+            return reading
         return Reading()
 
+    def ended(self) -> Reading:
+        """What the turn's end releases when it came without the end of a round: a bare
+        ``continue`` still waiting for words."""
+        return self._noted(self._end_round()) if self._round is _Round.CONTINUING else Reading()
+
+    def _noted(self, reading: Reading) -> Reading:
+        self._opened = self._opened or reading.opening is not None
+        return reading
+
     def _start_round(self) -> None:
-        self._round = _Round.OPENING
+        self._round = _Round.MUTED if self._holding and self._opened else _Round.OPENING
         self._opening = ""
         self._release = SentenceRelease(sentences.split_sentences)
 
@@ -186,6 +214,8 @@ class ReplyReader:
             return Reading(_spoken(self._release.feed(text)))
         if self._round is _Round.MUTED:
             return Reading()
+        if self._round is _Round.CONTINUING:
+            return self._continuing(text)
         self._opening = (self._opening + text).lstrip()
         if not self._opening:
             return Reading()
@@ -193,19 +223,29 @@ class ReplyReader:
             self._round = _Round.SPEECH
             return Reading(_spoken(self._release.feed(self._opening)))
         opening = _marker_of(self._opening, holding=self._holding)
+        if opening is Marker.CONTINUE:
+            self._round = _Round.CONTINUING
+            return self._continuing(self._opening.partition(_MARKER_CLOSE)[2])
         if opening is not None:
             self._round = _Round.MUTED
         return Reading(opening=opening)
 
+    def _continuing(self, text: str) -> Reading:
+        """Text after a ``[continue]``: the first non-space character opens the words it says."""
+        words = text.lstrip()
+        if not words:
+            return Reading()
+        self._round = _Round.SPEECH
+        return Reading(_spoken(self._release.feed(words)), opening=ContinueSaying())
+
     def _end_round(self) -> Reading:
         if self._round is _Round.SPEECH:
-            reading = Reading(_spoken(self._release.flush()))
-        elif self._round is _Round.OPENING and self._opening:
-            reading = Reading(opening=ReplyUnreadable())
-        else:
-            reading = Reading()
-        self._start_round()
-        return reading
+            return Reading(_spoken(self._release.flush()))
+        if self._round is _Round.CONTINUING:
+            return Reading(opening=Marker.CONTINUE)
+        if self._round is _Round.OPENING and self._opening:
+            return Reading(opening=ReplyUnreadable())
+        return Reading()
 
 
 def _marker_of(

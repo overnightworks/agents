@@ -16,7 +16,17 @@ from logline import unit_trace
 
 from agents.agent_file import AgentDefinition, TurnRequest
 from agents.backend import AgentBackend, TurnPerson, TurnStopped
-from agents.floor import AfterAnEnding, Drop, Floor, HoldStep, Start, Wait
+from agents.floor import (
+    AfterAnEnding,
+    Floor,
+    HoldChoice,
+    HoldStep,
+    PlayOn,
+    Start,
+    Wait,
+    leaves_the_turn,
+    replies,
+)
 from agents.member import HoldPlace, PartialSpeech, PlaceEntry, SpokenLanguage, hold_place
 from agents.voice import (
     DecisionEnded,
@@ -39,11 +49,20 @@ from agents.voice import (
 )
 from agents.voice.conversation import Conversation
 from agents.voice.echo import is_echo
-from agents.voice.reply import PROTOCOL_TEXT, SILENT_REPLY, HoldMarker, Marker, Reading, ReplyReader
+from agents.voice.reply import (
+    PROTOCOL_TEXT,
+    SILENT_REPLY,
+    ContinueSaying,
+    HoldMarker,
+    Marker,
+    Reading,
+    ReplyReader,
+)
 
 _RECORDED_ENDINGS: Final[dict[HoldEnding, str | None]] = {
     HoldEnding.CONTINUED: f"[{Marker.CONTINUE}]",
     HoldEnding.FINISHED: f"[{Marker.FINISH}]",
+    HoldEnding.SAID_THEN_CONTINUED: None,
     HoldEnding.STOPPED: SILENT_REPLY,
     HoldEnding.ANSWERED: None,
     HoldEnding.DROPPED: None,
@@ -88,10 +107,11 @@ async def run_voice_loop[Audio](
     While an answer is written or plays, the first partial of a person who started speaking
     during it holds the answer (``Held``) and pauses the sound while hearing goes on; once the
     sound has stopped, that talk-over has ended and the held turn has been read, one decision, told
-    where the sound stopped, ends the hold with ``[continue]``, ``[finish]``, ``[silent]`` or new
-    speech (``HoldEnded``); without it the rest is dropped, and a talk-over with no word ends its
-    hold by itself once nobody speaks (``WENT_ON``). Each decision a waking line started ends with
-    one ``DecisionEnded``, its holds included. A sentence renders in the answered line's language.
+    where the sound stopped, ends the hold with ``[continue]``, ``[continue]`` followed by words,
+    ``[finish]``, ``[silent]`` or new speech (``HoldEnded``); without it the rest is dropped, and
+    a talk-over with no word ends its hold by itself once nobody speaks (``WENT_ON``). Each
+    decision a waking line started ends with one ``DecisionEnded``, its holds included. A sentence
+    renders in the answered line's language.
 
     When hearing ends, the loop closes the turn, stops the sound and returns. Any other error
     of a port or the backend, and a ``seq`` not above the last, closes the turn, stops the
@@ -167,38 +187,42 @@ class _Answer:
 
 @dataclass
 class _Stage:
-    """One turn being read: whether its reading has ended, and its ending."""
+    """One turn being read: whether its reading has ended, and its choice.
+
+    ``ending`` is the hold decision's choice, or ``None`` for a failed or unreadable one;
+    ``carried_out`` is set once the floor took the choice.
+    """
 
     holding: bool
     language: SpokenLanguage | None
     reading_ended: bool = False
-    ending: asyncio.Future[HoldEnding] = field(
+    carried_out: bool = False
+    ending: asyncio.Future[HoldChoice | None] = field(
         default_factory=lambda: asyncio.get_running_loop().create_future()
     )
     reading: asyncio.Task[None] | None = None
 
-    def decide(self, ending: HoldEnding) -> None:
+    def decide(self, choice: HoldChoice | None) -> None:
         """A hold decision's first opening or sentence ends the hold; later ones change nothing."""
         if self.holding and not self.ending.done():
-            self.ending.set_result(ending)
+            self.ending.set_result(choice)
 
     @property
-    def speaks(self) -> bool:
-        return not self.holding or self.ending.result() is HoldEnding.ANSWERED
+    def said_then_continued(self) -> bool:
+        return self.ending.done() and self.ending.result() is HoldEnding.SAID_THEN_CONTINUED
 
 
-_TURN_LEAVING_ENDINGS: Final = frozenset(
-    {HoldEnding.ANSWERED, HoldEnding.STOPPED, HoldEnding.DROPPED}
-)
-"""Endings after which the held turn's play task, with its render ahead, stops."""
-
-
-def _ending_of(opening: StayedSilent | ReplyUnreadable | HoldMarker) -> HoldEnding:
+def _choice_of(
+    opening: StayedSilent | ReplyUnreadable | HoldMarker | ContinueSaying,
+) -> HoldChoice | None:
+    """The choice a round's opening is, ``None`` for one that is unreadable."""
     if opening is Marker.CONTINUE:
         return HoldEnding.CONTINUED
     if opening is Marker.FINISH:
         return HoldEnding.FINISHED
-    return HoldEnding.STOPPED if isinstance(opening, StayedSilent) else HoldEnding.DROPPED
+    if isinstance(opening, ContinueSaying):
+        return HoldEnding.SAID_THEN_CONTINUED
+    return HoldEnding.STOPPED if isinstance(opening, StayedSilent) else None
 
 
 class _VoiceLoop[Audio]:
@@ -394,19 +418,23 @@ class _VoiceLoop[Audio]:
             await self._until(lambda: not self._floor.standing)
             self._floor.decision_opens()
             decision = self._open_hold(place)
-            ending = await decision.ending
-            self._report(HoldEnded(ending))
-            self._answer.marker = _RECORDED_ENDINGS[ending]
-            steps = self._floor.end_hold(ending)
+            decided = await decision.ending
+            reported = HoldEnding.DROPPED if decided is None else decided
+            choice = HoldEnding.STOPPED if decided is None else decided
+            self._report(HoldEnded(reported))
+            self._answer.marker = _RECORDED_ENDINGS[reported]
+            steps = self._floor.end_hold(choice)
+            decision.carried_out = True
+            self._reply_over(decision)
             if not await self._carry_out(steps, held_play):
                 return None
-            if ending in _TURN_LEAVING_ENDINGS:
+            if leaves_the_turn(choice):
                 await self._stop(held_play)  # also when no sentence is held
                 self._answer.drop_cancelled_paused()
-            if ending in (HoldEnding.STOPPED, HoldEnding.DROPPED):
+            if choice is HoldEnding.STOPPED:
                 self._finish_answer()
                 return None
-            if ending is HoldEnding.ANSWERED:
+            if replies(choice):
                 stage, held_play = decision, None
             if Wait() not in steps:
                 return self._carry_on(stage, held_play)
@@ -421,18 +449,22 @@ class _VoiceLoop[Audio]:
         self._woken.clear()
         return self._start_stage(holding=True)
 
+    def _reply_over(self, stage: _Stage) -> None:
+        """A short own line's reply was read to its end and its choice is carried out: the
+        sentences that waited follow it."""
+        if stage.said_then_continued and stage.carried_out and stage.reading_ended:
+            self._floor.reply_ended()
+
     async def _carry_out(
         self, steps: tuple[HoldStep[str], ...], play: asyncio.Task[None] | None
     ) -> bool:
         """Carry out an ending's steps in order; ``False`` once the host refused the resume and
-        the answer is over."""
+        the answer is over. A ``Drop`` needs nothing here: the held turn is stopped once, after
+        the steps."""
         for step in steps:
             if isinstance(step, Wait):
                 self._report(Held())
-            elif isinstance(step, Drop):
-                if step.sentence is not None:
-                    await self._stop(play)
-            elif not await self._resumed(play, step.sentence):
+            elif isinstance(step, PlayOn) and not await self._resumed(play, step.sentence):
                 return False
         return True
 
@@ -443,7 +475,7 @@ class _VoiceLoop[Audio]:
         is open, so the next one is told the agent went on."""
         self._report(HoldEnded(HoldEnding.WENT_ON))
         self._conversation.note_went_on()
-        if not await self._carry_out(self._floor.end_hold(HoldEnding.WENT_ON), play):
+        if not await self._carry_out(self._floor.go_on(), play):
             return None
         return self._carry_on(stage, play)
 
@@ -488,9 +520,11 @@ class _VoiceLoop[Audio]:
                     retry_after_s=stopped.retry_after_s,
                 )
             )
+        self._take(reader.ended(), stage)
         stage.reading_ended = True
+        self._reply_over(stage)
         self._signal()
-        stage.decide(HoldEnding.DROPPED)
+        stage.decide(None)
 
     def _take(self, reading: Reading, stage: _Stage) -> None:
         opening = reading.opening
@@ -499,14 +533,13 @@ class _VoiceLoop[Audio]:
                 if not stage.holding:
                     self._answer.openings.append(opening)
                 self._report(opening)
-            stage.decide(_ending_of(opening))
+            stage.decide(_choice_of(opening))
         if not reading.sentences:
             return
         stage.decide(HoldEnding.ANSWERED)
-        if stage.speaks:
-            for sentence in reading.sentences:
-                self._floor.enter(sentence)
-            self._signal()
+        for sentence in reading.sentences:
+            self._floor.enter(sentence)
+        self._signal()
 
     async def _play(self, stage: _Stage) -> None:
         """Play the sentences in written order; the next one renders while one plays."""

@@ -202,9 +202,10 @@ class Held:
 class HoldEnded:
     """The decision on a talk-over ended the hold; reported before its effects.
 
-    ``DROPPED`` is a failed decision or one that opened with nothing readable. ``WENT_ON`` is a
-    hold whose talk-over held no word (``agents.member.has_words``): it ends by itself, with no
-    decision and no ``Woke`` before it, once nobody the agent hears speaks.
+    ``SAID_THEN_CONTINUED`` is a ``[continue]`` that words follow. ``DROPPED`` is a failed decision
+    or one that opened with nothing readable; the loop carries it out as ``STOPPED``. ``WENT_ON``
+    is a hold whose talk-over held no word (``agents.member.has_words``): it ends by itself, with
+    no decision and no ``Woke`` before it, once nobody the agent hears speaks.
     """
 
     ending: HoldEnding
