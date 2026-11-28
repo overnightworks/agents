@@ -57,6 +57,6 @@ def pods(tmp_path: Path, redis_url: str, pod_a_user: str) -> Iterator[tuple[Pod,
         try:
             yield pod_a, pod_b
         finally:
-            pod_b.kill()
+            pod_b.stop()
     finally:
-        pod_a.kill()
+        pod_a.stop()

@@ -69,10 +69,10 @@ jobs:
         run: uv run --locked --no-sync pyright
 
       - name: Tests
-        run: uv run --locked --no-sync pytest -n auto --cov=src --cov=scripts --cov-report=xml:coverage.xml
+        run: uv run --locked --no-sync pytest -n auto --cov --cov-report= --cov-fail-under=0
 
       - name: Two pods on a real Redis
-        run: scripts/run_redis_tests.sh
+        run: scripts/run_redis_tests.sh --cov --cov-append --cov-report=xml:coverage.xml --cov-report=term-missing:skip-covered
 
       - name: Upload the coverage report for the quality gate
         if: matrix.python-version == '3.14'
