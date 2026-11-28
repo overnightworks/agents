@@ -60,6 +60,13 @@ def piece(text: str) -> bytes:
     return an_event_stream(a_chunk(text), done=False)
 
 
+def a_look_up_call() -> bytes:
+    """A streamed round's chunk that asks for the ``look_up`` tool; ``finish("tool_calls")`` ends
+    the round."""
+    call = {"index": 0, **tool_call("call-1", "look_up", {})}
+    return an_event_stream(a_chunk(tool_calls=[call]), done=False)
+
+
 def finish(reason: str = "stop") -> bytes:
     """The finish chunk and ``[DONE]``."""
     return an_event_stream(a_chunk(finish_reason=reason))
@@ -69,11 +76,16 @@ async def hang() -> None:
     await asyncio.Event().wait()
 
 
-def a_lookup_tool(trace: Trace, *, takes_a_moment: bool = False) -> HandTool:
-    """A tool that records ``("tool", "look_up")`` when called; slow, also when it has answered."""
+def a_lookup_tool(
+    trace: Trace, *, takes_a_moment: bool = False, waits_for: Callable[[], bool] | None = None
+) -> HandTool:
+    """A tool that records ``("tool", "look_up")`` when called; slow, also when it has answered,
+    or held until ``waits_for`` holds."""
 
     async def look_up(principal, arguments):
         trace.record(("tool", "look_up"))
+        if waits_for is not None:
+            await trace.until(waits_for)
         if takes_a_moment:
             await trace.settled()
             trace.record(("tool", "answered"))

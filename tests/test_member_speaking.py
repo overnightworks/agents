@@ -84,6 +84,37 @@ def test_speak_arguments_with_a_malformed_text_field_are_refused(field: str, val
         SpeakArguments.model_validate_json(wire_text)
 
 
+def test_keeps_queue_is_read_back_beside_the_hold_it_names_and_absent_while_false() -> None:
+    wire = speak_wire(interrupted="h-1", keeps_queue=True)
+    arguments = SpeakArguments.model_validate_json(json.dumps(wire))
+
+    assert arguments.keeps_queue is True
+    assert json.loads(arguments.model_dump_json()) == wire
+    without = SpeakArguments.model_validate_json(json.dumps(speak_wire(interrupted="h-1")))
+    assert without.keeps_queue is False
+    assert "keeps_queue" not in json.loads(without.model_dump_json())
+    stated_false = SpeakArguments.model_validate_json(
+        json.dumps(speak_wire(interrupted="h-1", keeps_queue=False))
+    )
+    assert "keeps_queue" not in json.loads(stated_false.model_dump_json())
+
+
+@pytest.mark.parametrize(
+    "wire",
+    [
+        speak_wire(keeps_queue=True),
+        speak_wire(interrupted="h-1", keeps_queue="yes"),
+        speak_wire(interrupted="h-1", keeps_queue=1),
+    ],
+    ids=["without-the-hold", "text", "number"],
+)
+def test_speak_arguments_with_keeps_queue_that_names_no_hold_or_is_no_boolean_are_refused(
+    wire: dict[str, Any],
+) -> None:
+    with pytest.raises(ValidationError):
+        SpeakArguments.model_validate_json(json.dumps(wire))
+
+
 @pytest.mark.parametrize(
     "mood",
     ["joyful", "", "HAPPY", 1, ["happy"]],
@@ -156,6 +187,19 @@ def test_continue_speaking_arguments_name_the_hold_on_the_wire() -> None:
     assert CONTINUE_SPEAKING_TOOL == "continue_speaking"
 
 
+def test_continue_speaking_arguments_carry_finish_only_while_true() -> None:
+    finishing = ContinueSpeakingArguments.model_validate_json(
+        json.dumps(continue_wire(finish=True))
+    )
+
+    assert finishing.finish is True
+    assert json.loads(finishing.model_dump_json()) == continue_wire(finish=True)
+    for wire in (continue_wire(), continue_wire(finish=False)):
+        plain = ContinueSpeakingArguments.model_validate_json(json.dumps(wire))
+        assert plain.finish is False
+        assert json.loads(plain.model_dump_json()) == continue_wire()
+
+
 @pytest.mark.parametrize(
     "wire",
     [
@@ -164,8 +208,9 @@ def test_continue_speaking_arguments_name_the_hold_on_the_wire() -> None:
         continue_wire(interrupted=1),
         continue_wire(extra=1),
         {"interrupted": "h-1"},
+        continue_wire(finish="yes"),
     ],
-    ids=["no-id", "empty-id", "number-id", "unknown-member", "no-place"],
+    ids=["no-id", "empty-id", "number-id", "unknown-member", "no-place", "text-finish"],
 )
 def test_continue_speaking_arguments_with_a_malformed_field_are_refused(
     wire: dict[str, Any],
