@@ -17,7 +17,6 @@ from agents.floor import (
 from agents.member_speaking import (
     ContinueSpeakingRefusal,
     HoldPlace,
-    HoldPoint,
     SpeakRefusal,
     StopSpeakingRefusal,
     hold_place,
@@ -102,15 +101,8 @@ def test_a_cut_line_is_the_heard_part_of_the_sentence(
     assert (stopped.sentence, stopped.cut) == (FIRST, line)
 
 
-@pytest.mark.parametrize(
-    "place",
-    [
-        pytest.param(BETWEEN, id="between sentences"),
-        pytest.param(HoldPlace(at=HoldPoint.BETWEEN_SENTENCES, heard_to=0), id="a heard_to of 0"),
-    ],
-)
-def test_a_place_between_sentences_has_no_cut_line(place: HoldPlace) -> None:
-    assert cut_line(place) is None
+def test_a_place_between_sentences_has_no_cut_line() -> None:
+    assert cut_line(BETWEEN) is None
 
 
 def test_a_held_sentence_yields_nothing_until_it_plays_on_and_ends() -> None:

@@ -16,7 +16,7 @@ from logline import unit_trace
 
 from agents.agent_file import AgentDefinition, TurnRequest
 from agents.backend import AgentBackend, TurnPerson, TurnStopped
-from agents.floor import Drop, Floor, HoldStep, Start, Wait
+from agents.floor import AfterAnEnding, Drop, Floor, HoldStep, Start, Wait
 from agents.member import HoldPlace, PartialSpeech, PlaceEntry, SpokenLanguage, hold_place
 from agents.voice import (
     DecisionEnded,
@@ -226,7 +226,7 @@ class _VoiceLoop[Audio]:
         self._woken = asyncio.Event()
         self._waking_traceparent: str | None = None
         self._first_after_answer = False
-        self._floor = Floor[str]()
+        self._floor = Floor[str](after_an_ending=AfterAnEnding.HOLDS_AGAIN)
         self._answer = _Answer(self._floor)
         self._last_played: list[str] = []
         self._stopping: asyncio.Task[HoldPlace] | None = None
@@ -430,7 +430,8 @@ class _VoiceLoop[Audio]:
             if isinstance(step, Wait):
                 self._report(Held())
             elif isinstance(step, Drop):
-                await self._stop(play)
+                if step.sentence is not None:
+                    await self._stop(play)
             elif not await self._resumed(play, step.sentence):
                 return False
         return True
