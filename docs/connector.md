@@ -1545,14 +1545,20 @@ Proved by `tests/test_member.py` (among them
 - It writes a sentence its voice fails on as the member's written line where the place has a chat,
   keeps `voice_state` true to its voice, and logs a voice going down once per outage
   ([HEARING-24 to HEARING-26](hearing.md)).
-- It holds a member talked over for the bound at once, as Stopping and then Held, stops the
-  playing sentence at its next word end or lets it finish under the bound, writes `interrupted` with
-  its `place` exactly while it is held, drops nothing, and continues by itself only a hold through
-  whose talk-over no word was heard, marked `wordless`, once nobody the member hears speaks, and
-  refuses with `held` and `not_interrupted` ([HEARING-30](hearing.md)). It reads `heard_to` from the word marks
-  against the seats' reports, never from the time.
-- It plays one member's sentences in order, each behind that member's previous sentence, and
-  answers each at its turn with `Spoken` when it starts to play or `Written`.
+- It reports to `agents.floor` each person's turn (`utterance_began`, `hear_partial`,
+  `hear_finished`, `utterance_ended`) and the sentences it enters, and takes its answers: the order
+  the sentences start in, the refusals `held` and `not_interrupted` (`speak_refusal`), the stop's and
+  the continue's steps and answers, and `wordless`, `may_go_on` and `went_on`. It holds a member
+  talked over for the bound at once, as Stopping and then Held, stops the playing sentence at its next
+  word end or lets it finish under the bound, reports where the sound stopped with the hold's id
+  (`sound_stopped_at`), writes `interrupted` with its `place` exactly while it is held, and continues
+  by itself only a hold through whose talk-over no word was heard, once nobody the member hears
+  speaks ([HEARING-30](hearing.md)). It reads `heard_to` from the word marks against the seats'
+  reports, never from the time.
+- It enters each sentence into `agents.floor`'s order once it is rendered (a written one at its
+  `speak`), keeps its text, sound and answer, carries out each step the floor returns, and answers
+  each at its turn with `Spoken` when it starts to play or `Written`
+  ([HEARING-14, 17](hearing.md)).
 - It bounds a sentence's length, refuses with these codes, and drops what a member has not yet said
   when an end or a pause takes it, answering each unanswered `speak` `not_active`
   ([HEARING-15](hearing.md)).
