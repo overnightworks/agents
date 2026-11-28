@@ -18,6 +18,16 @@ sentences, takes their place when the hold ends with ``ANSWERED`` and goes ahead
 ends with ``SAID_THEN_CONTINUED``, until the consumer reports ``reply_ended``. A render in flight is
 a ``RenderTicket`` the consumer ends, however its render returned; it counts as waiting.
 
+A choice that plays something starts only once every person of the hold's talk-over has ended
+their turn. ``end_hold`` and the calls that wrap it return ``Wait`` first and keep the choice
+waiting; it plays and drops nothing until ``choice_may_play``, when the consumer takes its steps
+with ``play_choice`` in the step of the event that made it true. A choice that carries the count
+its decision was told (``told_changes``) is refused ``Stale`` when the floor counted more
+``worded_changes`` since: nothing is applied, and the consumer decides again. A waiting choice is
+void, and a new hold stands at the same place, when a person who began after it arrived voices the
+bound (their first partial), when a person speaking at it whose words changed does in a snapshot,
+or when the consumer reports ``voice_went_on``.
+
 A floor is in one of four phases:
 
 - Silent: nothing plays, waits or renders, and no hold stands.
@@ -32,15 +42,16 @@ a lasting voice, a stop or a render's begin once nothing plays, waits or renders
 a stop always closes it. At its closing no utterance is a talk-over any more. A hold arises when a
 voice whose turn began during the span lasts the bound. A key first heard through ``hear_partial``
 with no begin before it began before: it holds nothing. A wordless hold may go on by itself once
-nobody speaks. What a person who is still speaking does when a hold ends is the construction's
-``AfterAnEnding``.
+nobody speaks.
 
 The talk-over: a person's utterance runs from its begin to its end; one that began during the span
 is part of a talk-over, one that began before never is, however long it goes on. The consumer gives
 a person's partial only once their voice has lasted its bound, so a shorter voice never reaches
-this module. Whether a talk-over held a word is judged by person: from their first partial until
-``forget_words``, a partial or a finished line of a person of the talk-over that holds a word
-(``has_words``) counts, also after their partial went.
+this module. The talk-over's people stay the hold's for its life. Whether a talk-over held a word
+is judged by person: from their first partial until the hold ends, a partial or a finished line
+of a person of the talk-over whose words (``words_of``) are not empty counts, also after their
+partial went. ``worded_changes`` counts each partial or line whose words differ from what that
+person was last heard to say.
 """
 
 from __future__ import annotations
@@ -56,12 +67,11 @@ from agents.member_speaking import (
     PartialSpeech,
     SpeakRefusal,
     StopSpeakingRefusal,
-    has_words,
     hold_place,
+    words_of,
 )
 
 __all__ = [
-    "AfterAnEnding",
     "Drop",
     "Floor",
     "HoldChoice",
@@ -69,7 +79,9 @@ __all__ = [
     "HoldStep",
     "PlayOn",
     "RenderTicket",
+    "Stale",
     "Start",
+    "ToldTalkOver",
     "Wait",
     "cut_line",
     "leaves_the_turn",
@@ -104,15 +116,6 @@ type HoldChoice = Literal[
 ]
 """The agent's five ways back from a hold, the same in every app: go on at the place, finish
 only the sentence and stop, a short own line and then go on, say something else instead, stop."""
-
-
-class AfterAnEnding(StrEnum):
-    """What a person who is still speaking is when a hold ends: ``HOLDS_AGAIN``, part of the
-    standing talk-over, which holds the answer on or again; ``BEGAN_BEFORE``, a person whose turn
-    began before the ending, who holds nothing."""
-
-    HOLDS_AGAIN = "holds_again"
-    BEGAN_BEFORE = "began_before"
 
 
 class _Reply(StrEnum):
@@ -214,6 +217,20 @@ class Drop[Said]:
 type HoldStep[Said] = PlayOn[Said] | Wait | Drop[Said]
 
 
+@dataclass(frozen=True)
+class Stale:
+    """The choice was told fewer worded changes than the floor counts; nothing was applied."""
+
+
+@dataclass(frozen=True)
+class ToldTalkOver:
+    """What a hold decision is told of its talk-over: the ``changes`` the floor counted and the
+    ``speech`` its people still say, each as a partial of theirs that holds a word."""
+
+    changes: int
+    speech: tuple[PartialSpeech, ...]
+
+
 class RenderTicket:
     """A sentence's render in flight, which counts as waiting until the consumer ends it."""
 
@@ -226,7 +243,10 @@ class TalkOver:
         self._began_in_span: dict[str, bool] = {}
         self._speaking: set[str] = set()
         self._talkers: set[str] = set()
-        self._worded = False
+        self._standing: dict[str, str] = {}
+        self._heard: dict[str, tuple[str, ...]] = {}
+        self._told: dict[str, tuple[str, ...]] = {}
+        self._worded_changes = 0
 
     @property
     def span_open(self) -> bool:
@@ -243,17 +263,17 @@ class TalkOver:
         self._forget_what_began_in_the_span()
 
     def _forget_what_began_in_the_span(self) -> None:
-        self.everyone_began_before()
+        self._began_in_span = dict.fromkeys(self._began_in_span, False)
         self.forget_words()
 
-    def everyone_began_before(self) -> None:
-        """Every utterance that stands counts as begun before, so it holds nothing."""
-        self._began_in_span = dict.fromkeys(self._began_in_span, False)
-
     def forget_words(self) -> None:
-        """Count words afresh: the people of the talk-over are those who stand now."""
+        """Count words afresh: the people of the talk-over are those who stand now, and what they
+        have said is what their standing partials say."""
         self._talkers = {key for key, began in self._began_in_span.items() if began}
-        self._worded = False
+        self._standing = {key: text for key, text in self._standing.items() if key in self._talkers}
+        self._heard = {
+            key: words for key, text in self._standing.items() if (words := words_of(text))
+        }
 
     def utterance_began(self, key: str) -> None:
         self._began_in_span[key] = self._span_open
@@ -262,10 +282,15 @@ class TalkOver:
     def utterance_ended(self, key: str) -> None:
         self._began_in_span.pop(key, None)
         self._speaking.discard(key)
+        self._standing.pop(key, None)
 
     def in_utterance(self, key: str) -> bool:
         """The key's utterance began and neither its line nor its end came since."""
         return key in self._began_in_span
+
+    def is_talker(self, key: str) -> bool:
+        """The key's person is part of the talk-over."""
+        return key in self._talkers
 
     def partial(self, key: str, text: str) -> bool:
         """``key``'s voice lasted the bound; whether its utterance began during the span."""
@@ -275,14 +300,37 @@ class TalkOver:
         began_in_span = self._began_in_span[key]
         if began_in_span:
             self._talkers.add(key)
-            self._worded = self._worded or has_words(text)
+            self._standing[key] = text
+            self._hears(key, words_of(text))
         return began_in_span
 
-    def finished(self, key: str, text: str) -> None:
+    def finished(self, key: str, text: str) -> bool:
         """A finished line of ``key`` ends their utterance as a talk-over; its words count when
-        ``key`` is a person of the talk-over."""
+        ``key`` is a person of the talk-over. Whether the line repeats the words a decision was
+        told of ``key``."""
         self._began_in_span.pop(key, None)
-        self._worded = self._worded or (key in self._talkers and has_words(text))
+        self._standing.pop(key, None)
+        words = words_of(text)
+        told = self._told.pop(key, None)
+        if key in self._talkers:
+            self._hears(key, words)
+        return bool(words) and words == told
+
+    def _hears(self, key: str, words: tuple[str, ...]) -> None:
+        if words and words != self._heard.get(key):
+            self._heard[key] = words
+            self._worded_changes += 1
+
+    def told(self) -> ToldTalkOver:
+        """What a decision is told: the count and the standing partials with words, which a line
+        of theirs may repeat later without a change."""
+        speech = tuple(
+            PartialSpeech(name=key, text=text)
+            for key, text in self._standing.items()
+            if words_of(text)
+        )
+        self._told |= {partial.name: words_of(partial.text) for partial in speech}
+        return ToldTalkOver(self._worded_changes, speech)
 
     @property
     def speaking(self) -> frozenset[str]:
@@ -294,9 +342,20 @@ class TalkOver:
         return any(self._began_in_span.values())
 
     @property
+    def talk_over_speaks(self) -> bool:
+        """A person of the talk-over has not ended their turn."""
+        return not self._talkers.isdisjoint(self._speaking)
+
+    @property
     def worded(self) -> bool:
-        """A partial or a line of a person of the talk-over held a word since ``forget_words``."""
-        return self._worded
+        """A word of a person of the talk-over was heard since ``forget_words``."""
+        return any(self._heard.values())
+
+    @property
+    def worded_changes(self) -> int:
+        """The partials and lines of the talk-over's people whose words differ from what that
+        person was last heard to say; it only rises."""
+        return self._worded_changes
 
     @property
     def nobody_speaks(self) -> bool:
@@ -312,15 +371,24 @@ class _Hold:
     id: str | None = None
 
 
+@dataclass
+class _WaitingChoice:
+    """A choice that plays and waits for the talk-over: ``speaking`` are the people speaking at its
+    arrival, whose voice a later partial does not show to have begun after it."""
+
+    choice: HoldChoice
+    speaking: set[str]
+
+
 class Floor[Said]:
     """The talk-over at a place, the hold it puts on the answer and the order of its sentences."""
 
-    def __init__(self, *, after_an_ending: AfterAnEnding) -> None:
-        self._after_an_ending = after_an_ending
+    def __init__(self) -> None:
         self._talk = TalkOver()
         self._answer_open = False
         self._tickets: set[RenderTicket] = set()
         self._hold: _Hold | None = None
+        self._choice: _WaitingChoice | None = None
         self._wordless = False
         self._went_on: str | None = None
         self._place = _NOTHING_PLAYS
@@ -336,6 +404,7 @@ class Floor[Said]:
         self._reply.clear()
         self._behind.clear()
         self._deciding = False
+        self._choice = None
         self._answer_open = True
         self._talk.span_opens()
 
@@ -343,6 +412,7 @@ class Floor[Said]:
         """The loop's answer has ended, and so has its hold."""
         self._answer_open = False
         self._hold = None
+        self._choice = None
         self._talk.span_closes()
 
     def render_begins(self) -> RenderTicket:
@@ -355,19 +425,30 @@ class Floor[Said]:
         return ticket
 
     def render_ended(
-        self, ticket: RenderTicket, interrupted: str | None = None
+        self,
+        ticket: RenderTicket,
+        interrupted: str | None = None,
+        told_changes: int | None = None,
     ) -> SpeakRefusal | None:
         """A render ended: ``STOPPED`` when a stop or an answer dropped the ticket meanwhile, then,
-        for a named hold, ``NOT_INTERRUPTED`` when it no longer stands. Otherwise the consumer
-        calls ``end_hold(ANSWERED)``, or ``end_hold(SAID_THEN_CONTINUED)`` when the sentence keeps
-        the queue, and ``answer_goes_on`` when it named one, then ``enter`` and, after the second,
-        ``reply_ended``, or enters nothing."""
+        for a named hold, ``NOT_INTERRUPTED`` when it no longer stands and ``STALE`` when the
+        sentence's ``told_changes`` is below ``worded_changes``. Otherwise the consumer calls
+        ``end_hold(ANSWERED)``, or ``end_hold(SAID_THEN_CONTINUED)`` when the sentence keeps the
+        queue, and ``answer_goes_on`` when it named one and the choice plays, then ``enter`` and,
+        after the second, ``reply_ended``, or enters nothing."""
         if ticket not in self._tickets:
             return SpeakRefusal.STOPPED
         self._tickets.remove(ticket)
-        if interrupted is not None and not self._stands(interrupted):
+        if interrupted is None:
+            return None
+        return self._refusal_of_a_named_hold(interrupted, told_changes)
+
+    def _refusal_of_a_named_hold(
+        self, interrupted: str, told_changes: int | None
+    ) -> SpeakRefusal | None:
+        if not self._stands(interrupted):
             return SpeakRefusal.NOT_INTERRUPTED
-        return None
+        return SpeakRefusal.STALE if self._is_stale(told_changes) else None
 
     def _close_the_span_once_silent(self) -> None:
         """Close the span of a render once nothing plays, waits or renders and no hold stands."""
@@ -382,30 +463,71 @@ class Floor[Said]:
     def utterance_ended(self, key: str) -> None:
         """A person's turn ends, whether it held a word or not."""
         self._talk.utterance_ended(key)
+        if self._choice is not None:
+            self._choice.speaking.discard(key)
 
     def hear_partial(self, key: str, text: str) -> bool:
-        """A person's voice lasted the bound; whether a hold arises with it."""
+        """A person's voice lasted the bound; whether a hold arises with it, which a waiting
+        choice's void does too: a talk-over person whose utterance began after the choice arrived
+        voices the bound with their first partial."""
+        return self._hear_partial(key, text, in_a_snapshot=False)
+
+    def hear_partials(self, speech: Sequence[PartialSpeech]) -> bool:
+        """The partial speech now, whose people the loop's snapshot lists: whoever is not in it has
+        ended their turn; a name with no open utterance begins one. Whether a hold arises, a
+        waiting choice's void included, which a snapshot also shows by new words of a person
+        speaking at the choice. The partials are judged before the ends."""
+        arises = False
+        for partial in speech:
+            if not self._talk.in_utterance(partial.name):
+                self.utterance_began(partial.name)
+            arises = self._hear_partial(partial.name, partial.text, in_a_snapshot=True) or arises
+        listed = {partial.name for partial in speech}
+        for key in self._talk.speaking - listed:
+            self.utterance_ended(key)
+        return arises
+
+    def _hear_partial(self, key: str, text: str, *, in_a_snapshot: bool) -> bool:
         self._close_the_span_once_silent()
+        before = self._talk.worded_changes
         began_in_span = self._talk.partial(key, text)
         self._note_words()
-        if not began_in_span or self._hold is not None:
+        if not began_in_span:
+            return False
+        if self._choice is not None:
+            new_voice = key not in self._choice.speaking
+            went_on = in_a_snapshot and self._talk.worded_changes > before
+            if new_voice or went_on:
+                self._void_the_choice()
+                return True
+        if self._hold is not None:
             return False
         self._hold = _Hold()
         self._begin_stopping(self._hold)
         return True
 
-    def hear_partials(self, speech: Sequence[PartialSpeech]) -> bool:
-        """The partial speech now, whose people the loop's snapshot lists: whoever is not in it has
-        ended their turn; a name with no open utterance begins one. Whether a hold arises."""
-        listed = {partial.name for partial in speech}
-        for key in self._talk.speaking - listed:
-            self.utterance_ended(key)
-        arises = False
-        for partial in speech:
-            if not self._talk.in_utterance(partial.name):
-                self.utterance_began(partial.name)
-            arises = self.hear_partial(partial.name, partial.text) or arises
-        return arises
+    def voice_went_on(self, key: str) -> bool:
+        """The voice of a person who was speaking at the waiting choice lasts the bound after it;
+        whether that voids the choice, so a new hold stands. The consumer reports it after the
+        person's first ``hear_partial``."""
+        if (
+            self._choice is None
+            or key not in self._choice.speaking
+            or not self._talk.is_talker(key)
+        ):
+            return False
+        self._void_the_choice()
+        return True
+
+    def _void_the_choice(self) -> None:
+        """The waiting choice plays and drops nothing and its reply's sentences go; a new hold
+        stands at the same place, judged afresh, with no id until the consumer gives one."""
+        self._choice = None
+        self._reply.clear()
+        self._deciding = False
+        self._talk.forget_words()
+        self._hold = _Hold()
+        self._place_hold(self._hold, self._place)
 
     def _begin_stopping(self, hold: _Hold) -> None:
         """The hold is Stopping while a sentence plays, and Held at once when none does."""
@@ -422,10 +544,12 @@ class Floor[Said]:
         """A heard word ends a wordless hold."""
         self._wordless = self._wordless and not self._talk.worded
 
-    def hear_finished(self, key: str, text: str) -> None:
-        """A person's finished line."""
-        self._talk.finished(key, text)
+    def hear_finished(self, key: str, text: str) -> bool:
+        """A person's finished line; whether it repeats the words a hold decision was told of them,
+        which the decision has answered."""
+        repeats = self._talk.finished(key, text)
         self._note_words()
+        return repeats
 
     def enter(self, sentence: Said) -> None:
         """A sentence is written and joins the waiting ones, or the reply while a hold decides."""
@@ -457,53 +581,89 @@ class Floor[Said]:
         elif hold.id is None:
             hold.id = hold_id
 
-    def decision_opens(self) -> None:
-        """A hold decision opens: the words are counted afresh, and what is written from now on is
-        the reply."""
-        self._talk.forget_words()
+    def decision_opens(self) -> ToldTalkOver:
+        """A hold decision opens: what is written from now on is the reply, and one left by an
+        earlier decision is gone. It is told the count of worded changes and the partials that
+        stand, and a choice of it carries that count as ``told_changes``."""
+        self._reply.clear()
         self._deciding = True
+        return self._talk.told()
 
-    def speak_refusal(self, interrupted: str | None) -> SpeakRefusal | None:
+    def speak_refusal(
+        self, interrupted: str | None, told_changes: int | None = None
+    ) -> SpeakRefusal | None:
         """Why a ``speak`` naming ``interrupted`` is refused now, if it is: ``HELD`` while Held and
-        no id is named, ``NOT_INTERRUPTED`` for any id that is not the standing one."""
+        no id is named, ``NOT_INTERRUPTED`` for any id that is not the standing one, ``STALE`` when
+        ``told_changes`` is below ``worded_changes``."""
         if interrupted is not None:
-            return None if self._stands(interrupted) else SpeakRefusal.NOT_INTERRUPTED
+            return self._refusal_of_a_named_hold(interrupted, told_changes)
         return SpeakRefusal.HELD if self._held else None
 
-    def stop(self, interrupted: str | None, place: HoldPlace) -> Drop[Said] | StopSpeakingRefusal:
+    def stop(
+        self, interrupted: str | None, place: HoldPlace, told_changes: int | None = None
+    ) -> Drop[Said] | StopSpeakingRefusal:
         """A stop: what it cuts and drops, or why it is refused. ``place`` is where the started
         sentence's sound was cut; the held place stands while Held. The member is Silent after it:
-        every open ticket is dropped and the hold is over."""
+        every open ticket is dropped, a waiting choice is void and the hold is over."""
         if interrupted is not None and not self._stands(interrupted):
             return StopSpeakingRefusal.NOT_INTERRUPTED
+        if self._is_stale(told_changes):
+            return StopSpeakingRefusal.STALE
         if self._silent:
             return StopSpeakingRefusal.NOTHING_PLAYING
         dropped = self._dropped(_EFFECTS[HoldEnding.STOPPED], self._place if self._held else place)
+        self._choice = None
         self._hold = None
         self._wordless = False
         self._talk.span_closes()
         return dropped
 
     def continue_speaking(
-        self, interrupted: str, *, finish: bool = False
+        self, interrupted: str, *, finish: bool = False, told_changes: int | None = None
     ) -> tuple[HoldStep[Said], ...] | ContinueSpeakingRefusal:
         """A continue naming ``interrupted``: the steps of ``CONTINUED``, or of ``FINISHED`` when
-        ``finish`` is set, with the hold ended, or why it is refused."""
+        ``finish`` is set, with the hold ended, ``Wait`` while the choice waits for the talk-over,
+        or why it is refused."""
         if not self._stands(interrupted):
             return ContinueSpeakingRefusal.NOT_INTERRUPTED
-        steps = self.end_hold(HoldEnding.FINISHED if finish else HoldEnding.CONTINUED)
-        self.answer_goes_on()
+        steps = self.end_hold(
+            HoldEnding.FINISHED if finish else HoldEnding.CONTINUED, told_changes=told_changes
+        )
+        if isinstance(steps, Stale):
+            return ContinueSpeakingRefusal.STALE
+        if not self.choice_waits:
+            self.answer_goes_on()
         return steps
 
-    def end_hold(self, choice: HoldChoice) -> tuple[HoldStep[Said], ...]:
+    def end_hold(
+        self, choice: HoldChoice, *, told_changes: int | None = None
+    ) -> tuple[HoldStep[Said], ...] | Stale:
         """A decision gave ``choice``: what it does to the sentences, as the steps the consumer
-        carries out in order, and none that is empty.
+        carries out in order, and none that is empty. ``Stale`` changes nothing when
+        ``told_changes`` is below ``worded_changes``; ``None`` means the decision was not told.
 
-        ``Wait`` comes first when the hold stands on with the choice, the sound already stopped
-        and, after ``ANSWERED`` or ``SAID_THEN_CONTINUED``, between sentences. The hold itself
-        ends only with ``answer_goes_on`` or the answer's end.
+        A choice that plays something while a person of the talk-over speaks waits: the answer is
+        ``(Wait(),)``, nothing is applied and the sentences entered meanwhile are its reply. A
+        later choice that plays replaces the waiting one, whose reply's sentences go; a stopping
+        one acts at once and voids it. The consumer takes a waiting choice's steps with
+        ``play_choice``. The hold itself ends only with ``answer_goes_on`` or the answer's end.
         """
+        if self._is_stale(told_changes):
+            return Stale()
+        if not _EFFECTS[choice].plays:
+            return self._ending(choice)
+        if self._choice is not None:
+            self._reply.clear()
+        if self._talk.talk_over_speaks:
+            self._choice = _WaitingChoice(choice, set(self._talk.speaking))
+            return (Wait(),)
         return self._ending(choice)
+
+    def play_choice(self) -> tuple[HoldStep[Said], ...]:
+        """The steps of the waiting choice, once ``choice_may_play``."""
+        if self._choice is None or self._talk.talk_over_speaks:
+            raise ValueError("no waiting choice may play")
+        return self._ending(self._choice.choice)
 
     def go_on(self) -> tuple[HoldStep[Said], ...]:
         """A wordless hold goes on by itself, as ``CONTINUED`` would: the steps of ``WENT_ON``,
@@ -518,17 +678,14 @@ class Floor[Said]:
         self._behind.clear()
 
     def _ending(self, ending: HoldEnding) -> tuple[HoldStep[Said], ...]:
-        self._count_the_speaking_as_begun_before()
+        self._choice = None
         effect = _EFFECTS[ending]
-        holds_on = effect.plays and self._talk.standing
         held = self._playing
         dropped = self._dropped(effect, self._place)
-        if effect.drops_the_held and holds_on:
-            self._place = _NOTHING_PLAYS
-        steps: list[HoldStep[Said]] = [Wait()] if holds_on else []
+        steps: list[HoldStep[Said]] = []
         if dropped.sentence is not None or dropped.waiting:
             steps.append(dropped)
-        if held is not None and not effect.drops_the_held and not holds_on:
+        if held is not None and not effect.drops_the_held:
             steps.append(PlayOn(held))
         return tuple(steps)
 
@@ -536,13 +693,14 @@ class Floor[Said]:
         """What ``effect`` drops of the sentences and the open renders, and where the sentences the
         reply entered go. The cut line reads ``place``."""
         held = self._playing if effect.drops_the_held else None
-        dropped = Drop(
-            held,
-            (*self._waiting, *self._behind) if effect.drops_the_waiting else (),
-            None if held is None else cut_line(place),
-        )
         reply, self._reply = self._reply, []
         self._deciding = False
+        dropping = (
+            (*self._waiting, *self._behind, *(reply if effect.reply is _Reply.NOWHERE else ()))
+            if effect.drops_the_waiting
+            else ()
+        )
+        dropped = Drop(held, dropping, None if held is None else cut_line(place))
         if effect.drops_the_waiting:
             self._waiting = reply if effect.reply is _Reply.INSTEAD else []
             self._behind.clear()
@@ -553,19 +711,19 @@ class Floor[Said]:
         return dropped
 
     def answer_goes_on(self) -> bool:
-        """The answer goes on after an ending or a wordless hold; whether a talk-over that stands
-        holds it again at once. Otherwise the hold is over."""
-        self._count_the_speaking_as_begun_before()
-        if self._talk.standing and self._hold is not None:
+        """The answer goes on after an ending or a wordless hold; whether a person of the
+        talk-over who began speaking since holds it again at once, a new hold standing. Otherwise
+        the hold is over."""
+        self._talk.forget_words()
+        if self._hold is not None and self._talk.talk_over_speaks:
+            self._hold = _Hold()
             self._begin_stopping(self._hold)
             return True
         self._hold = None
-        self._talk.forget_words()
         return False
 
-    def _count_the_speaking_as_begun_before(self) -> None:
-        if self._after_an_ending is AfterAnEnding.BEGAN_BEFORE:
-            self._talk.everyone_began_before()
+    def _is_stale(self, told_changes: int | None) -> bool:
+        return told_changes is not None and told_changes < self._talk.worded_changes
 
     def _stands(self, hold_id: str) -> bool:
         return self._held and self._hold is not None and self._hold.id == hold_id
@@ -626,8 +784,23 @@ class Floor[Said]:
 
     @property
     def worded(self) -> bool:
-        """A word of the talk-over was heard since the words were counted afresh."""
+        """A word of the talk-over was heard since the hold's talk-over was counted afresh."""
         return self._talk.worded
+
+    @property
+    def choice_waits(self) -> bool:
+        """A choice that plays waits for the talk-over."""
+        return self._choice is not None
+
+    @property
+    def choice_may_play(self) -> bool:
+        """A choice waits and no person of the talk-over speaks: ``play_choice`` gives its steps."""
+        return self._choice is not None and not self._talk.talk_over_speaks
+
+    @property
+    def worded_changes(self) -> int:
+        """The count of the talk-over's worded changes; it only rises."""
+        return self._talk.worded_changes
 
     @property
     def wordless(self) -> bool:

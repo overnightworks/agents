@@ -101,7 +101,7 @@ def test_a_stopping_choice_never_waits_and_voids_a_waiting_one() -> None:
     member = held_while_speaking(SECOND)
     _decides(member, HoldEnding.ANSWERED, REPLY)
 
-    assert member.end_hold(HoldEnding.STOPPED) == (Drop(FIRST, (SECOND,), CUT),)
+    assert member.end_hold(HoldEnding.STOPPED) == (Drop(FIRST, (SECOND, REPLY), CUT),)
     assert member.choice_waits is False
 
 

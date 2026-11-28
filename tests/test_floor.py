@@ -32,20 +32,19 @@ from tests.support.floor_support import (
     held,
     held_at_once,
     lasts,
-    loop_floor,
+    new_floor,
     partial,
     place_in,
     playing,
     rendered,
     stopping,
-    wire_floor,
 )
 
 BETWEEN = hold_place(None, None)
 
 
 def test_sentences_start_in_the_order_they_are_entered() -> None:
-    member = wire_floor()
+    member = new_floor()
     for sentence in (FIRST, SECOND, THIRD):
         rendered(member, sentence)
     started = []
@@ -206,13 +205,13 @@ def test_a_held_sentence_yields_nothing_until_it_plays_on_and_ends() -> None:
 
 
 def _a_sentence_waits() -> Floor[str]:
-    member = wire_floor()
+    member = new_floor()
     rendered(member, FIRST)
     return member
 
 
 def _a_sentence_renders() -> Floor[str]:
-    member = wire_floor()
+    member = new_floor()
     member.render_begins()
     return member
 
@@ -220,10 +219,10 @@ def _a_sentence_renders() -> Floor[str]:
 @pytest.mark.parametrize(
     ("scene", "holds"),
     [
-        pytest.param(lambda: playing(wire_floor()), True, id="a sentence plays"),
+        pytest.param(lambda: playing(new_floor()), True, id="a sentence plays"),
         pytest.param(_a_sentence_waits, True, id="a sentence waits"),
         pytest.param(_a_sentence_renders, True, id="a sentence renders"),
-        pytest.param(wire_floor, False, id="the member is silent"),
+        pytest.param(new_floor, False, id="the member is silent"),
     ],
 )
 def test_a_lasting_voice_holds_a_member_that_plays_waits_or_renders(
@@ -235,7 +234,7 @@ def test_a_lasting_voice_holds_a_member_that_plays_waits_or_renders(
 
 
 def test_a_turn_that_began_before_the_span_never_holds() -> None:
-    member = wire_floor()
+    member = new_floor()
     member.utterance_began("ann")
     playing(member)
     assert member.hear_partial("ann", "Moment") is False
@@ -243,14 +242,14 @@ def test_a_turn_that_began_before_the_span_never_holds() -> None:
 
 
 def test_the_span_closes_when_nothing_is_left() -> None:
-    member = playing(wire_floor())
+    member = playing(new_floor())
     member.utterance_began("ann")
     member.sentence_ended()
     assert member.hear_partial("ann", "Moment") is False
 
 
 def test_a_person_still_speaking_across_a_close_and_a_new_opening_does_not_hold() -> None:
-    member = playing(wire_floor())
+    member = playing(new_floor())
     member.utterance_began("ann")
     member.sentence_ended()
     playing(member, SECOND)
@@ -258,7 +257,7 @@ def test_a_person_still_speaking_across_a_close_and_a_new_opening_does_not_hold(
 
 
 def test_sentences_left_waiting_after_an_answer_ended_open_no_span() -> None:
-    member = loop_floor()
+    member = new_floor()
     member.answer_begins()
     member.enter(FIRST)
     member.enter(SECOND)
@@ -269,24 +268,8 @@ def test_sentences_left_waiting_after_an_answer_ended_open_no_span() -> None:
     assert member.waiting == (SECOND,)
 
 
-def test_after_a_continue_only_a_fresh_voice_holds_again() -> None:
-    member = held(FIRST, SECOND)
-    assert member.continue_speaking(HOLD) == (PlayOn(FIRST),)
-    assert member.hear_partial("ann", "noch mehr") is False
-    assert member.holding is False
-    assert lasts(member, "ben") is True
-
-
-def test_after_an_answer_a_person_already_speaking_does_not_hold_again() -> None:
-    member = held(FIRST)
-    member.end_hold(HoldEnding.ANSWERED)
-    assert member.answer_goes_on() is False
-    member.enter(SECOND)
-    assert member.hear_partial("ann", "noch mehr") is False
-
-
 def test_plays_is_true_while_a_started_sentence_has_not_ended_and_the_member_is_not_held() -> None:
-    member = wire_floor()
+    member = new_floor()
     rendered(member, FIRST)
     assert member.plays is False
     assert member.next_start() == Start(FIRST)
@@ -295,6 +278,7 @@ def test_plays_is_true_while_a_started_sentence_has_not_ended_and_the_member_is_
     assert member.plays is True
     member.sound_stopped_at(place_in(), HOLD)
     assert member.plays is False
+    member.utterance_ended("ann")
     member.continue_speaking(HOLD)
     assert member.plays is True
     member.sentence_ended()
@@ -360,8 +344,8 @@ def test_a_sentence_that_played_out_while_stopping_leaves_the_hold_stopping_unti
 
 def _states() -> dict[str, Callable[[], Floor[str]]]:
     return {
-        "silent": wire_floor,
-        "playing": lambda: playing(wire_floor()),
+        "silent": new_floor,
+        "playing": lambda: playing(new_floor()),
         "stopping": stopping,
         "held": held,
     }
@@ -394,7 +378,7 @@ def test_a_speak_without_an_id_is_refused_held_only_while_held(
 
 def test_a_speak_naming_the_standing_id_passes() -> None:
     assert held().speak_refusal(HOLD) is None
-    assert wire_floor().speak_refusal(HOLD) is SpeakRefusal.NOT_INTERRUPTED
+    assert new_floor().speak_refusal(HOLD) is SpeakRefusal.NOT_INTERRUPTED
 
 
 def test_a_ticket_ended_after_a_stop_answers_stopped_before_the_id_is_checked() -> None:
@@ -413,7 +397,7 @@ def test_a_ticket_ended_after_an_answer_dropped_it_answers_stopped() -> None:
 
 
 def test_a_hold_that_arose_during_an_id_less_render_refuses_nothing() -> None:
-    member = playing(wire_floor())
+    member = playing(new_floor())
     ticket = member.render_begins()
     assert lasts(member, "ann", "Moment")
     member.sound_stopped_at(place_in(), HOLD)
@@ -430,17 +414,17 @@ def test_a_continue_during_the_render_of_an_answer_leaves_the_answer_not_interru
 
 
 def _cut() -> tuple[Floor[str], str | None, HoldPlace]:
-    return playing(wire_floor(), FIRST), None, place_in()
+    return playing(new_floor(), FIRST), None, place_in()
 
 
 def _only_waiting() -> tuple[Floor[str], str | None, HoldPlace]:
-    member = wire_floor()
+    member = new_floor()
     rendered(member, FIRST)
     return member, None, BETWEEN
 
 
 def _only_renders() -> tuple[Floor[str], str | None, HoldPlace]:
-    member = wire_floor()
+    member = new_floor()
     member.render_begins()
     return member, None, BETWEEN
 
@@ -486,7 +470,7 @@ def test_a_stop_answers_what_it_cut_or_dropped(
 
 
 def test_a_stop_of_a_silent_member_answers_nothing_playing() -> None:
-    assert wire_floor().stop(None, BETWEEN) is StopSpeakingRefusal.NOTHING_PLAYING
+    assert new_floor().stop(None, BETWEEN) is StopSpeakingRefusal.NOTHING_PLAYING
 
 
 @pytest.mark.parametrize("state", ["silent", "playing", "stopping"])
@@ -529,11 +513,11 @@ def test_a_continue_naming_another_id_is_refused_and_the_hold_stands() -> None:
     member = held(FIRST)
     assert member.continue_speaking("another") is ContinueSpeakingRefusal.NOT_INTERRUPTED
     assert member.hold_id == HOLD
-    assert wire_floor().continue_speaking(HOLD) is ContinueSpeakingRefusal.NOT_INTERRUPTED
+    assert new_floor().continue_speaking(HOLD) is ContinueSpeakingRefusal.NOT_INTERRUPTED
 
 
 def _wordless() -> Floor[str]:
-    member = playing(wire_floor())
+    member = playing(new_floor())
     assert lasts(member, "ann", "")
     member.sound_stopped_at(place_in(), HOLD)
     return member
@@ -551,7 +535,7 @@ def test_a_hold_is_wordless_from_held_until_the_first_word_and_never_again() -> 
 
 
 def test_a_word_heard_while_stopping_means_the_hold_is_never_wordless() -> None:
-    member = playing(wire_floor())
+    member = playing(new_floor())
     assert lasts(member, "ann", "Moment")
     member.sound_stopped_at(place_in(), HOLD)
     assert member.wordless is False
@@ -599,7 +583,7 @@ def test_a_line_after_the_persons_turn_ended_still_counts() -> None:
 
 
 def test_a_line_of_a_person_never_in_the_talk_over_neither_counts_nor_blocks_the_going_on() -> None:
-    member = wire_floor()
+    member = new_floor()
     member.utterance_began("ben")
     playing(member)
     assert lasts(member, "ann", "")
@@ -623,7 +607,7 @@ def test_a_person_who_starts_while_stopping_or_held_joins_the_talk_over_and_open
 
 
 def test_two_people_under_one_shown_name_with_different_keys_are_two() -> None:
-    member = playing(wire_floor())
+    member = playing(new_floor())
     assert lasts(member, "seat-1") is True
     assert lasts(member, "seat-2") is False
     member.utterance_ended("seat-1")
@@ -633,7 +617,7 @@ def test_two_people_under_one_shown_name_with_different_keys_are_two() -> None:
 
 
 def test_renders_counts_the_open_tickets_and_no_dropped_or_ended_one() -> None:
-    member = wire_floor()
+    member = new_floor()
     first, second, third = (member.render_begins() for _ in range(3))
     assert member.renders == 3
     member.render_ended(first)
@@ -646,7 +630,7 @@ def test_renders_counts_the_open_tickets_and_no_dropped_or_ended_one() -> None:
 
 
 def test_a_sentence_ended_in_the_step_of_its_start_is_never_a_later_cut() -> None:
-    member = wire_floor()
+    member = new_floor()
     rendered(member, FIRST)
     assert member.next_start() == Start(FIRST)
     member.sentence_ended()
@@ -658,7 +642,7 @@ def test_a_sentence_ended_in_the_step_of_its_start_is_never_a_later_cut() -> Non
 
 
 def test_no_empty_drop_and_a_finish_drops_only_the_waiting_sentences() -> None:
-    member = loop_floor()
+    member = new_floor()
     member.answer_begins()
     member.enter(FIRST)
     member.next_start()
@@ -686,7 +670,7 @@ def _heard_again_after_its_end(member: Floor[str]) -> None:
 def test_a_voice_whose_utterance_began_before_holds_nothing_and_counts_as_speaking(
     scene: Callable[[Floor[str]], None],
 ) -> None:
-    member = playing(wire_floor())
+    member = playing(new_floor())
     scene(member)
     assert member.hear_partial("ann", "Moment") is False
     assert member.nobody_speaks is False
@@ -694,7 +678,7 @@ def test_a_voice_whose_utterance_began_before_holds_nothing_and_counts_as_speaki
 
 
 def test_a_span_a_render_opened_stays_open_through_the_step_that_ends_the_ticket() -> None:
-    member = wire_floor()
+    member = new_floor()
     ticket = member.render_begins()
     member.utterance_began("ann")
     assert member.render_ended(ticket) is None
@@ -703,7 +687,7 @@ def test_a_span_a_render_opened_stays_open_through_the_step_that_ends_the_ticket
 
 
 def test_a_ticket_that_ends_with_nothing_entered_leaves_the_member_silent() -> None:
-    member = wire_floor()
+    member = new_floor()
     ticket = member.render_begins()
     member.utterance_began("ann")
     assert member.render_ended(ticket) is None
@@ -713,7 +697,7 @@ def test_a_ticket_that_ends_with_nothing_entered_leaves_the_member_silent() -> N
 
 
 def test_a_name_the_snapshot_lists_again_after_its_line_begins_anew_during_the_answer() -> None:
-    member = loop_floor()
+    member = new_floor()
     assert member.hear_partials((partial("ann", "Ja"),)) is False
     member.answer_begins()
     member.enter(FIRST)
@@ -725,7 +709,7 @@ def test_a_name_the_snapshot_lists_again_after_its_line_begins_anew_during_the_a
 
 
 def test_a_name_the_snapshot_lists_again_outside_an_answer_holds_nothing() -> None:
-    member = loop_floor()
+    member = new_floor()
     member.answer_begins()
     member.enter(FIRST)
     member.next_start()

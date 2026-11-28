@@ -6,13 +6,14 @@ written as a line when the voice failed) and what each refuses, and what the win
 people talk over the member (``TalkedOver``), when the member is held by it (``Interrupted``)
 and whether the member's voice at the place has failed (``VoiceState``); a hold says where it
 stopped the member in a ``HoldPlace``, and a hold the app ended by itself is a ``WentOn``.
-``has_words`` is the one test of whether a text holds a word. ``agents.member`` re-exports the
-records. This module is base, so a runner parses all of it without the ``mcp-server`` extra.
+``words_of`` is the one notion of a word, and ``has_words`` its test. ``agents.member`` re-exports
+the records. This module is base, so a runner parses all of it without the ``mcp-server`` extra.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
+from itertools import groupby
 from typing import Annotated, Self
 
 from pydantic import Field, StringConstraints, model_validator
@@ -49,19 +50,26 @@ __all__ = [
     "Written",
     "has_words",
     "hold_place",
+    "words_of",
 ]
 
 
-def has_words(text: str) -> bool:
-    """Whether one of the text's characters is a letter or a digit (``str.isalpha`` or
-    ``str.isdigit``).
+def words_of(text: str) -> tuple[str, ...]:
+    """The words of the text in lower case: its runs of characters that are a letter or a digit
+    (``str.isalpha`` or ``str.isdigit``).
 
     A digit is what ``str.isdigit`` accepts, so a superscript such as "²" counts too, which errs
     toward a decision. Punctuation, an emoji, a fraction such as "½" and a Roman numeral sign such
-    as "Ⅷ" (number characters, neither letter nor digit) hold no word. It is the one test of
-    whether a talk-over held a word, for the wire and the voice loop alike.
+    as "Ⅷ" (number characters, neither letter nor digit) hold no word.
     """
-    return any(character.isalpha() or character.isdigit() for character in text)
+    runs = groupby(text, lambda character: character.isalpha() or character.isdigit())
+    return tuple("".join(run).casefold() for is_word, run in runs if is_word)
+
+
+def has_words(text: str) -> bool:
+    """Whether the text holds a word (``words_of``). It is the one test of whether a talk-over
+    held a word, for the wire and the voice loop alike."""
+    return bool(words_of(text))
 
 
 VoiceStyle = NonEmptyUnicodeText
@@ -73,6 +81,10 @@ SpokenLanguage = Annotated[str, StringConstraints(pattern=r"^[a-z]{2}$")]
 """The language of a spoken sentence: a lowercase ISO 639-1 code of two letters, such as ``de`` or
 ``en``. The record checks the form only; whether the app's voice speaks the language is the app's
 decision."""
+
+
+ChangeCount = Annotated[int, Field(ge=1)]
+"""A count of worded changes: how many ``Interrupted.worded_changes`` a decision was told."""
 
 
 def require_hold_to_keep_queue(*, keeps_queue: bool, interrupted: str | None) -> None:
@@ -90,7 +102,9 @@ class SpeakArguments(StrictModel):
     the held rest; without it, a held member refuses the sentence. ``keeps_queue``, valid only with
     ``interrupted``, makes the sentence a short own line: it takes the head of the queue and the
     queued sentences stay behind it, none of them answering ``stopped``; absent while false, the
-    sentence replaces the queue. An app that does not declare it leaves the queue to ``stopped``."""
+    sentence replaces the queue. An app that does not declare it leaves the queue to ``stopped``.
+    ``told_changes``, valid only with ``interrupted``, is the ``Interrupted.worded_changes`` the
+    runner's decision was told; absent, the app does not check it."""
 
     place: PlaceRef
     text: NonEmptyUnicodeText
@@ -101,10 +115,13 @@ class SpeakArguments(StrictModel):
     )
     interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
     keeps_queue: bool = Field(default=False, exclude_if=is_false)
+    told_changes: ChangeCount | None = Field(default=None, exclude_if=is_none)
 
     @model_validator(mode="after")
-    def _keep_the_queue_only_of_a_named_hold(self) -> Self:
+    def _keep_the_queue_and_the_count_only_of_a_named_hold(self) -> Self:
         require_hold_to_keep_queue(keeps_queue=self.keeps_queue, interrupted=self.interrupted)
+        if self.told_changes is not None and self.interrupted is None:
+            raise ValueError("told_changes needs the hold the sentence answers")
         return self
 
 
@@ -135,10 +152,12 @@ class SpeakRefusal(StrEnum):
     ``style`` by the voice (it takes none, it is too long or it is not supported), ``stopped``
     for a queued sentence that a ``stop_speaking`` or a ``speak`` naming the hold dropped,
     ``held`` when the member is held and the sentence names no hold, ``not_interrupted`` when the
-    sentence names a hold that does not stand, and ``unavailable`` when the app neither voices nor
-    writes the sentence now: a social reason, a limit of its own or a failed voice at a place
-    without a chat. ``held`` and ``not_interrupted`` change nothing and answer at once. No
-    refusal is ever turned into a written line."""
+    sentence names a hold that does not stand or its waiting choice was voided or replaced,
+    ``stale`` when the sentence's ``told_changes`` is below the ``worded_changes`` the app
+    counted, and ``unavailable`` when the app neither voices nor writes the sentence now: a
+    social reason, a limit of its own or a failed voice at a place without a chat. ``held`` and
+    ``stale`` change nothing and answer at once, as does ``not_interrupted`` for a hold that does
+    not stand. No refusal is ever turned into a written line."""
 
     NOT_ACTIVE = "not_active"
     TOO_LONG = "too_long"
@@ -147,6 +166,7 @@ class SpeakRefusal(StrEnum):
     STOPPED = "stopped"
     HELD = "held"
     NOT_INTERRUPTED = "not_interrupted"
+    STALE = "stale"
     UNAVAILABLE = "unavailable"
 
 
@@ -158,11 +178,13 @@ class SpeakRefused(StrictModel):
 
 class StopSpeakingArguments(StrictModel):
     """The arguments of ``stop_speaking``: the place whose sentence and queue of the member are
-    cut, and optionally ``interrupted``, the hold (``PlaceWindow.interrupted``) the stop ends; a
-    stale one is refused."""
+    cut, and optionally ``interrupted``, the hold (``PlaceWindow.interrupted``) the stop ends; one
+    that does not stand is refused. ``told_changes`` is the ``Interrupted.worded_changes`` the
+    runner's decision was told; absent, the app does not check it."""
 
     place: PlaceRef
     interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
+    told_changes: ChangeCount | None = Field(default=None, exclude_if=is_none)
 
 
 class StoppedSpeaking(StrictModel):
@@ -188,11 +210,13 @@ waiting ones were dropped."""
 class StopSpeakingRefusal(StrEnum):
     """Why the app does not stop: ``not_active`` when the member left, was removed or is paused;
     ``nothing_playing`` when the member is silent, so nothing was cut or dropped;
-    ``not_interrupted`` when ``interrupted`` names a hold that does not stand."""
+    ``not_interrupted`` when ``interrupted`` names a hold that does not stand; ``stale`` when
+    ``told_changes`` is below the ``worded_changes`` the app counted."""
 
     NOT_ACTIVE = "not_active"
     NOTHING_PLAYING = "nothing_playing"
     NOT_INTERRUPTED = "not_interrupted"
+    STALE = "stale"
 
 
 class StopSpeakingRefused(StrictModel):
@@ -205,16 +229,19 @@ class ContinueSpeakingArguments(StrictModel):
     """The arguments of ``continue_speaking``: the place and the hold (``PlaceWindow.interrupted``)
     whose held sentence goes on. With ``finish``, only the held sentence's rest plays and the queue
     is dropped, each dropped ``speak`` answering ``stopped``; absent while false, the queue plays
-    too."""
+    too. ``told_changes`` is the ``Interrupted.worded_changes`` the runner's decision was told;
+    absent, the app does not check it."""
 
     place: PlaceRef
     interrupted: NonEmptyUnicodeText
     finish: bool = Field(default=False, exclude_if=is_false)
+    told_changes: ChangeCount | None = Field(default=None, exclude_if=is_none)
 
 
 class ContinuedSpeaking(StrictModel):
-    """What ``continue_speaking`` answers on success, as JSON: the held sentence's rest plays,
-    faded back in, then the queue unless the call finished; the field is exactly the JSON
+    """What ``continue_speaking`` answers on success, as JSON, when the held sentence's rest plays
+    on, faded back in, then the queue unless the call finished: the answer comes when it plays,
+    which waits until no person of the hold's talk-over speaks; the field is exactly the JSON
     ``true``."""
 
     continued: MarkerTrue
@@ -222,10 +249,13 @@ class ContinuedSpeaking(StrictModel):
 
 class ContinueSpeakingRefusal(StrEnum):
     """Why the app does not continue: ``not_active`` when the member left, was removed or is
-    paused; ``not_interrupted`` when ``interrupted`` names a hold that does not stand."""
+    paused; ``not_interrupted`` when ``interrupted`` names a hold that does not stand, or a
+    waiting call that a later choice, a stop or a voice that went on voided; ``stale`` when
+    ``told_changes`` is below the ``worded_changes`` the app counted."""
 
     NOT_ACTIVE = "not_active"
     NOT_INTERRUPTED = "not_interrupted"
+    STALE = "stale"
 
 
 class ContinueSpeakingRefused(StrictModel):
@@ -312,11 +342,15 @@ class Interrupted(StrictModel):
     (``has_words``) of its talk-over has been heard; the app then owns the hold's end and ends it
     by itself (``PlaceWindow.went_on``), and a runner starts no decision for it. It leaves in
     the change in which the first word is heard, and never returns for this ``id``; it is
-    absent while false."""
+    absent while false. ``worded_changes`` counts the partials and lines of the talk-over's people
+    whose words (``words_of``) differ from what that person was last heard to say; it states the
+    count from the change in which the first word is heard, only rises, and is absent while the
+    app states none. A choice names the count its decision was told as ``told_changes``."""
 
     id: NonEmptyUnicodeText
     place: HoldPlace | None = Field(default=None, exclude_if=is_none)
     wordless: bool = Field(default=False, exclude_if=is_false)
+    worded_changes: ChangeCount | None = Field(default=None, exclude_if=is_none)
 
 
 class WentOn(StrictModel):
