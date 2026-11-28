@@ -8,7 +8,6 @@ import secrets
 from typing import Any
 
 import pytest
-from mcp_types import ListToolsResult, Tool
 from pydantic import SecretStr
 
 from agents.member import (
@@ -23,7 +22,7 @@ from agents.member_outcomes import ArgumentLeftOut
 from tests.support import member_session_support
 from tests.support.mcp_server_support import MemberApp
 from tests.support.member_session_support import LIMIT_SECONDS, MemberTools, opened, served
-from tests.support.scripted_gate import LIST_TOOLS, LISTEN, GateReply, ScriptedGate, hangs
+from tests.support.scripted_gate import LIST_TOOLS, LISTEN, GateReply, ScriptedGate, hangs, listing
 
 pytestmark = pytest.mark.anyio
 
@@ -96,18 +95,7 @@ async def test_an_undeclared_argument_is_left_out_though_a_tools_notice_came_whi
         listing_started.set()
         async with asyncio.timeout(LIMIT_SECONDS):
             await notice_taken.wait()
-        await reply.result(
-            ListToolsResult(
-                tools=[
-                    Tool(
-                        name=each.declaration.name,
-                        description=each.declaration.description,
-                        input_schema=each.declaration.parameters,
-                    )
-                    for each in tools.served()
-                ]
-            )
-        )
+        await listing(*tools.served())(reply)
 
     gate.script(LISTEN, notifies_while_listing)
     gate.script(LIST_TOOLS, lists_after_the_notice)
