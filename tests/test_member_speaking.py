@@ -760,10 +760,12 @@ def test_a_count_of_changes_is_read_back_and_a_count_below_one_is_refused(
 
     assert json.loads(read.model_dump_json())[name] == count
     for refused in (0, -1, "1", 1.5):
+        refused_wire = json.dumps(wire(**{name: refused}))
         with pytest.raises(ValidationError):
-            record.model_validate_json(json.dumps(wire(**{name: refused})))
+            record.model_validate_json(refused_wire)
 
 
 def test_told_changes_of_a_speak_without_the_hold_it_answers_is_refused() -> None:
+    without_hold = json.dumps(speak_wire(told_changes=1))
     with pytest.raises(ValidationError):
-        SpeakArguments.model_validate_json(json.dumps(speak_wire(told_changes=1)))
+        SpeakArguments.model_validate_json(without_hold)
