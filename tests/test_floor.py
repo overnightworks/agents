@@ -284,7 +284,7 @@ def test_a_speak_naming_another_id_is_refused_in_every_state_and_changes_nothing
     member = _states()[state]()
     before = (member.holding, member.hold_id, member.waiting, member.renders)
     assert member.speak_refusal("another") is SpeakRefusal.NOT_INTERRUPTED
-    assert (member.holding, member.hold_id, member.waiting, member.renders) == before
+    assert before == (member.holding, member.hold_id, member.waiting, member.renders)
 
 
 @pytest.mark.parametrize(
