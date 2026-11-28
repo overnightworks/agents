@@ -757,12 +757,14 @@ the app's protocol revision and yields a `MemberSession`:
 
 The client writes no log line and decides nothing. An optional argument the app's tool does not
 declare (accept's `figure`, `voices`, `looks` and `looks[].room`, speak's `style`, `interrupted` and
-`keeps_queue`, set_turn_state's `thinking`) is left out of the call, and `on_argument_left_out` is
+`keeps_queue` and `told_changes`, continue_speaking's and stop_speaking's `told_changes`,
+set_turn_state's `thinking`) is left out of the call, and `on_argument_left_out` is
 told once per session of each `ArgumentLeftOut(tool, argument)`; a required argument is never
 dropped. A `speak` with `keeps_queue` and a `continue_speaking` with `finish` list the app's tools
 first when the session has no list: the first leaves `keeps_queue` out of an app whose `speak`
-declares none, so the queue answers `stopped`, and a `keeps_queue` without `interrupted` raises
-`ValueError` before anything is sent, against every app; the second sends nothing to an app whose
+declares none, so the queue answers `stopped`, and a `keeps_queue` or `told_changes` without
+`interrupted` raises `ValueError` before anything is sent, against every app; a call with only
+`told_changes` lists nothing first; the second sends nothing to an app whose
 `continue_speaking` declares no `finish` and answers `Delivery.NOT_SERVED`.
 
 **What leaves a session.** A `CallFailure` (`StatusFailure`, `Unreachable` or `UnusableAnswer` of
@@ -880,7 +882,7 @@ descriptions ([Trust](ARCHITECTURE.md#crosscutting-concepts)).
 ## The member module
 
 `agents.member` exports what an app and an agent say to each other about a member:
-`PlaceRef` (defined in `agents.member_place`, with `STANDING_URI` and the four URI functions, and re-exported here), the speech and hold records (defined in `agents.member_speaking` and re-exported here: the arguments and answers of `speak` (with `keeps_queue`), `stop_speaking` and `continue_speaking` (with `finish`), `PartialSpeech`, `TalkedOver`, `Interrupted(id, place, wordless)`, `WentOn(id)`, `has_words(text)`, the place a hold stopped the member at (`HoldPoint`, `HoldPlace(at, sentence, heard_to)` and `hold_place(sentence, heard_to)`, the one mapping the loop and every app share) and `VoiceState`), `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
+`PlaceRef` (defined in `agents.member_place`, with `STANDING_URI` and the four URI functions, and re-exported here), the speech and hold records (defined in `agents.member_speaking` and re-exported here: the arguments and answers of `speak` (with `keeps_queue`), `stop_speaking` and `continue_speaking` (with `finish`), `PartialSpeech`, `TalkedOver`, `Interrupted(id, place, wordless, worded_changes)`, `WentOn(id)`, `has_words(text)`, the place a hold stopped the member at (`HoldPoint`, `HoldPlace(at, sentence, heard_to)` and `hold_place(sentence, heard_to)`, the one mapping the loop and every app share) and `VoiceState`), `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
 `STANDING_URI`, `member://standing`, answers with), `PlaceWindow(generation, starts_at, entries, talked_over, interrupted, voice_state, went_on)`
 of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, continues, language, traceparent)`, `LEASE_SECONDS` (120),
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
@@ -1421,7 +1423,11 @@ either. A refusal is an `is_error` result whose content is `SpeakRefused(refused
 - `stopped`: a `stop_speaking`, or a `speak` naming the hold, dropped this queued sentence;
 - `held`: the member is held and the sentence names no hold; it answers at once and changes nothing;
 - `not_interrupted`: the sentence names an id that is not the standing hold, any id while the member
-  is speaking or silent; it answers at once and changes nothing.
+  is speaking or silent; it answers at once and changes nothing, and a named `speak` can also be
+  refused `not_interrupted` when it plays, if its waiting choice was voided or replaced;
+- `stale`: the sentence's `told_changes` is below the `worded_changes` the app counted; it answers
+  at once, changes nothing and leaves a waiting choice standing; a named `speak` can also be
+  refused `stale` when it plays, if words changed while it rendered.
 
 No refusal is ever written as a line ([HEARING-25](hearing.md)). A `speak` refused for any reason
 leaves the hold and its rest as they were.
@@ -1453,7 +1459,8 @@ or a playing one cut before that) it drops the queue and answers `DroppedSpeakin
 `{"dropped": true}`; `StopSpeakingAnswer` reads either. A refusal is an
 `is_error` result with `StopSpeakingRefused(refused)` as JSON: `not_active` (the member left, was
 removed or is paused), `nothing_playing` (the member is silent: nothing was cut and nothing
-dropped) or `not_interrupted` (`interrupted` is not the standing hold)
+dropped) `not_interrupted` (`interrupted` is not the standing hold) or `stale` (`told_changes` is below the
+`worded_changes` the app counted; nothing changes)
 ([HEARING-22](hearing.md)).
 
 **Holding and going on.** When a person the member may hear speaks for the app's bound while a
@@ -1465,7 +1472,10 @@ and the tools answer as in Speaking, except that a `speak` without id queues, a 
 without id cuts at once and leaves the member silent so no hold arises, and any id is refused
 `not_interrupted`. Once the sound has stopped in every seat (or the app's bound for the seats' reports
 has passed) the member is Held: the window gains `interrupted`, `Interrupted(id, place)`, in the same
-change in which `playing` turns false. The `id` is the app's and never repeats within the window's
+change in which `playing` turns false. `worded_changes` joins it from the change in which the first
+word of the talk-over is heard: the count `agents.floor` makes of the talk-over's partials and lines
+whose words differ from what that person was last heard to say. It only rises, and a choice names
+the count its decision was told as `told_changes`. The `id` is the app's and never repeats within the window's
 `generation`. `place` says where the hold stopped the member: `in_sentence`, with the `sentence` and
 `heard_to`, the code points every seat heard to a word's end (0 when not every seat heard a word,
 absent when the app cannot tell, never estimated from time), or `between_sentences`, when no
@@ -1474,14 +1484,16 @@ before the place leaves it absent. `interrupted` stands exactly while the member
 the same change that ends the hold. Nothing ends it by itself but a hold through whose talk-over no
 word was heard (below), and no timer runs; the runner decides, and without a decision nothing the
 member held or sends is said, but the held rest and the queue of a hold that goes on by itself, so a
-`speak` without the id is refused `held`. Three tools decide, each naming the id:
+`speak` without the id is refused `held`. Three tools decide, each naming the id and optionally the `told_changes` of its decision, absent
+while unset. A call told fewer changes than the app counted is refused `stale` at arrival and changes
+nothing: a waiting choice stands, and the runner decides again with what was said since.
 
 - `CONTINUE_SPEAKING_TOOL`, `continue_speaking`, with `ContinueSpeakingArguments(place,
-  interrupted, finish)`: the held sentence's rest plays on from where it stopped, faded back in
+  interrupted, finish, told_changes)`: the held sentence's rest plays on from where it stopped, faded back in
   (from its start when `heard_to` is 0), then the queue; with `finish`, which is absent while false,
   only the rest plays and the queue is dropped, each dropped `speak` answering `stopped`. It answers
   `ContinuedSpeaking(continued)`, `{"continued": true}`, and refuses with
-  `ContinueSpeakingRefused(refused)` as JSON: `not_active` or `not_interrupted`
+  `ContinueSpeakingRefused(refused)` as JSON: `not_active`, `not_interrupted` or `stale`
   ([HEARING-31](hearing.md));
 - `stop_speaking` with the id: the member is silent, the held sentence enters as a `cut` line when
   its `heard_to` is above 0 (the heard part, or the whole sentence when the place states none), the
@@ -1523,9 +1535,13 @@ and a new generation end such a hold as any hold, with no `went_on`
 ([HEARING-30](hearing.md)).
 
 **Rollout order.** Answers and arguments are strict: a runner takes the release before its app
-answers `DroppedSpeaking`, `held` or `not_interrupted`, and an app on an older release refuses a
-`speak` with `interrupted`, so a runner sends it only once its app has shipped the hold. Runners
-take each release first; then apps fill `place`, drop the line of a sentence that not every seat
+answers `DroppedSpeaking`, `held`, `not_interrupted` or `stale`, and an app on an older release
+refuses a `speak` with `interrupted`, so a runner sends it only once its app has shipped the hold.
+`told_changes` of `continue_speaking`, `speak` and `stop_speaking` and `Interrupted.worded_changes`
+are runners-first: an app states `worded_changes` only in the change that declares `told_changes`
+on its three tools, and only once every runner it serves has adopted this release. A runner of an
+older release names no `told_changes`, so its choice is never stale, and it cannot read
+`worded_changes`. Runners take each release first; then apps fill `place`, drop the line of a sentence that not every seat
 heard a word of, and declare what they add later. An app drops that line only in the same change in
 which it starts to state `place` on its holds, and only once every runner it serves has adopted this
 release; a runner whose app states no place builds `hold_place(its playing sentence, None)` and
@@ -1568,7 +1584,8 @@ Proved by `tests/test_member.py` (among them
   that made `choice_may_play` true, carries out its steps and then calls `answer_goes_on`. It
   reports `voice_went_on(key)` for a person already speaking at a waiting choice whose voice lasts
   its bound after it; a fresh speaker's first `hear_partial` comes before any `voice_went_on` of
-  theirs, and voids the choice. It holds a member
+  theirs, and voids the choice. A choice told too few `worded_changes` is
+  `Stale`. It holds a member
   talked over for the bound at once, as Stopping and then Held, stops the playing sentence at its next
   word end or lets it finish under the bound, reports where the sound stopped with the hold's id
   (`sound_stopped_at`), writes `interrupted` with its `place` exactly while it is held, and continues

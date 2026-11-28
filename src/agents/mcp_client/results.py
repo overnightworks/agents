@@ -114,12 +114,17 @@ def speak_answer_of(result: CallToolResult) -> SpeakAnswer | SpeakRefusal:
         raise UnusableAnswer(INVALID_ANSWER_CODE) from None
 
 
-def naming_hold(place: PlaceRef, interrupted: str, *, finish: bool = False) -> JsonObject:
+def naming_hold(
+    place: PlaceRef, interrupted: str, *, finish: bool = False, told_changes: int | None = None
+) -> JsonObject:
     """The wire's arguments of ``continue_speaking`` and ``stop_speaking``, built unvalidated as
-    ``speak``'s are; ``finish`` is the one ``continue_speaking`` takes, left out while false."""
+    ``speak``'s are; ``finish`` is the one ``continue_speaking`` takes, left out while false, and
+    ``told_changes`` is left out while unset."""
     arguments: JsonObject = {"place": place.model_dump(mode="json"), "interrupted": interrupted}
     if finish:
         arguments["finish"] = True
+    if told_changes is not None:
+        arguments["told_changes"] = told_changes
     return arguments
 
 

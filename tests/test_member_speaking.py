@@ -722,3 +722,66 @@ def test_an_entry_with_a_malformed_cut_mark_is_refused(cut: object) -> None:
 
     with pytest.raises(ValidationError):
         window_from(wire)
+
+
+def test_worded_changes_and_told_changes_are_absent_while_unset() -> None:
+    assert "worded_changes" not in json.loads(Interrupted(id="h-1").model_dump_json())
+    assert "told_changes" not in json.loads(
+        ContinueSpeakingArguments.model_validate_json(json.dumps(continue_wire())).model_dump_json()
+    )
+    assert "told_changes" not in json.loads(
+        StopSpeakingArguments.model_validate_json(json.dumps(stop_wire())).model_dump_json()
+    )
+    assert "told_changes" not in json.loads(
+        SpeakArguments.model_validate_json(json.dumps(speak_wire())).model_dump_json()
+    )
+
+
+CHANGE_COUNT_RECORDS = pytest.mark.parametrize(
+    ("record", "wire"),
+    [
+        pytest.param(Interrupted, interrupted_wire, id="worded_changes"),
+        pytest.param(ContinueSpeakingArguments, continue_wire, id="told_changes of a continue"),
+        pytest.param(StopSpeakingArguments, stop_wire, id="told_changes of a stop"),
+        pytest.param(
+            SpeakArguments,
+            lambda **fields: speak_wire(interrupted="h-1", **fields),
+            id="told_changes of a speak",
+        ),
+    ],
+)
+
+
+def count_field(record: type[Any]) -> str:
+    return "worded_changes" if record is Interrupted else "told_changes"
+
+
+@CHANGE_COUNT_RECORDS
+@pytest.mark.parametrize("count", [1, 7], ids=["one", "seven"])
+def test_a_count_of_changes_is_read_back(record: type[Any], wire: Any, count: int) -> None:
+    name = count_field(record)
+
+    read = record.model_validate_json(json.dumps(wire(**{name: count})))
+
+    assert json.loads(read.model_dump_json())[name] == count
+
+
+@CHANGE_COUNT_RECORDS
+@pytest.mark.parametrize(
+    "refused",
+    [0, -1, "1", 1.5],
+    ids=["zero", "negative", "text", "fraction"],
+)
+def test_a_count_of_changes_below_one_or_not_a_whole_number_is_refused(
+    record: type[Any], wire: Any, refused: object
+) -> None:
+    refused_wire = json.dumps(wire(**{count_field(record): refused}))
+
+    with pytest.raises(ValidationError):
+        record.model_validate_json(refused_wire)
+
+
+def test_told_changes_of_a_speak_without_the_hold_it_answers_is_refused() -> None:
+    without_hold = json.dumps(speak_wire(told_changes=1))
+    with pytest.raises(ValidationError):
+        SpeakArguments.model_validate_json(without_hold)

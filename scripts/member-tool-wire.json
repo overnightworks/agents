@@ -243,7 +243,7 @@
         },
         "Interrupted": {
           "additionalProperties": false,
-          "description": "The member is held: a person talked over it, and nothing of the member plays until its\ndecision. ``id`` is the app's, never repeats within the window's ``generation`` and stays\nfixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.\nThe hold ends at one of them, or at the member's or the place's end. ``place`` says where\nthe hold stopped the member and stays as it was while the hold stands; it is absent while\nthe app states none. ``wordless`` is true from the change that adds the hold while no word\n(``has_words``) of its talk-over has been heard; the app then owns the hold's end and ends it\nby itself (``PlaceWindow.went_on``), and a runner starts no decision for it. It leaves in\nthe change in which the first word is heard, and never returns for this ``id``; it is\nabsent while false.",
+          "description": "The member is held: a person talked over it, and nothing of the member plays until its\ndecision. ``id`` is the app's, never repeats within the window's ``generation`` and stays\nfixed while the hold stands; ``continue_speaking``, ``stop_speaking`` and ``speak`` name it.\nThe hold ends at one of them, or at the member's or the place's end. ``place`` says where\nthe hold stopped the member and stays as it was while the hold stands; it is absent while\nthe app states none. ``wordless`` is true from the change that adds the hold while no word\n(``has_words``) of its talk-over has been heard; the app then owns the hold's end and ends it\nby itself (``PlaceWindow.went_on``), and a runner starts no decision for it. It leaves in\nthe change in which the first word is heard, and never returns for this ``id``; it is\nabsent while false. ``worded_changes`` counts the partials and lines of the talk-over's people\nwhose words (``words_of``) differ from what that person was last heard to say; it states the\ncount from the change in which the first word is heard, only rises, and is absent while the\napp states none. A choice names the count its decision was told as ``told_changes``.",
           "properties": {
             "id": {
               "minLength": 1,
@@ -260,6 +260,19 @@
                 }
               ],
               "default": null
+            },
+            "worded_changes": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Worded Changes"
             },
             "wordless": {
               "default": false,
@@ -766,7 +779,7 @@
     "continue_speaking": {
       "arguments": {
         "additionalProperties": false,
-        "description": "The arguments of ``continue_speaking``: the place and the hold (``PlaceWindow.interrupted``)\nwhose held sentence goes on. With ``finish``, only the held sentence's rest plays and the queue\nis dropped, each dropped ``speak`` answering ``stopped``; absent while false, the queue plays\ntoo.",
+        "description": "The arguments of ``continue_speaking``: the place and the hold (``PlaceWindow.interrupted``)\nwhose held sentence goes on. With ``finish``, only the held sentence's rest plays and the queue\nis dropped, each dropped ``speak`` answering ``stopped``; absent while false, the queue plays\ntoo. ``told_changes`` is the ``Interrupted.worded_changes`` the runner's decision was told;\nabsent, the app does not check it.",
         "properties": {
           "finish": {
             "default": false,
@@ -794,6 +807,18 @@
               "id"
             ],
             "type": "object"
+          },
+          "told_changes": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -805,7 +830,7 @@
       "results": [
         {
           "additionalProperties": false,
-          "description": "What ``continue_speaking`` answers on success, as JSON: the held sentence's rest plays,\nfaded back in, then the queue unless the call finished; the field is exactly the JSON\n``true``.",
+          "description": "What ``continue_speaking`` answers on success, as JSON, when the held sentence's rest plays\non, faded back in, then the queue unless the call finished: the answer comes when it plays,\nwhich waits until no person of the hold's talk-over speaks; the field is exactly the JSON\n``true``.",
           "properties": {
             "continued": {
               "title": "Continued",
@@ -821,10 +846,11 @@
         {
           "$defs": {
             "ContinueSpeakingRefusal": {
-              "description": "Why the app does not continue: ``not_active`` when the member left, was removed or is\npaused; ``not_interrupted`` when ``interrupted`` names a hold that does not stand.",
+              "description": "Why the app does not continue: ``not_active`` when the member left, was removed or is\npaused; ``not_interrupted`` when ``interrupted`` names a hold that does not stand, or a\nwaiting call that a later choice, a stop or a voice that went on voided; ``stale`` when\n``told_changes`` is below the ``worded_changes`` the app counted.",
               "enum": [
                 "not_active",
-                "not_interrupted"
+                "not_interrupted",
+                "stale"
               ],
               "title": "ContinueSpeakingRefusal",
               "type": "string"
@@ -1150,7 +1176,7 @@
     "speak": {
       "arguments": {
         "additionalProperties": false,
-        "description": "The arguments of ``speak``: the place and one sentence, whose length the app bounds, and\noptionally the ``language`` of that sentence, the ``style`` it should sound in, which the app\npasses on unchanged, and the ``mood`` the agent's figure shows while it speaks; an absent one\nmeans the app's own default, and an app that draws no figure ignores the ``mood``.\n``interrupted`` names the hold (``PlaceWindow.interrupted``) the sentence answers instead of\nthe held rest; without it, a held member refuses the sentence. ``keeps_queue``, valid only with\n``interrupted``, makes the sentence a short own line: it takes the head of the queue and the\nqueued sentences stay behind it, none of them answering ``stopped``; absent while false, the\nsentence replaces the queue. An app that does not declare it leaves the queue to ``stopped``.",
+        "description": "The arguments of ``speak``: the place and one sentence, whose length the app bounds, and\noptionally the ``language`` of that sentence, the ``style`` it should sound in, which the app\npasses on unchanged, and the ``mood`` the agent's figure shows while it speaks; an absent one\nmeans the app's own default, and an app that draws no figure ignores the ``mood``.\n``interrupted`` names the hold (``PlaceWindow.interrupted``) the sentence answers instead of\nthe held rest; without it, a held member refuses the sentence. ``keeps_queue``, valid only with\n``interrupted``, makes the sentence a short own line: it takes the head of the queue and the\nqueued sentences stay behind it, none of them answering ``stopped``; absent while false, the\nsentence replaces the queue. An app that does not declare it leaves the queue to ``stopped``.\n``told_changes``, valid only with ``interrupted``, is the ``Interrupted.worded_changes`` the\nrunner's decision was told; absent, the app does not check it.",
         "properties": {
           "interrupted": {
             "anyOf": [
@@ -1233,6 +1259,18 @@
           "text": {
             "minLength": 1,
             "type": "string"
+          },
+          "told_changes": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -1275,7 +1313,7 @@
         {
           "$defs": {
             "SpeakRefusal": {
-              "description": "Why the app does not speak a sentence: ``language_unavailable`` when the app's voice does\nnot speak the language the sentence names, ``style_unavailable`` for every refusal of the\n``style`` by the voice (it takes none, it is too long or it is not supported), ``stopped``\nfor a queued sentence that a ``stop_speaking`` or a ``speak`` naming the hold dropped,\n``held`` when the member is held and the sentence names no hold, ``not_interrupted`` when the\nsentence names a hold that does not stand, and ``unavailable`` when the app neither voices nor\nwrites the sentence now: a social reason, a limit of its own or a failed voice at a place\nwithout a chat. ``held`` and ``not_interrupted`` change nothing and answer at once. No\nrefusal is ever turned into a written line.",
+              "description": "Why the app does not speak a sentence: ``language_unavailable`` when the app's voice does\nnot speak the language the sentence names, ``style_unavailable`` for every refusal of the\n``style`` by the voice (it takes none, it is too long or it is not supported), ``stopped``\nfor a queued sentence that a ``stop_speaking`` or a ``speak`` naming the hold dropped,\n``held`` when the member is held and the sentence names no hold, ``not_interrupted`` when the\nsentence names a hold that does not stand or its waiting choice was voided or replaced,\n``stale`` when the sentence's ``told_changes`` is below the ``worded_changes`` the app\ncounted, and ``unavailable`` when the app neither voices nor writes the sentence now: a\nsocial reason, a limit of its own or a failed voice at a place without a chat. ``held`` and\n``stale`` change nothing and answer at once, as does ``not_interrupted`` for a hold that does\nnot stand; a named sentence can also be refused ``stale`` or ``not_interrupted`` when it plays.\nNo refusal is ever turned into a written line.",
               "enum": [
                 "not_active",
                 "too_long",
@@ -1284,6 +1322,7 @@
                 "stopped",
                 "held",
                 "not_interrupted",
+                "stale",
                 "unavailable"
               ],
               "title": "SpeakRefusal",
@@ -1308,7 +1347,7 @@
     "stop_speaking": {
       "arguments": {
         "additionalProperties": false,
-        "description": "The arguments of ``stop_speaking``: the place whose sentence and queue of the member are\ncut, and optionally ``interrupted``, the hold (``PlaceWindow.interrupted``) the stop ends; a\nstale one is refused.",
+        "description": "The arguments of ``stop_speaking``: the place whose sentence and queue of the member are\ncut, and optionally ``interrupted``, the hold (``PlaceWindow.interrupted``) the stop ends; one\nthat does not stand is refused. ``told_changes`` is the ``Interrupted.worded_changes`` the\nrunner's decision was told; absent, the app does not check it.",
         "properties": {
           "interrupted": {
             "anyOf": [
@@ -1340,6 +1379,18 @@
               "id"
             ],
             "type": "object"
+          },
+          "told_changes": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -1382,11 +1433,12 @@
         {
           "$defs": {
             "StopSpeakingRefusal": {
-              "description": "Why the app does not stop: ``not_active`` when the member left, was removed or is paused;\n``nothing_playing`` when the member is silent, so nothing was cut or dropped;\n``not_interrupted`` when ``interrupted`` names a hold that does not stand.",
+              "description": "Why the app does not stop: ``not_active`` when the member left, was removed or is paused;\n``nothing_playing`` when the member is silent, so nothing was cut or dropped;\n``not_interrupted`` when ``interrupted`` names a hold that does not stand; ``stale`` when\n``told_changes`` is below the ``worded_changes`` the app counted.",
               "enum": [
                 "not_active",
                 "nothing_playing",
-                "not_interrupted"
+                "not_interrupted",
+                "stale"
               ],
               "title": "StopSpeakingRefusal",
               "type": "string"
