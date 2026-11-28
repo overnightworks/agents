@@ -1425,7 +1425,8 @@ either. A refusal is an `is_error` result whose content is `SpeakRefused(refused
 - `not_interrupted`: the sentence names an id that is not the standing hold, any id while the member
   is speaking or silent; it answers at once and changes nothing;
 - `stale`: the sentence's `told_changes` is below the `worded_changes` the app counted; it answers
-  at once, changes nothing and leaves a waiting choice standing.
+  at once, changes nothing and leaves a waiting choice standing; a named `speak` can also be
+  refused `stale` when it plays, if words changed while it rendered.
 
 No refusal is ever written as a line ([HEARING-25](hearing.md)). A `speak` refused for any reason
 leaves the hold and its rest as they were.

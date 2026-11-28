@@ -361,7 +361,8 @@ app proves it.
   choice to go on, and with `finish` its choice to finish only the held sentence (HEARING-33).
 
   A choice told fewer changes than the app has counted (`told_changes` below
-  `Interrupted.worded_changes`) is refused `stale` at once and changes nothing.
+  `Interrupted.worded_changes`) is refused `stale` at once and changes nothing; a named `speak` can
+  also be refused `stale` when it plays, if words changed while it rendered.
 
   A choice that plays something, these and a `speak` naming the hold (HEARING-14), starts only once
   no person of the hold's talk-over speaks: no partial of theirs stands, and a finished line whose

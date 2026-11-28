@@ -165,7 +165,8 @@ class SpeakRefusal(StrEnum):
     counted, and ``unavailable`` when the app neither voices nor writes the sentence now: a
     social reason, a limit of its own or a failed voice at a place without a chat. ``held`` and
     ``stale`` change nothing and answer at once, as does ``not_interrupted`` for a hold that does
-    not stand. No refusal is ever turned into a written line."""
+    not stand; a named sentence can also be refused ``stale`` or ``not_interrupted`` when it plays.
+    No refusal is ever turned into a written line."""
 
     NOT_ACTIVE = "not_active"
     TOO_LONG = "too_long"
