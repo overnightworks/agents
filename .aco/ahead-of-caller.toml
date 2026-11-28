@@ -19,11 +19,6 @@ item = "overnightworks/skat#832"
 reason = "The calling core; skat#832 moves skat's calling and send-away decisions onto it and deletes its copy."
 
 [[code]]
-path = "src/agents/calling.py"
-item = "overnightworks/hopin#1115"
-reason = "The calling core; hopin#1115 moves hopin's calling and send-away decisions onto it and deletes its copy."
-
-[[code]]
 path = "src/agents/turn.py"
 item = "overnightworks/personas#394"
 reason = "ToolRound and RoundCall in Turn.messages; personas#394 S8 replays a finished turn's tool rounds and writes a skill's join block. ModelPrices and PriceStep; personas#394 S6 reads them from GatewayBackend.model_prices. It moves to S8's and S6's own items if personas#394 closes when they are cut."
