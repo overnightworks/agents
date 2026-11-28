@@ -77,3 +77,18 @@ reason = "The member wire's side of a hold: the order of the sentences, tickets,
 path = "src/agents/floor.py"
 item = "overnightworks/hopin#1186"
 reason = "Floor.wordless, Floor.may_go_on and Floor.went_on; hopin#1186 reads them for the hold's going on by itself."
+
+[[code]]
+path = "src/agents/member_speaking.py"
+item = "overnightworks/personas#483"
+reason = "ContinueSpeakingArguments.finish and SpeakArguments.keeps_queue; personas#483 sends them."
+
+[[code]]
+path = "src/agents/mcp_client/session.py"
+item = "overnightworks/personas#483"
+reason = "continue_speaking with finish, speak with keeps_queue and Delivery.NOT_SERVED; personas#483 sends them."
+
+[[code]]
+path = "src/agents/member_speaking.py"
+item = "overnightworks/hopin#1218"
+reason = "ContinueSpeakingArguments.finish and SpeakArguments.keeps_queue; hopin#1218 serves them."

@@ -748,16 +748,21 @@ the app's protocol revision and yields a `MemberSession`:
 - the member tool calls: `accept`, `decline`, `speak`, `continue_speaking`, `stop_speaking` and
   `set_turn_state`. An error answer is a value: a refusal of the library's record. Only `accept`
   and `decline` answer `UnrecognisedRefusal` for text that is none (`decline` also answers
-  `DeclineOutcome.NOT_SERVED` for an app that lists no tool to decline with); the other four raise
+  `Delivery.NOT_SERVED` for an app that lists no tool to decline with, and `continue_speaking` with
+  `finish` for an app whose tool declares no `finish`); the other four raise
   `UnusableAnswer` for an error answer that is no refusal of the library's record or no JSON, as
   they do for any answer that is no record of the tool;
 - skills: `list_skills(cursor, listed=0)` and `get_skill(uri)`, over the requests of
   [Reading an app's skills](#reading-an-apps-skills).
 
 The client writes no log line and decides nothing. An optional argument the app's tool does not
-declare (accept's `figure`, `voices`, `looks` and `looks[].room`, speak's `style` and `interrupted`,
-set_turn_state's `thinking`) is left out of the call, and `on_argument_left_out` is told once per
-session of each `ArgumentLeftOut(tool, argument)`; a required argument is never dropped.
+declare (accept's `figure`, `voices`, `looks` and `looks[].room`, speak's `style`, `interrupted` and
+`keeps_queue`, set_turn_state's `thinking`) is left out of the call, and `on_argument_left_out` is
+told once per session of each `ArgumentLeftOut(tool, argument)`; a required argument is never
+dropped. A `speak` with `keeps_queue` and a `continue_speaking` with `finish` list the app's tools
+first when the session has no list: the first leaves `keeps_queue` out of an app whose `speak`
+declares none, so the queue answers `stopped`; the second sends nothing to an app whose
+`continue_speaking` declares no `finish` and answers `Delivery.NOT_SERVED`.
 
 **What leaves a session.** A `CallFailure` (`StatusFailure`, `Unreachable` or `UnusableAnswer` of
 `agents.member_outcomes`), `asyncio.CancelledError`, a defect, and anyio's late-answer errors
@@ -874,7 +879,7 @@ descriptions ([Trust](ARCHITECTURE.md#crosscutting-concepts)).
 ## The member module
 
 `agents.member` exports what an app and an agent say to each other about a member:
-`PlaceRef` (defined in `agents.member_place`, with `STANDING_URI` and the four URI functions, and re-exported here), the speech and hold records (defined in `agents.member_speaking` and re-exported here: the arguments and answers of `speak`, `stop_speaking` and `continue_speaking`, `PartialSpeech`, `TalkedOver`, `Interrupted(id, place, wordless)`, `WentOn(id)`, `has_words(text)`, the place a hold stopped the member at (`HoldPoint`, `HoldPlace(at, sentence, heard_to)` and `hold_place(sentence, heard_to)`, the one mapping the loop and every app share) and `VoiceState`), `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
+`PlaceRef` (defined in `agents.member_place`, with `STANDING_URI` and the four URI functions, and re-exported here), the speech and hold records (defined in `agents.member_speaking` and re-exported here: the arguments and answers of `speak` (with `keeps_queue`), `stop_speaking` and `continue_speaking` (with `finish`), `PartialSpeech`, `TalkedOver`, `Interrupted(id, place, wordless)`, `WentOn(id)`, `has_words(text)`, the place a hold stopped the member at (`HoldPoint`, `HoldPlace(at, sentence, heard_to)` and `hold_place(sentence, heard_to)`, the one mapping the loop and every app share) and `VoiceState`), `StandingState`, `Invitation`, `Standing` and its `ParentPlace(app, place)`, `MemberStanding(standings)` (what
 `STANDING_URI`, `member://standing`, answers with), `PlaceWindow(generation, starts_at, entries, talked_over, interrupted, voice_state, went_on)`
 of `PlaceEntry(seq, kind, name, text, own, spoken, cut, act, continues, language, traceparent)`, `LEASE_SECONDS` (120),
 `INVITATION_SECONDS` (120), `LISTEN_BOUND_SECONDS` (50),
@@ -1471,8 +1476,9 @@ member held or sends is said, but the held rest and the queue of a hold that goe
 `speak` without the id is refused `held`. Three tools decide, each naming the id:
 
 - `CONTINUE_SPEAKING_TOOL`, `continue_speaking`, with `ContinueSpeakingArguments(place,
-  interrupted)`: the held sentence's rest plays on from where it stopped, faded back in (from its
-  start when `heard_to` is 0), then the queue. It answers
+  interrupted, finish)`: the held sentence's rest plays on from where it stopped, faded back in
+  (from its start when `heard_to` is 0), then the queue; with `finish`, which is absent while false,
+  only the rest plays and the queue is dropped, each dropped `speak` answering `stopped`. It answers
   `ContinuedSpeaking(continued)`, `{"continued": true}`, and refuses with
   `ContinueSpeakingRefused(refused)` as JSON: `not_active` or `not_interrupted`
   ([HEARING-31](hearing.md));
@@ -1483,7 +1489,9 @@ member held or sends is said, but the held rest and the queue of a hold that goe
 - `speak` with the id: the answer instead. The held sentence enters as a `cut` line under the same
   condition, the queued `speak`s answer `stopped`, and the new sentence takes the head of the queue,
   plays at once and answers `Spoken` or `Written`, its line after the `cut` line. The `speak`
-  answer carries no cut text, so a runner reads it from the `cut` line in its window.
+  answer carries no cut text, so a runner reads it from the `cut` line in its window. With
+  `keeps_queue`, which is absent while false and valid only with the id, the queued `speak`s stay
+  behind the new sentence and none answers `stopped`: a short own line and then the queue goes on.
 
 A person who is already speaking does not hold the member again after a continue or a `speak` with
 the id; a person whose new voice lasts the bound does, with a new `id`. A voice failure does not end
@@ -1523,7 +1531,10 @@ release; a runner whose app states no place builds `hold_place(its playing sente
 tells the decision the whole sentence. An absent `place` makes a runner tell the hold as it was
 without it. An app sets `wordless` and goes on by itself only once every runner it serves has
 adopted this release: a runner of an older release ignores `wordless` and `went_on` and decides a
-hold whose record has gone, and that decision would race the app's going on by itself.
+hold whose record has gone, and that decision would race the app's going on by itself. An app that
+declares its tools from `ContinueSpeakingArguments` and `SpeakArguments` serves `finish` and
+`keeps_queue` in the same change as the pin that brings them; one that does not serve them must not
+declare them.
 
 Proved by `tests/test_member.py` (among them
 `test_speak_arguments_with_a_malformed_language_are_refused`) and `tests/test_member_speaking.py`
@@ -1548,7 +1559,10 @@ Proved by `tests/test_member.py` (among them
 - It reports to `agents.floor` each person's turn (`utterance_began`, `hear_partial`,
   `hear_finished`, `utterance_ended`) and the sentences it enters, and takes its answers: the order
   the sentences start in, the refusals `held` and `not_interrupted` (`speak_refusal`), the stop's and
-  the continue's steps and answers, and `wordless`, `may_go_on` and `went_on`. It holds a member
+  the continue's steps and answers (`continue_speaking(..., finish)`), and `wordless`, `may_go_on` and
+  `went_on`. A `speak` naming the hold ends with `end_hold(ANSWERED)`, or with
+  `end_hold(SAID_THEN_CONTINUED)` when it keeps the queue, then `answer_goes_on`, `enter` and, after
+  the second, `reply_ended`. It holds a member
   talked over for the bound at once, as Stopping and then Held, stops the playing sentence at its next
   word end or lets it finish under the bound, reports where the sound stopped with the hold's id
   (`sound_stopped_at`), writes `interrupted` with its `place` exactly while it is held, and continues
@@ -1756,7 +1770,8 @@ await run_voice_loop(
   `SentenceStarted(text)`, `SentenceRefused(text)`,
   `DecisionFailed(kind, code, detail, retry_after_s=...)`, whose `outcome` is the stop's
   `StopOutcome`, `DecisionEnded`, `EchoDropped(text)`, `Held` and `HoldEnded(ending)` with the
-  `HoldEnding` `continued`, `finished`, `stopped`, `answered`, `dropped` or `went_on`.
+  `HoldEnding` `continued`, `finished`, `said_then_continued`, `stopped`, `answered`, `dropped` or
+  `went_on`.
 
 **Being talked over.** The loop holds its answer itself, from the partial speech it is given, and
 reads neither `talked_over` nor `interrupted`, which stay the member wire's hold for a runner
@@ -1792,14 +1807,16 @@ decision waits for the whole first reply. Both costs are among those the app's o
 
 | Reply opens with | `HoldEnded` | What the loop does |
 | --- | --- | --- |
-| `[continue]` | `continued` | resumes the stopped sentence from where it stopped; the held queue plays on |
+| `[continue]` alone, at the round's end | `continued` | resumes the stopped sentence from where it stopped; the held queue plays on |
+| `[continue]` and words, at the first word | `said_then_continued` | stops the sentence for good, says the words, then the held queue plays on |
 | `[finish]` | `finished` | resumes the stopped sentence; when it has ended, drops the queue and the sentences rendered ahead |
 | `[silent]` | `stopped` | stops the sentence for good and drops the queue |
 | speech | `answered` | stops the sentence for good, drops the queue and plays this decision's sentences |
 | anything else, no opening, or a failed decision | `dropped` | as `stopped`; its lines stay undecided |
 
-After a marker nothing later in that turn is spoken, and its tools still run to their end, also
-once the sound has stopped; the next decision starts after them, unless the app refused the
+A `[continue]` whose turn fails before its round ends goes on. After `[finish]` or `[silent]`, and
+in every round after one whose opening was read, nothing is spoken, and its tools still run to their
+end, also once the sound has stopped; the next decision starts after them, unless the app refused the
 sound. The decision's
 reply is recorded as the sentences that started after the ending, or, when none did, the marker
 it wrote; a drop records nothing and leaves the interjection's lines to the next decision. Only a
@@ -1815,6 +1832,7 @@ Woke  [StayedSilent|ReplyUnreadable]*  SentenceStarted*      the answer
   Woke  [StayedSilent|ReplyUnreadable|DecisionFailed]?        the hold decision
   HoldEnded(continued)  SentenceStarted*                      the queue
 | HoldEnded(finished)                                         the resumed sentence plays out
+| HoldEnded(said_then_continued)  SentenceStarted*            the short line, then the queue
 | HoldEnded(answered)   SentenceStarted*                      the new sentences
 | HoldEnded(stopped | dropped)
   [SentenceRefused]                                           a refused resume or play

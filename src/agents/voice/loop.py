@@ -107,11 +107,10 @@ async def run_voice_loop[Audio](
     While an answer is written or plays, the first partial of a person who started speaking
     during it holds the answer (``Held``) and pauses the sound while hearing goes on; once the
     sound has stopped, that talk-over has ended and the held turn has been read, one decision, told
-    where the sound stopped, ends the hold with ``[continue]``, ``[continue]`` followed by words,
-    ``[finish]``, ``[silent]`` or new speech (``HoldEnded``); without it the rest is dropped, and
-    a talk-over with no word ends its hold by itself once nobody speaks (``WENT_ON``). Each
-    decision a waking line started ends with one ``DecisionEnded``, its holds included. A sentence
-    renders in the answered line's language.
+    where the sound stopped, ends the hold with ``[continue]``, ``[finish]``, ``[silent]`` or new
+    speech (``HoldEnded``); without it the rest is dropped, and a talk-over with no word ends its
+    hold by itself once nobody speaks (``WENT_ON``). Each decision a waking line started ends with
+    one ``DecisionEnded``, its holds included. A sentence renders in the answered line's language.
 
     When hearing ends, the loop closes the turn, stops the sound and returns. Any other error
     of a port or the backend, and a ``seq`` not above the last, closes the turn, stops the
