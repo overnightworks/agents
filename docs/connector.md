@@ -1563,7 +1563,12 @@ Proved by `tests/test_member.py` (among them
   the continue's steps and answers (`continue_speaking(..., finish)`), and `wordless`, `may_go_on` and
   `went_on`. A `speak` naming the hold ends with `end_hold(ANSWERED)`, or with
   `end_hold(SAID_THEN_CONTINUED)` when it keeps the queue, then `answer_goes_on`, `enter` and, after
-  the second, `reply_ended`. It holds a member
+  the second, `reply_ended`. A choice that plays waits in the floor while a person of the talk-over
+  speaks (`choice_waits`); the app calls `play_choice()` in the same synchronous step as the event
+  that made `choice_may_play` true, carries out its steps and then calls `answer_goes_on`. It
+  reports `voice_went_on(key)` for a person already speaking at a waiting choice whose voice lasts
+  its bound after it; a fresh speaker's first `hear_partial` comes before any `voice_went_on` of
+  theirs, and voids the choice. It holds a member
   talked over for the bound at once, as Stopping and then Held, stops the playing sentence at its next
   word end or lets it finish under the bound, reports where the sound stopped with the hold's id
   (`sound_stopped_at`), writes `interrupted` with its `place` exactly while it is held, and continues
@@ -1825,12 +1830,14 @@ reader made for a hold reads `[continue]` and `[finish]`; in any other decision 
 unreadable. No timer ends a hold: a talk-over that never ends keeps it, and when hearing ends
 while held the loop closes the turns, stops the sound and returns.
 
-The events of a hold follow this order, and `Held` and `HoldEnded` alternate strictly:
+The events of a hold follow this order:
 
 ```text
 Woke  [StayedSilent|ReplyUnreadable]*  SentenceStarted*      the answer
   Held                                                        a talk-over holds it
-  Woke  [StayedSilent|ReplyUnreadable|DecisionFailed]?        the hold decision
+  Woke  [StayedSilent|ReplyUnreadable|DecisionFailed]?        the hold decision, from its first word
+  (Held?  Woke  [..]?)*                                       decided again over new words; a voided
+                                                              choice's Held, no HoldEnded between
   HoldEnded(continued)  SentenceStarted*                      the queue
 | HoldEnded(finished)                                         the resumed sentence plays out
 | HoldEnded(said_then_continued)  SentenceStarted*            the short line, then the queue
@@ -1843,49 +1850,55 @@ Woke  [StayedSilent|ReplyUnreadable]*  SentenceStarted*      the answer
 Held  HoldEnded(went_on)  SentenceStarted*                    no word: no Woke, the hold goes on
 ```
 
-`HoldEnded(went_on)` follows `Held` with no `Woke` between, also after the `Held` of a deferred
-ending below, and what plays after it is what that ending would play.
+`HoldEnded(went_on)` follows `Held` with no `Woke` between, also after the `Held` of a voided
+choice.
 
-A talk-over that starts while the decision is in flight reports nothing until the ending is
-known. If the ending plays something (`continued`, `finished`, `answered`) and that talk-over
-stands, `Held` follows at once and the ending's effects wait: the paused sentence is not
-resumed and no new sentence starts. What the ending would play is the held answer, and the
-newer talk-over gets its own decision over it once the first decision's turn was read to its
-end, or, when that talk-over held no word, plays it with no decision. If the ending plays nothing, the answer has ended and the newer talk-over's lines wake as
-any line. A talk-over that starts after the ending, while its sentences play, holds them as any
-answer. Proved by `tests/test_voice_hold.py`:
+The decision opens while the talk-over may still speak, told what its people are saying. An
+ending that plays something (`continued`, `finished`, `said_then_continued`, `answered`) waits
+until no person of the talk-over speaks; a decision told fewer of their words than they said
+since is decided again at the same place, with no `HoldEnded` between. A person of the talk-over
+whose first partial comes while the ending waits voids it: `Held` follows with no `HoldEnded`,
+nothing plays, and the new hold at the same place is decided as any hold, or goes on by itself
+when no word was said. `HoldEnded(choice)` reports when the choice plays. An ending that plays
+nothing (`stopped`) applies at once. A talk-over that starts after the ending, while its
+sentences play, holds them as any answer. Proved by `tests/test_voice_hold.py`:
 `test_the_first_words_of_a_talk_over_pause_the_playing_sentence_and_start_no_other`,
 `test_a_partial_without_words_of_an_utterance_that_began_during_the_answer_holds_it`,
 `test_an_utterance_that_began_before_the_decision_never_pauses_its_answer`,
 `test_a_second_person_who_starts_during_the_answer_holds_it_while_an_earlier_speaker_goes_on`,
 `test_a_talk_over_while_the_reply_is_still_written_starts_no_sentence_until_the_ending`,
-`test_the_hold_decision_starts_once_the_last_speaker_finished_and_sends_what_was_said_and_unsaid`,
+`test_a_hold_decision_opens_at_the_first_word_and_is_told_what_the_talk_over_says`,
 `test_the_hold_decision_waits_for_the_held_reply_to_be_written_to_its_end`,
 `test_continue_resumes_the_paused_sentence_and_plays_the_rest_of_the_answer`,
 `test_finish_resumes_the_paused_sentence_and_ends_the_answer_without_the_rest`,
 `test_silent_stops_the_paused_sentence_and_says_nothing_more`,
 `test_speech_in_the_hold_decision_replaces_the_rest_with_no_further_request`,
 `test_the_tools_of_a_hold_decision_run_to_their_end_after_its_marker_ended_the_hold`;
+by `tests/test_voice_hold_early_decision.py`:
+`test_a_talk_over_line_that_repeats_what_the_early_decision_was_told_wakes_nothing`,
+`test_a_stale_choice_plays_nothing_and_the_next_decision_opens_once_its_turn_closed` and
+`test_new_words_while_a_choice_waits_void_it_and_the_hold_is_decided_again_at_the_same_place`;
 by `tests/test_voice_hold_ending.py`:
 `test_a_hold_reports_woke_held_woke_and_its_ending_in_this_order`,
-`test_an_ending_waits_while_a_newer_talk_over_stands_and_that_talk_over_gets_its_own_decision`,
+`test_a_newer_talk_over_with_words_during_the_decision_makes_its_choice_stale_and_gets_its_own`,
+`test_a_newer_talk_over_without_words_during_the_decision_delays_its_choice_until_it_ends`,
 `test_a_second_hold_decision_waits_while_the_first_one_is_still_being_written`,
 `test_a_talk_over_that_starts_while_an_ending_resumes_the_sound_holds_it_again`,
 `test_the_next_decision_sees_what_was_said_before_and_after_the_hold`,
 `test_an_utterance_that_begins_only_after_the_answer_ended_holds_nothing`
-and `test_a_newer_talk_over_after_a_stopping_ending_holds_nothing_and_its_line_wakes_as_any_line`;
+and `test_a_newer_talk_over_without_words_after_a_stopping_ending_holds_nothing_and_its_line_wakes`;
 by `tests/test_voice_hold_place.py`:
 `test_a_hold_is_told_in_one_of_four_shapes_beside_the_sentences_not_started`,
 `test_the_hold_decision_is_told_where_the_sentence_stopped_and_its_ending_is_carried_out`,
 `test_while_the_sound_stops_lines_and_partials_enter_and_the_decision_opens_once_it_has`,
 `test_a_sound_that_never_stops_holds_the_decision_while_hearing_goes_on_until_it_ends`,
 `test_a_stop_that_reports_more_than_the_sentence_was_long_fails_loud` and
-`test_a_playing_ending_under_a_newer_talk_over_holds_again_told_where_the_sound_stands`; and by
+`test_a_choice_over_words_its_decision_was_not_told_is_decided_again_at_the_same_place`; and by
 `tests/test_voice_hold_without_words.py`:
 `test_a_talk_over_without_words_goes_on_by_itself_and_the_rest_plays_with_no_decision`,
 `test_a_talk_over_without_words_while_nothing_plays_goes_on_without_waiting_for_the_reading`,
 `test_the_next_waking_decision_is_told_that_the_agent_went_on` and
-`test_a_newer_talk_over_without_words_plays_what_the_waiting_ending_would_play`.
+`test_a_newer_talk_over_without_words_delays_the_choice_until_it_has_ended`.
 
 Proved by `tests/test_voice_loop.py`:
 `test_a_spoken_line_that_wakes_sends_one_request_with_prompt_protocol_context_and_the_line`,

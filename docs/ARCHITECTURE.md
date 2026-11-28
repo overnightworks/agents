@@ -74,7 +74,9 @@ flowchart TB
   decisions of calling and sending away an agent, pure, on facts the app supplies) and `floor` (who
   talks over an agent, the hold that puts on it, the refusals and answers of the member wire's hold
   and the order of its sentences, pure and in memory, on the turns, partial speech and sentences the
-  voice loop or an app gives); and
+  voice loop or an app gives; it imports `member_speaking` and `talk_over` from `agents`;
+  `talk_over` keeps the talk-over's state, imports only `member_speaking`, and only `floor` imports
+  it); and
   `member_outcomes`, the failures and codes of a call to an app's member endpoint, pure so that a
   runner's decisions read them without the client.
 - The **`backend` extra** adds `httpx2` for `backend.gateway.GatewayBackend`, the port's one
@@ -243,7 +245,7 @@ import contracts and size and clone ratchets.
 - The voice loop reading the member wire's hold (`talked_over`, `interrupted`): that hold
   (HEARING-30, 31) stays the hold a runner outside the app reads, while the loop runs in the app
   and holds its own answer from the people's partial speech. The two holds sit on two boundaries and
-  share `floor`, which decides both, each under its own `AfterAnEnding`. Reopens if a member-wire
+  share `floor`, which decides both, under one floor rule. Reopens if a member-wire
   runner moves into the loop or the loop drives a member over the wire.
 - A stated version of the member wire: a second version axis beside MCP's, with a down-converter
   per version whose old branches lose their caller. Reopens if a removal or a new variant must

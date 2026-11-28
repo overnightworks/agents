@@ -302,6 +302,7 @@ def the_decision_ends_once_a_newer_person_has_ended(trace):
         trace,
         [piece("Eins. Zwei."), finish()],
         [lambda: trace.until(lambda: ("newer",) in trace.entries), piece("[continue]"), finish()],
+        [piece("[continue]"), finish()],
     )
 
 
@@ -318,6 +319,7 @@ THE_SECOND_TALK_OVER_GOES_ON = [Held(), WENT_ON, SentenceStarted("Zwei."), Decis
                 Woke(),
                 SentenceStarted("Eins."),
                 Held(),
+                Woke(),
                 Woke(),
                 HoldEnded(HoldEnding.CONTINUED),
                 *THE_SECOND_TALK_OVER_GOES_ON,
@@ -386,7 +388,7 @@ def test_a_talk_over_with_words_after_the_going_on_tells_the_decision_the_going_
         pytest.param("Gut.", HoldEnding.ANSWERED, [SentenceStarted("Gut.")], False, id="answered"),
     ],
 )
-def test_a_newer_talk_over_without_words_plays_what_the_waiting_ending_would_play(
+def test_a_newer_talk_over_without_words_delays_the_choice_until_it_has_ended(
     place, decision, ending, starts_after, resumes_the_stopped_sound
 ):
     trace = place.trace
@@ -405,10 +407,13 @@ def test_a_newer_talk_over_without_words_plays_what_the_waiting_ending_would_pla
         await trace.until(lambda: trace.count(Woke()) == 2)
         yield speaking(("Cy", ""))
         trace.record(("newer",))
-        await trace.until(lambda: trace.count(Held()) == 2)
+        await trace.settled()
         assert WENT_ON not in trace.entries
+        assert HoldEnded(ending) not in trace.events
         yield speaking()
-        await the_sound_goes_on(trace, voice)
+        await trace.until(lambda: HoldEnded(ending) in trace.entries)
+        voice.release("Eins.")
+        await trace.settled()
 
     assert place.run(hearing, gateway, voice=voice) == RETURNED
 
@@ -418,8 +423,6 @@ def test_a_newer_talk_over_without_words_plays_what_the_waiting_ending_would_pla
         Held(),
         Woke(),
         HoldEnded(ending),
-        Held(),
-        WENT_ON,
         *starts_after,
         DecisionEnded(),
     ]
@@ -498,5 +501,5 @@ def test_a_voice_that_comes_as_soon_as_a_hold_ended_holds_the_answer_and_starts_
 
     assert place.run(hearing, gateway, voice=voice) == RETURNED
 
-    assert place.trace.events[-1] == Held()
+    assert place.trace.events.count(Held()) == 2
     assert ("play", "Zwei.") not in place.trace.calls

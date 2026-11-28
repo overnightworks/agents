@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
-from agents.member import HoldPlace, PlaceEntry, SpokenLanguage
+from agents.member import HoldPlace, PartialSpeech, PlaceEntry, SpokenLanguage
 from agents.turn import JsonObject, TurnMessage, TurnRole
 
 WINDOW_NOTE: Final = "(Earlier parts of this conversation are no longer shown.)"
@@ -84,13 +84,19 @@ class Conversation:
             self._missed += line.seq - self._last_seq - 1
         self._last_seq = line.seq
 
-    def note_hold(self, place: HoldPlace, unsaid: Sequence[str]) -> None:
+    def note_hold(
+        self,
+        place: HoldPlace,
+        unsaid: Sequence[str],
+        talked_over: Sequence[PartialSpeech] = (),
+    ) -> None:
         """Add the loop's line about a held answer to the lines the next decision opens over.
 
-        ``place`` is where the sound stopped and ``unsaid`` are the sentences written and not
-        started; the line tells them as ``told_hold`` does.
+        ``place`` is where the sound stopped, ``unsaid`` are the sentences written and not
+        started and ``talked_over`` what people are still saying; the line tells them as
+        ``told_hold`` does.
         """
-        held = {"held": told_hold(place, unsaid)}
+        held = {"held": told_hold(place, unsaid, talked_over)}
         self._pause_line = _Line(json.dumps(held, ensure_ascii=False), answerable=False)
         self._undecided.append(self._pause_line)
 
@@ -163,20 +169,25 @@ class Conversation:
         return note + decided + _bytes_of(_LINE_BREAK.join(self._texts_deciding()))
 
 
-def told_hold(place: HoldPlace, unsaid: Sequence[str]) -> JsonObject:
+def told_hold(
+    place: HoldPlace, unsaid: Sequence[str], talked_over: Sequence[PartialSpeech] = ()
+) -> JsonObject:
     """What a hold decision is told of where the sound stopped, and the sentences not started.
 
     The part heard and the rest (``"heard": "part"`` with ``"said"`` and ``"rest"``), nothing
     heard (``"none"``, the whole sentence as ``"rest"``) or, when the app cannot tell, the whole
     ``"sentence"`` (``"unknown"``); ``Heard`` holds the three words. Between sentences it tells
-    none of these. ``"unsaid"`` lists the sentences written and not started. ``HOLD_RULES``
-    explains the keys to the model; a runner whose app states no place passes
-    ``hold_place(its playing sentence, None)``.
+    none of these. ``"unsaid"`` lists the sentences written and not started, and ``"talked_over"``,
+    when ``talked_over`` is not empty, what people are still saying, each as ``"name"`` and
+    ``"text"``. ``HOLD_RULES`` explains the keys to the model; a runner whose app states no place
+    passes ``hold_place(its playing sentence, None)``.
     """
     told: JsonObject = {}
     if place.sentence is not None:
         told |= _told_sentence(place.sentence, place.heard_to)
     told["unsaid"] = list(unsaid)
+    if talked_over:
+        told["talked_over"] = [{"name": speech.name, "text": speech.text} for speech in talked_over]
     return told
 
 

@@ -216,8 +216,10 @@ class MemberSession(Protocol):
         sentence answers instead of the held rest; ``keeps_queue``, with ``interrupted``, keeps
         the queue behind the sentence. An app whose ``speak`` does not declare ``keeps_queue``
         is sent the call without it, the tools listed first, and the queue then answers
-        ``stopped``. ``keeps_queue`` without ``interrupted`` raises ``ValueError`` before anything
-        is sent, against every app. An answer that is none of these is an ``UnusableAnswer``.
+        ``stopped``. A sentence that names a hold answers when it plays, so its answer can come
+        late and as ``not_interrupted``. ``keeps_queue`` without ``interrupted`` raises
+        ``ValueError`` before anything is sent, against every app. An answer that is none of
+        these is an ``UnusableAnswer``.
         """
         ...
 
@@ -226,9 +228,11 @@ class MemberSession(Protocol):
     ) -> ContinueSpeakingRefusal | Literal[Delivery.NOT_SERVED] | None:
         """``None`` when the held sentence goes on, else the refusal.
 
-        With ``finish``, only the held sentence's rest plays and the queue is dropped. It is sent
-        only to an app whose ``continue_speaking`` declares ``finish``, the tools listed first;
-        otherwise nothing is sent and the outcome is ``Delivery.NOT_SERVED``.
+        The answer comes when the sentence plays on, which waits until no person of the hold's
+        talk-over speaks, so it can come late and as ``not_interrupted``. With ``finish``, only
+        the held sentence's rest plays and the queue is dropped. It is sent only to an app whose
+        ``continue_speaking`` declares ``finish``, the tools listed first; otherwise nothing is
+        sent and the outcome is ``Delivery.NOT_SERVED``.
         """
         ...
 

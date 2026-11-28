@@ -66,6 +66,7 @@ source_modules =
     agents.member_speaking
     agents.mcp_wire
     agents.skills
+    agents.talk_over
     agents.tools
     agents.turn
     agents.turn_events
@@ -107,6 +108,7 @@ source_modules =
     agents.member_speaking
     agents.mcp_wire
     agents.skills
+    agents.talk_over
     agents.tools
     agents.turn
     agents.turn_events
@@ -144,6 +146,7 @@ source_modules =
     agents.member_speaking
     agents.mcp_wire
     agents.skills
+    agents.talk_over
     agents.tools
     agents.turn
     agents.turn_events
@@ -194,6 +197,7 @@ source_modules =
     agents.member_speaking
     agents.mcp_wire
     agents.skills
+    agents.talk_over
     agents.tools
     agents.turn
     agents.turn_events
@@ -231,6 +235,7 @@ source_modules =
     agents.member_speaking
     agents.mcp_wire
     agents.skills
+    agents.talk_over
     agents.tools
     agents.turn
     agents.turn_events
@@ -248,7 +253,8 @@ forbidden_modules =
 # An app's core admits agents.calling and agents.member, so what they import stays pure: no module
 # that reaches a library an app has not chosen, and none of the libraries those modules would bring.
 # member_place, member_presentation and member_speaking are sources because member imports them,
-# and floor because the voice loop and an app's own hold state share it.
+# and floor and talk_over because the voice loop and an app's own hold state share the floor, which
+# imports talk_over.
 [importlinter:contract:calling-and-member-stay-pure]
 name = agents.calling and agents.member import no impure agents module and no library
 type = forbidden
@@ -261,6 +267,7 @@ source_modules =
     agents.member_place
     agents.member_presentation
     agents.member_speaking
+    agents.talk_over
 forbidden_modules =
     agents.agent_file
     agents.backend
@@ -288,6 +295,15 @@ forbidden_modules =
     logline
     structlog
     opentelemetry
+
+# The talk-over's state is the floor's alone: no other module reaches around the floor to it.
+[importlinter:contract:only-the-floor-imports-the-talk-over]
+name = only agents.floor imports agents.talk_over
+type = protected
+protected_modules =
+    agents.talk_over
+allowed_importers =
+    agents.floor
 
 [importlinter:contract:hand-tools-stay-below-the-wire]
 name = agents.tools does not import agents.mcp_wire

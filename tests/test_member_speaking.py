@@ -33,6 +33,7 @@ from agents.member import (
     has_words,
     hold_place,
 )
+from agents.member_speaking import words_of
 from tests.support.member_wire import (
     continue_wire,
     entry,
@@ -294,25 +295,31 @@ def test_a_window_reads_its_hold_back_from_its_json_unchanged() -> None:
 
 
 @pytest.mark.parametrize(
-    ("text", "holds_a_word"),
+    ("text", "words"),
     [
-        pytest.param("hm", True, id="a letter"),
-        pytest.param("\u00c4", True, id="a letter with a mark"),
-        pytest.param("7", True, id="a digit"),
-        pytest.param("\u00b2", True, id="a superscript digit"),
-        pytest.param("\u0663", True, id="an arabic-indic digit"),
-        pytest.param("", False, id="nothing"),
-        pytest.param("\u2026", False, id="an ellipsis"),
-        pytest.param(" ?! ", False, id="punctuation"),
-        pytest.param("\U0001f600", False, id="an emoji"),
-        pytest.param("\u00bd", False, id="a fraction"),
-        pytest.param("\u2167", False, id="a roman numeral sign"),
+        pytest.param("hm", ("hm",), id="a letter"),
+        pytest.param("\u00c4", ("\u00e4",), id="a letter with a mark"),
+        pytest.param("7", ("7",), id="a digit"),
+        pytest.param("\u00b2", ("\u00b2",), id="a superscript digit"),
+        pytest.param("\u0663", ("\u0663",), id="an arabic-indic digit"),
+        pytest.param("Moment", ("moment",), id="a word in capitals folds to lower case"),
+        pytest.param("Stra\u00dfe", ("strasse",), id="a letter that folds to two"),
+        pytest.param("Moment, doch!", ("moment", "doch"), id="punctuation splits the runs"),
+        pytest.param("  Moment\tdoch ", ("moment", "doch"), id="white space splits the runs"),
+        pytest.param("Zimmer 7b", ("zimmer", "7b"), id="a letter and a digit run together"),
+        pytest.param("", (), id="nothing"),
+        pytest.param("\u2026", (), id="an ellipsis"),
+        pytest.param(" ?! ", (), id="punctuation"),
+        pytest.param("\U0001f600", (), id="an emoji"),
+        pytest.param("\u00bd", (), id="a fraction"),
+        pytest.param("\u2167", (), id="a roman numeral sign"),
     ],
 )
-def test_a_text_holds_a_word_when_one_of_its_characters_is_a_letter_or_a_digit(
-    text: str, holds_a_word: bool
+def test_the_words_of_a_text_are_its_runs_of_letters_and_digits_in_lower_case(
+    text: str, words: tuple[str, ...]
 ) -> None:
-    assert has_words(text) is holds_a_word
+    assert words_of(text) == words
+    assert has_words(text) is bool(words)
 
 
 def test_a_hold_that_went_through_no_word_reads_back_wordless_and_one_that_did_not_dumps_none() -> (

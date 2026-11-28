@@ -195,12 +195,17 @@ class DecisionEnded:
 @dataclass(frozen=True)
 class Held:
     """A talk-over holds the answer: the sound playing is stopped by ``VoiceOut.pause`` and no
-    other sentence starts. On the member wire this is Stopping."""
+    other sentence starts. On the member wire this is Stopping. A hold stands again, with no
+    ``HoldEnded`` between, when a voice that goes on after a waiting choice voids it: the choice
+    plays nothing and the hold is decided as the first."""
 
 
 @dataclass(frozen=True)
 class HoldEnded:
-    """The decision on a talk-over ended the hold; reported before its effects.
+    """The decision on a talk-over ended the hold; reported before its effects, when the choice
+    is carried out: at once for ``STOPPED`` and ``DROPPED``, and for a choice that plays once no
+    person of the talk-over speaks (a choice told too few of their words, or voided, reports
+    nothing).
 
     ``SAID_THEN_CONTINUED`` is a ``[continue]`` that words follow. ``DROPPED`` is a failed decision
     or one that opened with nothing readable; the loop carries it out as ``STOPPED``. ``WENT_ON``

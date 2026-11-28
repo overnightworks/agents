@@ -56,7 +56,9 @@ HOLD_RULES: Final = (
     f'the sentence you were saying, "rest" is the whole sentence) or "{Heard.UNKNOWN}" (it is '
     'not known how far it was heard, "sentence" is the whole sentence); without "heard", no '
     'sentence was left part way. "unsaid" lists the sentences you had written and not yet '
-    f"said. Open that reply with [{Marker.CONTINUE}] to go on from where you stopped, "
+    'said. "talked_over" lists what people are still saying over you; you are asked again if '
+    "they say more before your reply plays. "
+    f"Open that reply with [{Marker.CONTINUE}] to go on from where you stopped, "
     f"[{Marker.FINISH}] to finish the sentence you were saying and stop, "
     f"[{Marker.CONTINUE}] followed by your own words to say them instead of the rest of that "
     f"sentence and then go on with what you had not yet said, {SILENT_REPLY} to stop, or with "

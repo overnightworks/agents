@@ -6,13 +6,14 @@ written as a line when the voice failed) and what each refuses, and what the win
 people talk over the member (``TalkedOver``), when the member is held by it (``Interrupted``)
 and whether the member's voice at the place has failed (``VoiceState``); a hold says where it
 stopped the member in a ``HoldPlace``, and a hold the app ended by itself is a ``WentOn``.
-``has_words`` is the one test of whether a text holds a word. ``agents.member`` re-exports the
-records. This module is base, so a runner parses all of it without the ``mcp-server`` extra.
+``words_of`` is the one notion of a word, and ``has_words`` its test. ``agents.member`` re-exports
+the records. This module is base, so a runner parses all of it without the ``mcp-server`` extra.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
+from itertools import groupby
 from typing import Annotated, Self
 
 from pydantic import Field, StringConstraints, model_validator
@@ -49,19 +50,26 @@ __all__ = [
     "Written",
     "has_words",
     "hold_place",
+    "words_of",
 ]
 
 
-def has_words(text: str) -> bool:
-    """Whether one of the text's characters is a letter or a digit (``str.isalpha`` or
-    ``str.isdigit``).
+def words_of(text: str) -> tuple[str, ...]:
+    """The words of the text in lower case: its runs of characters that are a letter or a digit
+    (``str.isalpha`` or ``str.isdigit``).
 
     A digit is what ``str.isdigit`` accepts, so a superscript such as "²" counts too, which errs
     toward a decision. Punctuation, an emoji, a fraction such as "½" and a Roman numeral sign such
-    as "Ⅷ" (number characters, neither letter nor digit) hold no word. It is the one test of
-    whether a talk-over held a word, for the wire and the voice loop alike.
+    as "Ⅷ" (number characters, neither letter nor digit) hold no word.
     """
-    return any(character.isalpha() or character.isdigit() for character in text)
+    runs = groupby(text, lambda character: character.isalpha() or character.isdigit())
+    return tuple("".join(run).casefold() for is_word, run in runs if is_word)
+
+
+def has_words(text: str) -> bool:
+    """Whether the text holds a word (``words_of``). It is the one test of whether a talk-over
+    held a word, for the wire and the voice loop alike."""
+    return bool(words_of(text))
 
 
 VoiceStyle = NonEmptyUnicodeText

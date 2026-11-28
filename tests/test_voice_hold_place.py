@@ -297,16 +297,9 @@ def test_a_stop_that_reports_more_than_the_sentence_was_long_fails_loud(place):
     assert ("stopped", "Eins.") in place.trace.calls
 
 
-@pytest.mark.parametrize(
-    ("reply", "told"),
-    [
-        pytest.param("[continue]", CANNOT_TELL | {"unsaid": ["Zwei."]}, id="continue"),
-        pytest.param("[finish]", CANNOT_TELL | {"unsaid": []}, id="finish"),
-        pytest.param("Klar.", BETWEEN | {"unsaid": ["Klar."]}, id="speech"),
-    ],
-)
-def test_a_playing_ending_under_a_newer_talk_over_holds_again_told_where_the_sound_stands(
-    place, reply, told
+@pytest.mark.parametrize("reply", ["[continue]", "[finish]", "Klar."])
+def test_a_choice_over_words_its_decision_was_not_told_is_decided_again_at_the_same_place(
+    place, reply
 ):
     trace = place.trace
     voice = RecordingVoice(trace, held={"Eins."})
@@ -325,14 +318,18 @@ def test_a_playing_ending_under_a_newer_talk_over_holds_again_told_where_the_sou
         await trace.until(lambda: trace.count(Woke()) == 2)
         yield speaking(("Cy", "Noch eine Frage"))
         trace.record(("newer",))
-        await trace.until(lambda: trace.count(Held()) == 2)
+        await trace.until(lambda: trace.count(Woke()) == 3)
         yield a_line(3, "Noch eine Frage, bitte.", name="Cy")
         yield speaking()
         await trace.settled()
 
-    assert place.run(hearing, gateway, voice=voice) == RETURNED
+    assert place.run(hearing, gateway, voice=voice, waking={"Erzähl."}) == RETURNED
 
-    assert rows_of(messages_of(gateway.requests[2])[-1])[-1] == {"held": told}
+    held_first = rows_of(messages_of(gateway.requests[1])[-1])[-1]["held"]
+    held_again = rows_of(messages_of(gateway.requests[2])[-1])[-1]["held"]
+    assert held_again.pop("talked_over") == [{"name": "Cy", "text": "Noch eine Frage"}]
+    assert held_again == held_first
+    assert trace.events.count(Held()) == 1
 
 
 def test_finish_with_no_sentence_paused_says_nothing_more(place):
