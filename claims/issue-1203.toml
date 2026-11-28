@@ -1,7 +1,0 @@
-claim_id = "eb235542e98347d7905b3834d7ecb95e"
-agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
-role = "builder"
-base = "3ed9003ea5f4c9790724546757fa552732459918"
-branch = "claude/issue-1203-coverage-floor-stands-at-100"
-scope = ["pyproject.toml"]
-opened_commit = "be5ac2f5266f5d611f8eeca5ef7aa13d4baebf83"
