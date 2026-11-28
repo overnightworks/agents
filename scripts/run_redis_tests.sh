@@ -19,16 +19,37 @@ if [[ -z "${AGENTS_REDIS_TESTS_CAPPED:-}" ]]; then
     AGENTS_REDIS_TESTS_CAPPED=1 exec setpriv --pdeathsig TERM timeout -k "${GRACE_SECONDS}" "${CAP_SECONDS}" "$0" "$@"
 fi
 
+# Exit 0 when the load is above the limit, 1 when not; any other awk status ends the script.
+load_above_limit() {
+    local current="$1" limit="$2" status=0
+    awk -v current="${current}" -v limit="${limit}" 'BEGIN { exit !(current > limit) }' || status=$?
+    case "${status}" in
+        0) return 0 ;;
+        1) return 1 ;;
+        *)
+            echo "could not compare load ${current} with limit ${limit}: awk exited ${status}" >&2
+            exit 2
+            ;;
+    esac
+}
+
+read_load() {
+    cut -d' ' -f1 /proc/loadavg || { echo 'could not read /proc/loadavg' >&2; exit 2; }
+}
+
 wait_for_low_load() {
     local limit waited=0 load
-    limit=$(awk -v cores="$(nproc)" 'BEGIN { print 1.5 * cores }')
-    while load=$(cut -d' ' -f1 /proc/loadavg) && awk -v load="${load}" -v limit="${limit}" 'BEGIN { exit !(load > limit) }'; do
+    limit=$(awk -v cores="$(nproc)" 'BEGIN { print 1.5 * cores }') ||
+        { echo 'could not compute the load limit' >&2; exit 2; }
+    load=$(read_load) || exit 2
+    while load_above_limit "${load}" "${limit}"; do
         if [[ "${waited}" -ge "${LOAD_WAIT_SECONDS}" ]]; then
             echo "load ${load} stayed above ${limit}" >&2
             exit 1
         fi
         sleep 10
         waited=$((waited + 10))
+        load=$(read_load) || exit 2
     done
 }
 
