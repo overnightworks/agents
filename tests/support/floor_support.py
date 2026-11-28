@@ -21,6 +21,10 @@ def loop_floor() -> Floor[str]:
     return Floor[str](after_an_ending=floor.AfterAnEnding.HOLDS_AGAIN)
 
 
+def new_floor() -> Floor[str]:
+    return Floor[str]()
+
+
 def partial(name: str, text: str = "") -> PartialSpeech:
     return PartialSpeech(name=name, text=text)
 
@@ -77,3 +81,15 @@ def held_at_once(*waiting: str, key: str = "ann", text: str = "Moment") -> Floor
     assert lasts(wire, key, text)
     wire.sound_stopped_at(wire.place, HOLD)
     return wire
+
+
+def held_while_speaking(
+    *waiting: str, speakers: tuple[str, ...] = ("ann",), text: str = "Moment"
+) -> Floor[str]:
+    """``FIRST`` plays with ``waiting`` behind it, then each of ``speakers`` begins and lasts the
+    bound with ``text``, and the sound stops under ``HOLD``. Every speaker is still speaking."""
+    member = playing(new_floor(), FIRST, *waiting)
+    for speaker in speakers:
+        lasts(member, speaker, text)
+    member.sound_stopped_at(place_in(), HOLD)
+    return member
