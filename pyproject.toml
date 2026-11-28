@@ -93,6 +93,10 @@ pythonpath = ["."]
 
 [tool.coverage.run]
 branch = true
+source = ["src", "scripts"]
+parallel = true
+patch = ["subprocess"]
+sigterm = true
 
 [tool.coverage.report]
 precision = 2
