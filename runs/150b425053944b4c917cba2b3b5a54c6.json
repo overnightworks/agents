@@ -4,7 +4,55 @@
     {
       "run": "release-0.83.0-1",
       "start_tip": "a228a50ecc64bcbd9206550c621e8858a8763c44",
-      "follows": false
+      "follows": false,
+      "end_tip": "398e290cd287863adea49ca2b49118b211561300",
+      "ran": [
+        "build",
+        "fix",
+        "review"
+      ],
+      "record": {
+        "version": 1,
+        "stages": {
+          "build": "haiku/medium",
+          "fix": "opus/medium",
+          "review": "sonnet/high",
+          "test": "none",
+          "gate": "none",
+          "land": "haiku/low"
+        },
+        "fix_rounds": {
+          "review": 1,
+          "gate": 0,
+          "ci": 0,
+          "test": 0
+        },
+        "blocking": {
+          "review": 1,
+          "gate": 0,
+          "ci": 0,
+          "test": 0
+        },
+        "misses": {
+          "review": 0,
+          "gate": 0,
+          "ci": 0,
+          "test": 0
+        },
+        "verdicts": [
+          {
+            "stage": "review",
+            "verdict": "revise",
+            "sha": "398e290cd287863adea49ca2b49118b211561300"
+          },
+          {
+            "stage": "review",
+            "verdict": "approve",
+            "sha": "398e290cd287863adea49ca2b49118b211561300"
+          }
+        ],
+        "risk": "normal"
+      }
     }
   ]
 }
