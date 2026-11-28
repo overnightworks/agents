@@ -1,0 +1,8 @@
+claim_id = "f9be24e095c24fd2952842d590f91ffd"
+agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
+role = "builder"
+base = "a9ab50825d37da69da03e95bd692eea2f0179035"
+branch = "claude/issue-1187-ci-measures-the-two-pod-redis-suite-into"
+scope = [".github/workflows/ci.yml", ".gitignore", "docs/ARCHITECTURE.md", "pyproject.toml", "tests/e2e/conftest.py", "tests/support/real_redis_pods.py"]
+opened_commit = "72ce0e879ef7458fed979e7916ea84473d15ff02"
+whole_reason = "One measuring change: the coverage config, the two CI steps that use it, the pod harness that lets pods write their data, its ignore line and the one document sentence that names it."
