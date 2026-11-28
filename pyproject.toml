@@ -100,4 +100,4 @@ sigterm = true
 
 [tool.coverage.report]
 precision = 2
-fail_under = 99.98
+fail_under = 100
