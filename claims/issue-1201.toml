@@ -3,5 +3,6 @@ agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
 role = "builder"
 base = "a3f53852a73973490b73cf70168a0356abbe27f7"
 branch = "claude/issue-1201-the-member-client-reads-a-tool-s-declare"
-scope = ["src/agents/mcp_client/session.py", "tests/test_mcp_client_member_calls.py"]
+scope = ["src/agents/mcp_client/session.py", "tests/support/scripted_gate.py", "tests/test_mcp_client_listen.py", "tests/test_mcp_client_member_calls.py", "tests/test_mcp_client_member_tools_notice.py"]
 opened_commit = "3229cea054cbfd9cb9e4da2d9efde98773fe92bf"
+whole_reason = "The fix is one function in session.py; its test needs its own module beside the member calls, which sit near quality's 800-line size rule, and the stream script it shares with the listen test moves into tests/support so both use one."
