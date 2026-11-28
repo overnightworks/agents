@@ -243,7 +243,7 @@ import contracts and size and clone ratchets.
 - The voice loop reading the member wire's hold (`talked_over`, `interrupted`): that hold
   (HEARING-30, 31) stays the hold a runner outside the app reads, while the loop runs in the app
   and holds its own answer from the people's partial speech. The two holds sit on two boundaries and
-  share `floor`, which decides both, each under its own `AfterAnEnding`. Reopens if a member-wire
+  share `floor`, which decides both, under one floor rule. Reopens if a member-wire
   runner moves into the loop or the loop drives a member over the wire.
 - A stated version of the member wire: a second version axis beside MCP's, with a down-converter
   per version whose old branches lose their caller. Reopens if a removal or a new variant must
