@@ -14,8 +14,9 @@ reading it: the consumer's sentence stays its own text, sound and record. It wor
 two equal sentences stay two. A sentence is waiting once entered, playing from its start until the
 consumer reports that it ended, and gone once dropped. A sentence entered between
 ``decision_opens`` and ``end_hold`` is the reply to the hold: it waits apart from the held answer's
-sentences and takes their place when the hold ends with ``ANSWERED``. A render in flight is a
-``RenderTicket`` the consumer ends, however its render returned; it counts as waiting.
+sentences, takes their place when the hold ends with ``ANSWERED`` and goes ahead of them when it
+ends with ``SAID_THEN_CONTINUED``, until the consumer reports ``reply_ended``. A render in flight is
+a ``RenderTicket`` the consumer ends, however its render returned; it counts as waiting.
 
 A floor is in one of four phases:
 
@@ -47,7 +48,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Final
+from typing import Final, Literal
 
 from agents.member_speaking import (
     ContinueSpeakingRefusal,
@@ -63,6 +64,7 @@ __all__ = [
     "AfterAnEnding",
     "Drop",
     "Floor",
+    "HoldChoice",
     "HoldEnding",
     "HoldStep",
     "PlayOn",
@@ -70,22 +72,38 @@ __all__ = [
     "Start",
     "Wait",
     "cut_line",
+    "leaves_the_turn",
+    "replies",
 ]
 
 
 class HoldEnding(StrEnum):
-    """How a hold ends: the answer goes on, finishes its sentence, stops, is replaced or dropped,
-    or goes on by itself because the talk-over held no word.
+    """How a hold ends: the answer goes on, finishes its sentence, says a short line of its own
+    and then goes on, stops, is replaced or dropped, or goes on by itself because the talk-over
+    held no word.
 
-    The first five are what a hold decision gave; ``WENT_ON`` is no choice of the agent.
+    The first five of ``HoldChoice`` are what a hold decision gave; ``WENT_ON`` is no choice of
+    the agent and ``DROPPED`` a decision that gave none, which the core carries out as ``STOPPED``.
     """
 
     CONTINUED = "continued"
     FINISHED = "finished"
+    SAID_THEN_CONTINUED = "said_then_continued"
     STOPPED = "stopped"
     ANSWERED = "answered"
     DROPPED = "dropped"
     WENT_ON = "went_on"
+
+
+type HoldChoice = Literal[
+    HoldEnding.CONTINUED,
+    HoldEnding.FINISHED,
+    HoldEnding.SAID_THEN_CONTINUED,
+    HoldEnding.ANSWERED,
+    HoldEnding.STOPPED,
+]
+"""The agent's five ways back from a hold, the same in every app: go on at the place, finish
+only the sentence and stop, a short own line and then go on, say something else instead, stop."""
 
 
 class AfterAnEnding(StrEnum):
@@ -97,19 +115,61 @@ class AfterAnEnding(StrEnum):
     BEGAN_BEFORE = "began_before"
 
 
-_PLAYING_ENDINGS: Final = frozenset(
-    {HoldEnding.CONTINUED, HoldEnding.FINISHED, HoldEnding.ANSWERED}
-)
+class _Reply(StrEnum):
+    """Where the sentences the reply entered go: ``NOWHERE``, ``INSTEAD`` of the waiting ones or
+    ``AHEAD`` of them."""
 
-_DROPPING_ENDINGS: Final = frozenset(
-    {HoldEnding.FINISHED, HoldEnding.ANSWERED, HoldEnding.STOPPED, HoldEnding.DROPPED}
-)
-"""Endings after which the held answer's waiting sentences and open renders are gone."""
+    NOWHERE = "nowhere"
+    INSTEAD = "instead"
+    AHEAD = "ahead"
 
-_DROPPING_THE_HELD: Final = frozenset({HoldEnding.ANSWERED, HoldEnding.STOPPED, HoldEnding.DROPPED})
-"""Endings that drop the sentence held too, instead of letting it play on."""
+
+@dataclass(frozen=True)
+class _Effect:
+    """What an ending does to the sentences: ``plays`` something after it, so a talk-over that
+    stands holds it on; ``drops_the_held`` sentence instead of letting it play on;
+    ``drops_the_waiting`` sentences and the open renders; and where the ``reply`` goes."""
+
+    plays: bool
+    drops_the_held: bool
+    drops_the_waiting: bool
+    reply: _Reply
+
+
+_EFFECTS: Final = {
+    HoldEnding.CONTINUED: _Effect(
+        plays=True, drops_the_held=False, drops_the_waiting=False, reply=_Reply.NOWHERE
+    ),
+    HoldEnding.FINISHED: _Effect(
+        plays=True, drops_the_held=False, drops_the_waiting=True, reply=_Reply.NOWHERE
+    ),
+    HoldEnding.SAID_THEN_CONTINUED: _Effect(
+        plays=True, drops_the_held=True, drops_the_waiting=False, reply=_Reply.AHEAD
+    ),
+    HoldEnding.ANSWERED: _Effect(
+        plays=True, drops_the_held=True, drops_the_waiting=True, reply=_Reply.INSTEAD
+    ),
+    HoldEnding.STOPPED: _Effect(
+        plays=False, drops_the_held=True, drops_the_waiting=True, reply=_Reply.NOWHERE
+    ),
+    HoldEnding.WENT_ON: _Effect(
+        plays=False, drops_the_held=False, drops_the_waiting=False, reply=_Reply.NOWHERE
+    ),
+}
+"""The one table of what each ending does to the sentences."""
 
 _NOTHING_PLAYS: Final = hold_place(None, None)
+
+
+def leaves_the_turn(choice: HoldChoice) -> bool:
+    """Whether ``choice`` drops the held sentence, so the consumer stops the held answer's turn."""
+    return _EFFECTS[choice].drops_the_held
+
+
+def replies(choice: HoldChoice) -> bool:
+    """Whether ``choice`` says the sentences of the hold decision's reply, so they play in the
+    held answer's place."""
+    return _EFFECTS[choice].reply is not _Reply.NOWHERE
 
 
 def cut_line(place: HoldPlace) -> str | None:
@@ -266,6 +326,7 @@ class Floor[Said]:
         self._place = _NOTHING_PLAYS
         self._waiting: list[Said] = []
         self._reply: list[Said] = []
+        self._behind: list[Said] = []
         self._playing: Said | None = None
         self._deciding = False
 
@@ -273,6 +334,7 @@ class Floor[Said]:
         """The loop's answer opens: no sentence waits, and every utterance so far began before."""
         self._waiting.clear()
         self._reply.clear()
+        self._behind.clear()
         self._deciding = False
         self._answer_open = True
         self._talk.span_opens()
@@ -297,8 +359,9 @@ class Floor[Said]:
     ) -> SpeakRefusal | None:
         """A render ended: ``STOPPED`` when a stop or an answer dropped the ticket meanwhile, then,
         for a named hold, ``NOT_INTERRUPTED`` when it no longer stands. Otherwise the consumer
-        calls ``end_hold(ANSWERED)`` and ``answer_goes_on`` when it named one, then ``enter``, or
-        enters nothing."""
+        calls ``end_hold(ANSWERED)``, or ``end_hold(SAID_THEN_CONTINUED)`` when the sentence keeps
+        the queue, and ``answer_goes_on`` when it named one, then ``enter`` and, after the second,
+        ``reply_ended``, or enters nothing."""
         if ticket not in self._tickets:
             return SpeakRefusal.STOPPED
         self._tickets.remove(ticket)
@@ -415,61 +478,78 @@ class Floor[Said]:
             return StopSpeakingRefusal.NOT_INTERRUPTED
         if self._silent:
             return StopSpeakingRefusal.NOTHING_PLAYING
-        dropped = self._dropped(HoldEnding.STOPPED, self._place if self._held else place)
+        dropped = self._dropped(_EFFECTS[HoldEnding.STOPPED], self._place if self._held else place)
         self._hold = None
         self._wordless = False
         self._talk.span_closes()
         return dropped
 
     def continue_speaking(
-        self, interrupted: str
+        self, interrupted: str, *, finish: bool = False
     ) -> tuple[HoldStep[Said], ...] | ContinueSpeakingRefusal:
-        """A continue naming ``interrupted``: the steps of ``CONTINUED`` with the hold ended, or why
-        it is refused."""
+        """A continue naming ``interrupted``: the steps of ``CONTINUED``, or of ``FINISHED`` when
+        ``finish`` is set, with the hold ended, or why it is refused."""
         if not self._stands(interrupted):
             return ContinueSpeakingRefusal.NOT_INTERRUPTED
-        steps = self.end_hold(HoldEnding.CONTINUED)
+        steps = self.end_hold(HoldEnding.FINISHED if finish else HoldEnding.CONTINUED)
         self.answer_goes_on()
         return steps
 
-    def end_hold(self, ending: HoldEnding) -> tuple[HoldStep[Said], ...]:
-        """A decision gave ``ending``, or a wordless hold may go on: what it does to the sentences,
-        as the steps the consumer carries out in order, and none that is empty.
+    def end_hold(self, choice: HoldChoice) -> tuple[HoldStep[Said], ...]:
+        """A decision gave ``choice``: what it does to the sentences, as the steps the consumer
+        carries out in order, and none that is empty.
 
-        ``Wait`` comes first when the hold stands on with the ending, the sound already stopped
-        and, after ``ANSWERED``, between sentences. The hold itself ends only with
-        ``answer_goes_on`` or the answer's end.
+        ``Wait`` comes first when the hold stands on with the choice, the sound already stopped
+        and, after ``ANSWERED`` or ``SAID_THEN_CONTINUED``, between sentences. The hold itself
+        ends only with ``answer_goes_on`` or the answer's end.
         """
-        self._count_the_speaking_as_begun_before()
-        holds_on = ending in _PLAYING_ENDINGS and self._talk.standing
-        if ending is HoldEnding.WENT_ON and self._hold is not None and self._hold.id is not None:
+        return self._ending(choice)
+
+    def go_on(self) -> tuple[HoldStep[Said], ...]:
+        """A wordless hold goes on by itself, as ``CONTINUED`` would: the steps of ``WENT_ON``,
+        named by ``went_on`` when the hold has an id."""
+        if self._hold is not None and self._hold.id is not None:
             self._went_on = self._hold.id
+        return self._ending(HoldEnding.WENT_ON)
+
+    def reply_ended(self) -> None:
+        """The reply that went ahead of the waiting sentences has ended: they follow it now."""
+        self._waiting.extend(self._behind)
+        self._behind.clear()
+
+    def _ending(self, ending: HoldEnding) -> tuple[HoldStep[Said], ...]:
+        self._count_the_speaking_as_begun_before()
+        effect = _EFFECTS[ending]
+        holds_on = effect.plays and self._talk.standing
         held = self._playing
-        dropped = self._dropped(ending, self._place)
-        if ending is HoldEnding.ANSWERED and holds_on:
+        dropped = self._dropped(effect, self._place)
+        if effect.drops_the_held and holds_on:
             self._place = _NOTHING_PLAYS
         steps: list[HoldStep[Said]] = [Wait()] if holds_on else []
         if dropped.sentence is not None or dropped.waiting:
             steps.append(dropped)
-        if held is not None and ending not in _DROPPING_THE_HELD and not holds_on:
+        if held is not None and not effect.drops_the_held and not holds_on:
             steps.append(PlayOn(held))
         return tuple(steps)
 
-    def _dropped(self, ending: HoldEnding, place: HoldPlace) -> Drop[Said]:
-        """What ``ending`` drops of the sentences and the open renders; the sentences the reply
-        entered wait in their place after ``ANSWERED``. The cut line reads ``place``."""
-        held = self._playing if ending in _DROPPING_THE_HELD else None
-        dropping = ending in _DROPPING_ENDINGS
+    def _dropped(self, effect: _Effect, place: HoldPlace) -> Drop[Said]:
+        """What ``effect`` drops of the sentences and the open renders, and where the sentences the
+        reply entered go. The cut line reads ``place``."""
+        held = self._playing if effect.drops_the_held else None
         dropped = Drop(
             held,
-            tuple(self._waiting) if dropping else (),
+            (*self._waiting, *self._behind) if effect.drops_the_waiting else (),
             None if held is None else cut_line(place),
         )
         reply, self._reply = self._reply, []
         self._deciding = False
-        if dropping:
-            self._waiting = reply if ending is HoldEnding.ANSWERED else []
+        if effect.drops_the_waiting:
+            self._waiting = reply if effect.reply is _Reply.INSTEAD else []
+            self._behind.clear()
             self._tickets.clear()
+        elif effect.reply is _Reply.AHEAD:
+            self._behind = [*self._waiting, *self._behind]
+            self._waiting = reply
         return dropped
 
     def answer_goes_on(self) -> bool:
@@ -499,6 +579,7 @@ class Floor[Said]:
         return not (
             self._playing is not None
             or self._waiting
+            or self._behind
             or self._reply
             or self._tickets
             or self._hold is not None

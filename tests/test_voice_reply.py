@@ -19,7 +19,10 @@ from agents.voice.reply import (
     PROTOCOL_TEXT,
     REPLY_RULES,
     SILENT_REPLY,
+    ContinueSaying,
     HoldMarker,
+    Marker,
+    Reading,
     ReplyReader,
     SentenceRelease,
 )
@@ -46,9 +49,9 @@ def a_tool_call() -> list:
     ]
 
 
-def read_turn(events: list) -> tuple[tuple, list[str]]:
+def read_turn(events: list, *, holding: bool = False) -> tuple[tuple, list[str]]:
     """The openings the reader reported and the sentences it released, over a whole turn."""
-    reader = ReplyReader()
+    reader = ReplyReader(holding=holding)
     openings, released = [], []
     for event in events:
         reading = reader.read(event)
@@ -174,13 +177,149 @@ def test_the_protocol_text_names_each_hold_marker_the_holding_reader_takes(marke
     assert f"[{marker}]" in PROTOCOL_TEXT
 
 
-@pytest.mark.parametrize("marker", get_args(HoldMarker.__value__))
-def test_the_holding_reader_reads_hold_markers_and_the_default_reader_reads_them_unreadable(marker):
+@pytest.mark.parametrize(
+    ("marker", "readings"),
+    [
+        pytest.param(
+            Marker.CONTINUE,
+            [(ContinueSaying(), ()), (None, ("Weiter.",))],
+            id="continue-followed-by-words-says-them",
+        ),
+        pytest.param(
+            Marker.FINISH, [(Marker.FINISH, ()), (None, ())], id="finish-says-nothing-after-it"
+        ),
+    ],
+)
+def test_the_holding_reader_reads_hold_markers_and_the_default_reader_reads_them_unreadable(
+    marker, readings
+):
     events = a_final(f"[{marker}] Weiter.")
     holding = ReplyReader(holding=True)
 
-    assert [holding.read(event).opening for event in events] == [marker, None]
+    assert [(read.opening, read.sentences) for read in map(holding.read, events)] == readings
     assert read_turn(events) == (UNREADABLE, [])
+
+
+@pytest.mark.parametrize(
+    ("events", "openings", "spoken"),
+    [
+        pytest.param(a_final("[continue]"), (Marker.CONTINUE,), [], id="a-bare-continue"),
+        pytest.param(
+            a_final("[ Continue ]", "  "), (Marker.CONTINUE,), [], id="a-continue-then-only-space"
+        ),
+        pytest.param(
+            a_final("[continue] Also, wie gesagt."),
+            (ContinueSaying(),),
+            ["Also, wie gesagt."],
+            id="continue-then-words-say-them",
+        ),
+        pytest.param(
+            a_final("[continue]", " Also.", " Gut. Danke"),
+            (ContinueSaying(),),
+            ["Also.", "Gut.", "Danke"],
+            id="continue-then-words-in-a-later-piece",
+        ),
+        pytest.param(
+            a_final("[continue]\n\nAlso."), (ContinueSaying(),), ["Also."], id="newline-between"
+        ),
+        pytest.param(
+            a_final("[finish] Danke."), (Marker.FINISH,), [], id="finish-says-nothing-after-it"
+        ),
+        pytest.param(a_final("[silent] Danke."), SILENT, [], id="silent-says-nothing-after-it"),
+        pytest.param(
+            [*pieces("[continue]"), *a_tool_call(), *a_final("Gefunden.")],
+            (Marker.CONTINUE,),
+            [],
+            id="a-round-after-a-bare-continue-says-nothing",
+        ),
+        pytest.param(
+            [*pieces("[continue] Also."), *a_tool_call(), *a_final("Gefunden.")],
+            (ContinueSaying(),),
+            ["Also."],
+            id="a-round-after-continue-with-words-says-nothing",
+        ),
+        pytest.param(
+            [*pieces("[finish]"), *a_tool_call(), *a_final("Gefunden.")],
+            (Marker.FINISH,),
+            [],
+            id="a-round-after-finish-says-nothing",
+        ),
+        pytest.param(
+            [*pieces("[silent]"), *a_tool_call(), *a_final("Gefunden.")],
+            SILENT,
+            [],
+            id="a-round-after-silent-says-nothing",
+        ),
+        pytest.param(
+            [*pieces("[shout] Hallo."), *a_tool_call(), *a_final("Gefunden.")],
+            UNREADABLE,
+            [],
+            id="a-round-after-an-unreadable-opening-says-nothing",
+        ),
+        pytest.param(
+            [*pieces("Einen Moment."), *a_tool_call(), *a_final("Gefunden.")],
+            (),
+            ["Einen Moment.", "Gefunden."],
+            id="speech-then-a-tool-round-then-speech-says-both",
+        ),
+    ],
+)
+def test_a_holding_reader_says_what_follows_continue_and_nothing_after_any_other_opening(
+    events, openings, spoken
+):
+    assert read_turn(events, holding=True) == (openings, spoken)
+
+
+@pytest.mark.parametrize(
+    ("events", "decides_at"),
+    [
+        pytest.param(a_final("[continue]"), 1, id="a-bare-continue-at-the-final"),
+        pytest.param(
+            [*pieces("[continue]"), *a_tool_call()], 1, id="a-bare-continue-at-the-tool-call"
+        ),
+        pytest.param(
+            a_final("[continue] Also."), 0, id="continue-with-words-at-its-piece-with-the-words"
+        ),
+        pytest.param(
+            a_final("[continue]", " Also."), 1, id="continue-with-words-at-the-first-later-word"
+        ),
+        pytest.param(
+            a_final("[continue]", "  ", " Also."), 2, id="whitespace-after-continue-is-no-word"
+        ),
+    ],
+)
+def test_a_bare_continue_decides_at_its_round_end_and_continue_with_words_at_its_first_word(
+    events, decides_at
+):
+    reader = ReplyReader(holding=True)
+    decided = [reader.read(event).opening is not None for event in events]
+
+    assert decided.index(True) == decides_at
+    assert decided.count(True) == 1
+
+
+def test_a_turn_that_ends_before_the_round_of_a_bare_continue_ends_still_reads_continue():
+    reader = ReplyReader(holding=True)
+    assert [reader.read(event).opening for event in pieces("[continue]")] == [None]
+
+    assert reader.ended() == Reading(opening=Marker.CONTINUE)
+
+
+@pytest.mark.parametrize(
+    "events",
+    [
+        pytest.param(a_final("[continue] Also."), id="continue-with-words"),
+        pytest.param(a_final("[continue]"), id="continue-whose-round-ended"),
+        pytest.param(a_final("Gut."), id="speech"),
+        pytest.param(pieces("[sil"), id="a-marker-still-open"),
+    ],
+)
+def test_a_turn_end_releases_nothing_when_no_bare_continue_still_waits(events):
+    reader = ReplyReader(holding=True)
+    for event in events:
+        reader.read(event)
+
+    assert reader.ended() == Reading()
 
 
 def test_the_protocol_text_names_the_note_that_opens_a_window_with_earlier_parts_dropped():

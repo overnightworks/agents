@@ -75,13 +75,22 @@ SpokenLanguage = Annotated[str, StringConstraints(pattern=r"^[a-z]{2}$")]
 decision."""
 
 
+def require_hold_to_keep_queue(*, keeps_queue: bool, interrupted: str | None) -> None:
+    """Raises ``ValueError`` when ``keeps_queue`` is set without the hold the sentence answers."""
+    if keeps_queue and interrupted is None:
+        raise ValueError("keeps_queue needs the hold the sentence answers")
+
+
 class SpeakArguments(StrictModel):
     """The arguments of ``speak``: the place and one sentence, whose length the app bounds, and
     optionally the ``language`` of that sentence, the ``style`` it should sound in, which the app
     passes on unchanged, and the ``mood`` the agent's figure shows while it speaks; an absent one
     means the app's own default, and an app that draws no figure ignores the ``mood``.
     ``interrupted`` names the hold (``PlaceWindow.interrupted``) the sentence answers instead of
-    the held rest; without it, a held member refuses the sentence."""
+    the held rest; without it, a held member refuses the sentence. ``keeps_queue``, valid only with
+    ``interrupted``, makes the sentence a short own line: it takes the head of the queue and the
+    queued sentences stay behind it, none of them answering ``stopped``; absent while false, the
+    sentence replaces the queue. An app that does not declare it leaves the queue to ``stopped``."""
 
     place: PlaceRef
     text: NonEmptyUnicodeText
@@ -91,6 +100,12 @@ class SpeakArguments(StrictModel):
         default=None, exclude_if=is_none
     )
     interrupted: NonEmptyUnicodeText | None = Field(default=None, exclude_if=is_none)
+    keeps_queue: bool = Field(default=False, exclude_if=is_false)
+
+    @model_validator(mode="after")
+    def _keep_the_queue_only_of_a_named_hold(self) -> Self:
+        require_hold_to_keep_queue(keeps_queue=self.keeps_queue, interrupted=self.interrupted)
+        return self
 
 
 class Spoken(StrictModel):
@@ -188,15 +203,19 @@ class StopSpeakingRefused(StrictModel):
 
 class ContinueSpeakingArguments(StrictModel):
     """The arguments of ``continue_speaking``: the place and the hold (``PlaceWindow.interrupted``)
-    whose held sentence goes on."""
+    whose held sentence goes on. With ``finish``, only the held sentence's rest plays and the queue
+    is dropped, each dropped ``speak`` answering ``stopped``; absent while false, the queue plays
+    too."""
 
     place: PlaceRef
     interrupted: NonEmptyUnicodeText
+    finish: bool = Field(default=False, exclude_if=is_false)
 
 
 class ContinuedSpeaking(StrictModel):
     """What ``continue_speaking`` answers on success, as JSON: the held sentence's rest plays,
-    faded back in, then the queue; the field is exactly the JSON ``true``."""
+    faded back in, then the queue unless the call finished; the field is exactly the JSON
+    ``true``."""
 
     continued: MarkerTrue
 

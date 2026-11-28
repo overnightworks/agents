@@ -8,11 +8,13 @@ import pytest
 from agents.floor import (
     Drop,
     Floor,
+    HoldChoice,
     HoldEnding,
     PlayOn,
     Start,
     Wait,
     cut_line,
+    leaves_the_turn,
 )
 from agents.member_speaking import (
     ContinueSpeakingRefusal,
@@ -63,6 +65,94 @@ def test_a_sentence_answering_the_hold_starts_first_after_the_held_rest_is_dropp
     assert steps == (Drop(FIRST, (SECOND,), FIRST[:CUT_AT]),)
     member.sentence_ended()
     assert member.next_start() == Start(THIRD)
+
+
+@pytest.mark.parametrize(
+    "entered_before_the_choice",
+    [
+        pytest.param(True, id="a reply written while the hold decides"),
+        pytest.param(False, id="a reply entered after the choice"),
+    ],
+)
+def test_a_short_line_cuts_the_held_sentence_and_goes_ahead_of_the_waiting_ones(
+    entered_before_the_choice: bool,
+) -> None:
+    member = held(FIRST, SECOND)
+    member.decision_opens()
+    if entered_before_the_choice:
+        member.enter(THIRD)
+    steps = member.end_hold(HoldEnding.SAID_THEN_CONTINUED)
+    assert member.answer_goes_on() is False
+    if not entered_before_the_choice:
+        member.enter(THIRD)
+    member.reply_ended()
+    assert steps == (Drop(FIRST, (), FIRST[:CUT_AT]),)
+    started = []
+    member.sentence_ended()
+    while (step := member.next_start()) is not None:
+        started.append(step)
+        member.sentence_ended()
+    assert started == [Start(THIRD), Start(SECOND)]
+
+
+def test_later_reply_sentences_of_a_short_line_stay_ahead_of_the_waiting_ones_until_it_ends() -> (
+    None
+):
+    later = "Sieben acht."
+    member = held(FIRST, SECOND)
+    member.decision_opens()
+    member.end_hold(HoldEnding.SAID_THEN_CONTINUED)
+    member.answer_goes_on()
+    member.sentence_ended()
+    assert member.next_start() is None
+    member.enter(THIRD)
+    assert member.next_start() == Start(THIRD)
+    member.sentence_ended()
+    assert member.next_start() is None
+    member.enter(later)
+    assert member.next_start() == Start(later)
+    member.sentence_ended()
+    member.reply_ended()
+    assert member.next_start() == Start(SECOND)
+
+
+def test_a_stop_after_a_short_line_drops_the_sentences_that_wait_behind_its_reply() -> None:
+    member = held(FIRST, SECOND)
+    member.end_hold(HoldEnding.SAID_THEN_CONTINUED)
+    member.answer_goes_on()
+    member.enter(THIRD)
+    member.sentence_ended()
+    stopped = member.stop(None, BETWEEN)
+    assert stopped == Drop(None, (THIRD, SECOND), None)
+    assert member.next_start() is None
+
+
+@pytest.mark.parametrize(
+    "choice",
+    [
+        HoldEnding.CONTINUED,
+        HoldEnding.FINISHED,
+        HoldEnding.SAID_THEN_CONTINUED,
+        HoldEnding.ANSWERED,
+        HoldEnding.STOPPED,
+    ],
+)
+def test_a_choice_leaves_the_held_turn_exactly_when_it_drops_the_held_sentence(
+    choice: HoldChoice,
+) -> None:
+    steps = held(FIRST, SECOND).end_hold(choice)
+    drops_the_held = any(isinstance(step, Drop) and step.sentence == FIRST for step in steps)
+    assert drops_the_held is leaves_the_turn(choice)
+
+
+def test_a_continue_with_finish_plays_the_held_sentence_on_and_drops_the_waiting_ones() -> None:
+    member = held(FIRST, SECOND)
+    assert member.continue_speaking(HOLD, finish=True) == (
+        Drop(None, (SECOND,), None),
+        PlayOn(FIRST),
+    )
+    member.sentence_ended()
+    assert member.next_start() is None
 
 
 @pytest.mark.parametrize(
@@ -472,7 +562,7 @@ def test_a_wordless_hold_may_go_on_once_nobody_speaks_and_went_on_names_it() -> 
     assert member.may_go_on is False
     member.utterance_ended("ann")
     assert member.may_go_on is True
-    assert member.end_hold(HoldEnding.WENT_ON) == (PlayOn(FIRST),)
+    assert member.go_on() == (PlayOn(FIRST),)
     assert member.answer_goes_on() is False
     assert member.went_on == HOLD
 
@@ -480,13 +570,13 @@ def test_a_wordless_hold_may_go_on_once_nobody_speaks_and_went_on_names_it() -> 
 def test_went_on_stays_until_a_later_hold_goes_on() -> None:
     member = _wordless()
     member.utterance_ended("ann")
-    member.end_hold(HoldEnding.WENT_ON)
+    member.go_on()
     member.answer_goes_on()
     assert lasts(member, "ben") is True
     member.sound_stopped_at(place_in(), "hold-2")
     assert member.went_on == HOLD
     member.utterance_ended("ben")
-    member.end_hold(HoldEnding.WENT_ON)
+    member.go_on()
     assert member.went_on == "hold-2"
 
 

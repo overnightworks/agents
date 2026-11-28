@@ -34,6 +34,7 @@ from agents.mcp_client.arguments import (
     ACCEPT_OPTIONAL,
     SPEAK_OPTIONAL,
     TURN_STATE_OPTIONAL,
+    declares,
     split_undeclared,
 )
 from agents.mcp_client.exchange import CALL_ANSWER, BearerAuth, CallAnswer
@@ -93,11 +94,12 @@ from agents.member_outcomes import (
     UNSUPPORTED_VERSION_CODE,
     ArgumentLeftOut,
     CallFailure,
-    DeclineOutcome,
+    Delivery,
     Unreachable,
     UnrecognisedRefusal,
     UnusableAnswer,
 )
+from agents.member_speaking import require_hold_to_keep_queue
 from agents.skills import (
     SKILLS_EXTENSION,
     SKILLS_GET_METHOD,
@@ -192,9 +194,10 @@ class MemberSession(Protocol):
 
     async def decline(
         self, arguments: DeclineInvitationArguments
-    ) -> DeclineOutcome | DeclineInvitationRefusal | UnrecognisedRefusal:
+    ) -> Delivery | DeclineInvitationRefusal | UnrecognisedRefusal:
         """Declines an invitation, unless the app lists no tool to decline with, which leaves the
-        invitation to run out; the refusal says the invitation is gone."""
+        invitation to run out (``Delivery.NOT_SERVED``); the refusal says the invitation is
+        gone."""
         ...
 
     async def speak(
@@ -203,20 +206,30 @@ class MemberSession(Protocol):
         sentence: str,
         style: str | None = None,
         interrupted: str | None = None,
+        *,
+        keeps_queue: bool = False,
     ) -> SpeakAnswer | SpeakRefusal:
         """That the sentence starts to play, that the app wrote it at the place instead, or why it
         does not speak it.
 
         ``style`` is how it sounds, passed on unchanged; ``interrupted`` names the hold the
-        sentence answers instead of the held rest. An answer that is none of these is an
-        ``UnusableAnswer``.
+        sentence answers instead of the held rest; ``keeps_queue``, with ``interrupted``, keeps
+        the queue behind the sentence. An app whose ``speak`` does not declare ``keeps_queue``
+        is sent the call without it, the tools listed first, and the queue then answers
+        ``stopped``. ``keeps_queue`` without ``interrupted`` raises ``ValueError`` before anything
+        is sent, against every app. An answer that is none of these is an ``UnusableAnswer``.
         """
         ...
 
     async def continue_speaking(
-        self, place: PlaceRef, interrupted: str
-    ) -> ContinueSpeakingRefusal | None:
-        """``None`` when the held sentence goes on, else the refusal."""
+        self, place: PlaceRef, interrupted: str, *, finish: bool = False
+    ) -> ContinueSpeakingRefusal | Literal[Delivery.NOT_SERVED] | None:
+        """``None`` when the held sentence goes on, else the refusal.
+
+        With ``finish``, only the held sentence's rest plays and the queue is dropped. It is sent
+        only to an app whose ``continue_speaking`` declares ``finish``, the tools listed first;
+        otherwise nothing is sent and the outcome is ``Delivery.NOT_SERVED``.
+        """
         ...
 
     async def stop_speaking(self, place: PlaceRef, interrupted: str) -> StopSpeakingRefusal | None:
@@ -400,18 +413,13 @@ class _McpMemberSession:
 
     async def decline(
         self, arguments: DeclineInvitationArguments
-    ) -> DeclineOutcome | DeclineInvitationRefusal | UnrecognisedRefusal:
-        listed = (
-            self._declared_arguments.keys()
-            if self._declared_arguments is not None
-            else {tool.name for tool in await self.declared_tools()}
-        )
-        if DECLINE_INVITATION_TOOL not in listed:
-            return DeclineOutcome.NOT_SERVED
+    ) -> Delivery | DeclineInvitationRefusal | UnrecognisedRefusal:
+        if DECLINE_INVITATION_TOOL not in await self._declared_parameters():
+            return Delivery.NOT_SERVED
         result = await self._called(DECLINE_INVITATION_TOOL, arguments.model_dump(mode="json"))
         if result.is_error:
             return decline_refusal_of(text_of(result))
-        return DeclineOutcome.SENT
+        return Delivery.SENT
 
     async def speak(
         self,
@@ -419,7 +427,10 @@ class _McpMemberSession:
         sentence: str,
         style: str | None = None,
         interrupted: str | None = None,
+        *,
+        keeps_queue: bool = False,
     ) -> SpeakAnswer | SpeakRefusal:
+        require_hold_to_keep_queue(keeps_queue=keeps_queue, interrupted=interrupted)
         # The arguments are the wire shape of ``SpeakArguments``, built unvalidated: a refusal of a
         # sentence is the app's, and a validation error would carry the sentence.
         arguments: JsonObject = {"place": place.model_dump(mode="json"), "text": sentence}
@@ -427,13 +438,23 @@ class _McpMemberSession:
             arguments["style"] = style
         if interrupted is not None:
             arguments["interrupted"] = interrupted
-        result = await self._called_declared(SPEAK_TOOL, arguments, optional=SPEAK_OPTIONAL)
+        if keeps_queue:
+            arguments["keeps_queue"] = True
+        result = await self._called_declared(
+            SPEAK_TOOL, arguments, optional=SPEAK_OPTIONAL, lists=keeps_queue
+        )
         return speak_answer_of(result)
 
     async def continue_speaking(
-        self, place: PlaceRef, interrupted: str
-    ) -> ContinueSpeakingRefusal | None:
-        result = await self._called(CONTINUE_SPEAKING_TOOL, naming_hold(place, interrupted))
+        self, place: PlaceRef, interrupted: str, *, finish: bool = False
+    ) -> ContinueSpeakingRefusal | Literal[Delivery.NOT_SERVED] | None:
+        if finish and not declares(
+            (await self._declared_parameters()).get(CONTINUE_SPEAKING_TOOL), "finish"
+        ):
+            return Delivery.NOT_SERVED
+        result = await self._called(
+            CONTINUE_SPEAKING_TOOL, naming_hold(place, interrupted, finish=finish)
+        )
         return refusal_in(ContinueSpeakingRefused, result).refused if result.is_error else None
 
     async def stop_speaking(self, place: PlaceRef, interrupted: str) -> StopSpeakingRefusal | None:
@@ -480,6 +501,12 @@ class _McpMemberSession:
         if not isinstance(result, CallToolResult):
             raise UnusableAnswer(INVALID_ANSWER_CODE)
         return result
+
+    async def _declared_parameters(self) -> dict[str, JsonObject]:
+        """The parameters each tool declares: the latest list, or one asked for when none stands."""
+        if self._declared_arguments is not None:
+            return self._declared_arguments
+        return {tool.name: tool.parameters for tool in await self.declared_tools()}
 
     async def _called_declared(
         self, name: str, arguments: JsonObject, *, optional: frozenset[str], lists: bool = False

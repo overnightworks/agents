@@ -2,6 +2,7 @@
 
 import asyncio
 
+import httpx2
 import pytest
 
 from agents.backend import TurnStopKind
@@ -39,6 +40,7 @@ from tests.support.voice_support import (
     rows_of,
     run_a_talk_over_before_the_first_sentence_is_complete,
     the_hold_ends,
+    the_hold_ends_and_its_tools_settle,
     the_person_finishes,
 )
 
@@ -227,6 +229,88 @@ def test_continue_resumes_the_paused_sentence_and_plays_the_rest_of_the_answer(p
     ]
 
 
+def test_continue_with_words_says_them_instead_of_the_held_rest_then_the_rest_of_the_answer(
+    place,
+):
+    voice, gateway = an_answer_of_two_that_is_playing(
+        place, completion("[continue] Also, wie gesagt."), completion("Gern.")
+    )
+
+    async def hearing(trace):
+        async for event in the_hold_ends(trace, voice):
+            yield event
+        yield a_line(3, "Und jetzt?")
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    trace = place.trace
+    assert trace.events[:8] == [
+        Woke(),
+        SentenceStarted("Eins."),
+        Held(),
+        Woke(),
+        HoldEnded(HoldEnding.SAID_THEN_CONTINUED),
+        SentenceStarted("Also, wie gesagt."),
+        SentenceStarted("Zwei."),
+        DecisionEnded(),
+    ]
+    assert ("stopped", "Eins.") in trace.calls
+    assert ("resume", "Eins.") not in trace.calls
+    assert trace.played == ["Also, wie gesagt.", "Zwei.", "Gern."]
+    assert conversation_of(gateway.requests[2]) == [
+        ("user", ["Erzähl."]),
+        ("assistant", "Eins."),
+        ("user", ["Moment, wie meinst du das?", HELD_AT_ONE]),
+        ("assistant", "Also, wie gesagt. Zwei."),
+        ("user", ["Und jetzt?"]),
+    ]
+
+
+def test_continue_with_words_still_being_written_when_chosen_plays_them_before_the_rest(place):
+    trace = place.trace
+    voice = RecordingVoice(trace, held={"Eins."})
+    gateway = PacedGateway(
+        trace,
+        [piece("Eins. Zwei."), finish()],
+        [
+            piece("[continue] Also, wie gesagt. Noch"),
+            lambda: trace.until(lambda: HoldEnded(HoldEnding.SAID_THEN_CONTINUED) in trace.entries),
+            piece(" ein Satz."),
+            finish(),
+        ],
+    )
+
+    async def hearing(trace):
+        async for event in the_hold_ends(trace, voice):
+            yield event
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert trace.played == ["Also, wie gesagt.", "Noch ein Satz.", "Zwei."]
+
+
+def test_a_bare_continue_whose_turn_fails_before_its_round_ends_goes_on(place):
+    trace = place.trace
+    voice = RecordingVoice(trace, held={"Eins."})
+    gateway = PacedGateway(
+        trace,
+        [piece("Eins. Zwei."), finish()],
+        [piece("[continue]"), httpx2.ReadError("cut")],
+    )
+
+    async def hearing(trace):
+        async for event in the_hold_ends(trace, voice):
+            yield event
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert HoldEnded(HoldEnding.CONTINUED) in trace.events
+    assert any(isinstance(event, DecisionFailed) for event in trace.events)
+    assert HoldEnded(HoldEnding.DROPPED) not in trace.events
+    assert trace.played == ["Eins.", "Zwei."]
+
+
 def test_continue_after_a_pause_that_met_the_sounds_end_plays_the_rest_at_once(place):
     voice = RecordingVoice(place.trace, held={"Eins."}, ends_at_pause={"Eins."})
     gateway = FakeGateway(THE_FIRST_ANSWER, completion("[continue]"))
@@ -297,6 +381,28 @@ def test_a_hold_between_sentences_never_plays_the_sentence_rendered_ahead(place,
     assert trace.events[-1] == DecisionEnded()
 
 
+def test_an_answer_between_sentences_stops_the_held_turns_render_ahead_once(place):
+    trace = place.trace
+    voice = RecordingVoice(trace, seconds_per_render=3.0)
+    gateway = FakeGateway(THE_FIRST_ANSWER, completion("Klar."))
+
+    async def hearing(trace):
+        yield a_line(1, "Erzähl.")
+        await trace.until(lambda: ("played", "Eins.") in trace.entries)
+        yield speaking(("Ben", "Moment"))
+        await trace.until(lambda: ("render", "Zwei.") in trace.entries)
+        async for event in the_person_finishes(trace):
+            yield event
+        await trace.until(lambda: trace.events[-1] == DecisionEnded())
+        await trace.settled()
+
+    assert place.run(hearing, gateway, voice=voice) == RETURNED
+
+    assert trace.count(("unrendered", "Zwei.")) == 1
+    assert ("rendered", "Zwei.") not in trace.entries
+    assert trace.played == ["Eins.", "Klar."]
+
+
 @pytest.mark.parametrize(
     ("rendering", "played", "unsaid"),
     [
@@ -361,6 +467,34 @@ def test_speech_in_the_hold_decision_replaces_the_rest_with_no_further_request(p
     assert len(gateway.requests) == 2
 
 
+@pytest.mark.parametrize(
+    ("opening", "played"),
+    [
+        pytest.param("[continue] Hallo.", ["Hallo.", "Zwei."], id="a-continue-with-words"),
+        pytest.param("[continue]", ["Eins.", "Zwei."], id="a-bare-continue"),
+        pytest.param("[finish] Hallo.", ["Eins."], id="a-finish-with-words"),
+        pytest.param("[silent] Hallo.", [], id="a-silent-with-words"),
+    ],
+)
+def test_a_round_after_the_one_whose_opening_was_read_says_nothing_in_a_hold_decision(
+    place, opening, played
+):
+    voice, gateway = an_answer_of_two_that_is_playing(
+        place,
+        tool_round(tool_call("call-1", "look_up", {}), content=opening),
+        completion("Gefunden."),
+    )
+    tools = [a_lookup_tool(place.trace)]
+
+    async def hearing(trace):
+        async for event in the_hold_ends_and_its_tools_settle(trace, voice):
+            yield event
+
+    assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
+
+    assert place.trace.played == played
+
+
 @pytest.mark.parametrize("marker", ["[continue]", "[finish]", "[silent]"])
 def test_the_tools_of_a_hold_decision_run_to_their_end_after_its_marker_ended_the_hold(
     place, marker
@@ -371,10 +505,8 @@ def test_the_tools_of_a_hold_decision_run_to_their_end_after_its_marker_ended_th
     tools = [a_lookup_tool(place.trace, takes_a_moment=True)]
 
     async def hearing(trace):
-        async for event in the_hold_ends(trace, voice):
+        async for event in the_hold_ends_and_its_tools_settle(trace, voice):
             yield event
-        await trace.settled()
-        await trace.settled()
 
     assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
 
@@ -395,10 +527,8 @@ def test_the_tools_of_a_hold_decision_finish_after_the_held_turn_failed_followin
     tools = [a_lookup_tool(place.trace, takes_a_moment=True)]
 
     async def hearing(trace):
-        async for event in the_hold_ends(trace, voice):
+        async for event in the_hold_ends_and_its_tools_settle(trace, voice):
             yield event
-        await trace.settled()
-        await trace.settled()
 
     assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
 

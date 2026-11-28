@@ -23,6 +23,8 @@ from tests.support.voice_support import (
     THE_FIRST_ANSWER,
     PacedGateway,
     RecordingVoice,
+    a_look_up_call,
+    a_lookup_tool,
     an_answer_of_two_that_is_playing,
     conversation_of,
     finish,
@@ -93,12 +95,11 @@ def test_a_second_hold_decision_waits_while_the_first_one_is_still_being_written
     gateway = PacedGateway(
         trace,
         [piece("Eins. Zwei."), finish()],
-        [
-            piece("[continue]"),
-            lambda: trace.until(lambda: ("written to its end",) in trace.entries),
-        ],
+        [piece("[continue]"), a_look_up_call(), finish("tool_calls")],
+        [finish()],
         [piece("[silent]"), finish()],
     )
+    tools = [a_lookup_tool(trace, waits_for=lambda: ("written to its end",) in trace.entries)]
 
     async def hearing(trace):
         async for event in interjection_while_playing(trace):
@@ -114,9 +115,9 @@ def test_a_second_hold_decision_waits_while_the_first_one_is_still_being_written
         assert len(gateway.requests) == 2
         trace.record(("written to its end",))
         await trace.settled()
-        assert len(gateway.requests) == 3
+        assert len(gateway.requests) == 4
 
-    assert place.run(hearing, gateway, voice=voice) == RETURNED
+    assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
 
     assert HoldEnded(HoldEnding.STOPPED) in trace.events
 
@@ -298,6 +299,15 @@ def test_a_hold_marker_outside_a_hold_reads_unreadable_and_speaks_nothing(place,
     [
         ("[continue]", [], [HoldEnded(HoldEnding.CONTINUED), SentenceStarted("Zwei.")]),
         ("[finish]", [], [HoldEnded(HoldEnding.FINISHED)]),
+        (
+            "[continue] Also.",
+            [],
+            [
+                HoldEnded(HoldEnding.SAID_THEN_CONTINUED),
+                SentenceStarted("Also."),
+                SentenceStarted("Zwei."),
+            ],
+        ),
         ("[silent]", [StayedSilent()], [HoldEnded(HoldEnding.STOPPED)]),
         ("Gut.", [], [HoldEnded(HoldEnding.ANSWERED), SentenceStarted("Gut.")]),
         ("[nein]", [ReplyUnreadable()], [HoldEnded(HoldEnding.DROPPED)]),
