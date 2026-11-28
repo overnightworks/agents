@@ -17,7 +17,12 @@ from agents.floor import (
     ToldTalkOver,
     Wait,
 )
-from agents.member_speaking import PartialSpeech
+from agents.member_speaking import (
+    ContinueSpeakingRefusal,
+    PartialSpeech,
+    SpeakRefusal,
+    StopSpeakingRefusal,
+)
 from tests.support.floor_support import (
     FIRST,
     HOLD,
@@ -283,18 +288,44 @@ def test_a_finished_line_never_voids_a_waiting_choice() -> None:
     assert member.play_choice() == (PlayOn(FIRST),)
 
 
+def _continue(member: Floor[str], told_changes: int) -> object:
+    return member.continue_speaking(HOLD, told_changes=told_changes)
+
+
+def _speak(member: Floor[str], told_changes: int) -> object:
+    return member.speak_refusal(HOLD, told_changes)
+
+
+def _render_ended(member: Floor[str], told_changes: int) -> object:
+    ticket = member.render_begins()
+    return member.render_ended(ticket, HOLD, told_changes)
+
+
+def _stop(member: Floor[str], told_changes: int) -> object:
+    return member.stop(HOLD, place_in(), told_changes)
+
+
+def _stopping_choice(member: Floor[str], told_changes: int) -> object:
+    return member.end_hold(HoldEnding.STOPPED, told_changes=told_changes)
+
+
 @pytest.mark.parametrize(
-    "choice",
-    [HoldEnding.STOPPED, HoldEnding.CONTINUED, HoldEnding.ANSWERED],
-    ids=["a stopping choice", "a continuing choice", "a choice that answers"],
+    ("ask", "refusal"),
+    [
+        pytest.param(_continue, ContinueSpeakingRefusal.STALE, id="continue_speaking"),
+        pytest.param(_speak, SpeakRefusal.STALE, id="speak before its render"),
+        pytest.param(_render_ended, SpeakRefusal.STALE, id="speak after its render"),
+        pytest.param(_stop, StopSpeakingRefusal.STALE, id="stop_speaking"),
+        pytest.param(_stopping_choice, Stale(), id="a stopping choice of the loop"),
+    ],
 )
 def test_a_choice_told_fewer_changes_than_counted_is_refused_stale_and_changes_nothing(
-    choice: HoldChoice,
+    ask: Callable[[Floor[str], int], object], refusal: object
 ) -> None:
     member = held_while_speaking(SECOND)
     assert member.worded_changes == 1
 
-    assert member.end_hold(choice, told_changes=0) == Stale()
+    assert ask(member, 0) == refusal
 
     assert (member.holding, member.hold_id, member.playing) == (True, HOLD, FIRST)
     assert (member.waiting, member.choice_waits) == ((SECOND,), False)
@@ -306,7 +337,7 @@ def test_a_choice_told_as_many_changes_as_counted_or_none_is_not_refused(
 ) -> None:
     member = held_while_speaking(SECOND)
 
-    assert member.end_hold(HoldEnding.CONTINUED, told_changes=told_changes) == (Wait(),)
+    assert member.continue_speaking(HOLD, told_changes=told_changes) == (Wait(),)
 
 
 @pytest.mark.parametrize(
