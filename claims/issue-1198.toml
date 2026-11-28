@@ -3,6 +3,6 @@ agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
 role = "builder"
 base = "e937c64bbda91848f992966810d4d59c35046384"
 branch = "claude/issue-1198-one-floor-rule-and-the-early-decision"
-scope = [".aco/ahead-of-caller.toml", "docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "scripts/member-tool-wire.json", "src/agents/floor.py", "src/agents/mcp_client/arguments.py", "src/agents/mcp_client/session.py", "src/agents/member_speaking.py", "src/agents/voice/__init__.py", "src/agents/voice/conversation.py", "src/agents/voice/loop.py", "src/agents/voice/reply.py", "tests"]
+scope = [".aco/ahead-of-caller.toml", ".importlinter", "docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "scripts/member-tool-wire.json", "src/agents/floor.py", "src/agents/mcp_client/arguments.py", "src/agents/mcp_client/session.py", "src/agents/member_speaking.py", "src/agents/talk_over.py", "src/agents/voice/__init__.py", "src/agents/voice/conversation.py", "src/agents/voice/loop.py", "src/agents/voice/reply.py", "tests"]
 opened_commit = "27ee8e997bec0ff106c4c5236f2c6eb101d50379"
 whole_reason = "One floor rule for the voice loop and the member wire crosses the floor, the loop's hold and conversation, the wire's arguments and the client; plan v3 keeps them in one change so neither consumer ships a rule the other does not keep. Past 400 production lines it splits at H6's cut line."
