@@ -623,16 +623,6 @@ class Floor[Said]:
         return self._place
 
     @property
-    def standing(self) -> bool:
-        """The talk-over still stands."""
-        return self._talk.standing
-
-    @property
-    def worded(self) -> bool:
-        """A word of the talk-over was heard since the hold's talk-over was counted afresh."""
-        return self._talk.worded
-
-    @property
     def choice_waits(self) -> bool:
         """A choice that plays waits for the talk-over."""
         return self._choice is not None

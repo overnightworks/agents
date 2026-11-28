@@ -125,11 +125,6 @@ class TalkOver:
         return frozenset(self._speaking)
 
     @property
-    def standing(self) -> bool:
-        """Some utterance that began during the span has not ended."""
-        return any(self._began_in_span.values())
-
-    @property
     def talk_over_speaks(self) -> bool:
         """A person of the talk-over has not ended their turn."""
         return not self._talkers.isdisjoint(self._speaking)

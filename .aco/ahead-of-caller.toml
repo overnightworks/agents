@@ -102,3 +102,8 @@ reason = "ContinueSpeakingArguments.finish and SpeakArguments.keeps_queue; hopin
 path = "src/agents/floor.py"
 item = "overnightworks/hopin#1218"
 reason = "Floor.voice_went_on; hopin#1218 reports a person already speaking at a choice to the floor from its speech service."
+
+[[code]]
+path = "src/agents/floor.py"
+item = "overnightworks/hopin#1218"
+reason = "Floor.worded_changes; hopin#1218 tells its runner the count a decision was told and passes it back as told_changes."

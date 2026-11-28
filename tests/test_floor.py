@@ -603,17 +603,20 @@ def test_a_person_who_starts_while_stopping_or_held_joins_the_talk_over_and_open
     assert member.hear_partial("ben", "Hallo") is False
     member.utterance_ended("ann")
     assert member.nobody_speaks is False
-    assert member.worded is True
+    member.sound_stopped_at(place_in(), HOLD)
+    assert member.wordless is False
 
 
 def test_two_people_under_one_shown_name_with_different_keys_are_two() -> None:
     member = playing(new_floor())
     assert lasts(member, "seat-1") is True
     assert lasts(member, "seat-2") is False
+    member.sound_stopped_at(place_in(), HOLD)
+    assert member.continue_speaking(HOLD) == (Wait(),)
     member.utterance_ended("seat-1")
-    assert (member.nobody_speaks, member.standing) == (False, True)
+    assert (member.nobody_speaks, member.choice_may_play) == (False, False)
     member.utterance_ended("seat-2")
-    assert (member.nobody_speaks, member.standing) == (True, False)
+    assert (member.nobody_speaks, member.choice_may_play) == (True, True)
 
 
 def test_renders_counts_the_open_tickets_and_no_dropped_or_ended_one() -> None:
@@ -674,7 +677,7 @@ def test_a_voice_whose_utterance_began_before_holds_nothing_and_counts_as_speaki
     scene(member)
     assert member.hear_partial("ann", "Moment") is False
     assert member.nobody_speaks is False
-    assert (member.standing, member.holding) == (False, False)
+    assert member.holding is False
 
 
 def test_a_span_a_render_opened_stays_open_through_the_step_that_ends_the_ticket() -> None:
@@ -705,7 +708,6 @@ def test_a_name_the_snapshot_lists_again_after_its_line_begins_anew_during_the_a
     assert member.hear_partials((partial("ann", "Ja"),)) is False
     member.hear_finished("ann", "Ja.")
     assert member.hear_partials((partial("ann", "Moment"),)) is True
-    assert member.standing is True
 
 
 def test_a_name_the_snapshot_lists_again_outside_an_answer_holds_nothing() -> None:
@@ -717,4 +719,3 @@ def test_a_name_the_snapshot_lists_again_outside_an_answer_holds_nothing() -> No
     member.answer_ends()
     member.hear_finished("ann", "Ja.")
     assert member.hear_partials((partial("ann", "Moment"),)) is False
-    assert member.standing is False
