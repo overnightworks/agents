@@ -206,10 +206,6 @@ class _Stage:
         if self.holding and not self.ending.done():
             self.ending.set_result(choice)
 
-    @property
-    def said_then_continued(self) -> bool:
-        return self.ending.done() and self.ending.result() is HoldEnding.SAID_THEN_CONTINUED
-
 
 def _choice_of(
     opening: StayedSilent | ReplyUnreadable | HoldMarker | ContinueSaying,
@@ -449,9 +445,9 @@ class _VoiceLoop[Audio]:
         return self._start_stage(holding=True)
 
     def _reply_over(self, stage: _Stage) -> None:
-        """A short own line's reply was read to its end and its choice is carried out: the
-        sentences that waited follow it."""
-        if stage.said_then_continued and stage.carried_out and stage.reading_ended:
+        """A decision's reply was read to its end and its choice is carried out: the sentences
+        that waited, if the floor put them behind it, follow it."""
+        if stage.carried_out and stage.reading_ended:
             self._floor.reply_ended()
 
     async def _carry_out(
