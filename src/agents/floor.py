@@ -505,7 +505,8 @@ class Floor[Said]:
         return self._ending(choice)
 
     def play_choice(self) -> tuple[HoldStep[Said], ...]:
-        """The steps of the waiting choice, once ``choice_may_play``."""
+        """The steps of the waiting choice, once ``choice_may_play``; the consumer carries them out
+        and then calls ``answer_goes_on``."""
         if self._choice is None or self._talk.talk_over_speaks:
             raise ValueError("no waiting choice may play")
         return self._ending(self._choice.choice)
