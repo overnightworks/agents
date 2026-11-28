@@ -143,8 +143,8 @@ class Wait:
 class Drop[Said]:
     """What a stop or an ending drops: the started sentence, if any, which the consumer stops and
     which leaves ``Floor.playing`` once the consumer reports that it ended, every waiting sentence,
-    and ``cut``, the line the started sentence yields, set only when it names one and some seat
-    heard a word of it."""
+    and ``cut``, the line the started sentence yields, set only when it names one, as
+    ``cut_line(place)``."""
 
     sentence: Said | None
     waiting: tuple[Said, ...]
@@ -324,7 +324,7 @@ class Floor[Said]:
         """A person's voice lasted the bound; whether a hold arises with it."""
         self._close_the_span_once_silent()
         began_in_span = self._talk.partial(key, text)
-        self._wordless = self._wordless and not self._talk.worded
+        self._note_words()
         if not began_in_span or self._hold is not None:
             return False
         self._hold = _Hold()
@@ -346,15 +346,23 @@ class Floor[Said]:
 
     def _begin_stopping(self, hold: _Hold) -> None:
         """The hold is Stopping while a sentence plays, and Held at once when none does."""
-        hold.placed = self._playing is None
-        if hold.placed:
-            self._place = _NOTHING_PLAYS
-            self._wordless = not self._talk.worded
+        if self._playing is None:
+            self._place_hold(hold, _NOTHING_PLAYS)
+
+    def _place_hold(self, hold: _Hold, place: HoldPlace) -> None:
+        """The sound stopped at ``place``: the hold is placed, wordless while no word was heard."""
+        hold.placed = True
+        self._place = place
+        self._wordless = not self._talk.worded
+
+    def _note_words(self) -> None:
+        """A heard word ends a wordless hold."""
+        self._wordless = self._wordless and not self._talk.worded
 
     def hear_finished(self, key: str, text: str) -> None:
         """A person's finished line."""
         self._talk.finished(key, text)
-        self._wordless = self._wordless and not self._talk.worded
+        self._note_words()
 
     def enter(self, sentence: Said) -> None:
         """A sentence is written and joins the waiting ones, or the reply while a hold decides."""
@@ -381,10 +389,8 @@ class Floor[Said]:
         if hold is None:
             return
         if not hold.placed:
-            hold.placed = True
             hold.id = hold_id
-            self._place = place
-            self._wordless = not self._talk.worded
+            self._place_hold(hold, place)
         elif hold.id is None:
             hold.id = hold_id
 
