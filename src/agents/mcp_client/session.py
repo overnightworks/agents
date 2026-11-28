@@ -430,9 +430,9 @@ class _McpMemberSession:
         *,
         keeps_queue: bool = False,
     ) -> SpeakAnswer | SpeakRefusal:
+        require_hold_to_keep_queue(keeps_queue=keeps_queue, interrupted=interrupted)
         # The arguments are the wire shape of ``SpeakArguments``, built unvalidated: a refusal of a
         # sentence is the app's, and a validation error would carry the sentence.
-        require_hold_to_keep_queue(keeps_queue=keeps_queue, interrupted=interrupted)
         arguments: JsonObject = {"place": place.model_dump(mode="json"), "text": sentence}
         if style is not None:
             arguments["style"] = style

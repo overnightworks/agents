@@ -40,6 +40,7 @@ from tests.support.voice_support import (
     rows_of,
     run_a_talk_over_before_the_first_sentence_is_complete,
     the_hold_ends,
+    the_hold_ends_and_its_tools_settle,
     the_person_finishes,
 )
 
@@ -486,10 +487,8 @@ def test_a_round_after_the_one_whose_opening_was_read_says_nothing_in_a_hold_dec
     tools = [a_lookup_tool(place.trace)]
 
     async def hearing(trace):
-        async for event in the_hold_ends(trace, voice):
+        async for event in the_hold_ends_and_its_tools_settle(trace, voice):
             yield event
-        await trace.settled()
-        await trace.settled()
 
     assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
 
@@ -506,10 +505,8 @@ def test_the_tools_of_a_hold_decision_run_to_their_end_after_its_marker_ended_th
     tools = [a_lookup_tool(place.trace, takes_a_moment=True)]
 
     async def hearing(trace):
-        async for event in the_hold_ends(trace, voice):
+        async for event in the_hold_ends_and_its_tools_settle(trace, voice):
             yield event
-        await trace.settled()
-        await trace.settled()
 
     assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
 
@@ -530,10 +527,8 @@ def test_the_tools_of_a_hold_decision_finish_after_the_held_turn_failed_followin
     tools = [a_lookup_tool(place.trace, takes_a_moment=True)]
 
     async def hearing(trace):
-        async for event in the_hold_ends(trace, voice):
+        async for event in the_hold_ends_and_its_tools_settle(trace, voice):
             yield event
-        await trace.settled()
-        await trace.settled()
 
     assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
 

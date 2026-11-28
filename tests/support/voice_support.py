@@ -579,6 +579,14 @@ async def the_hold_ends(trace, voice):
     await trace.settled()
 
 
+async def the_hold_ends_and_its_tools_settle(trace, voice):
+    """A hold that ended, then two settles: the tools of its decision run to their end."""
+    async for event in the_hold_ends(trace, voice):
+        yield event
+    await trace.settled()
+    await trace.settled()
+
+
 def run_a_talk_over_before_the_first_sentence_is_complete(place, decision: str) -> PacedGateway:
     """A person talks over and finishes while the reply's first sentence is still being written;
     the hold's decision is ``decision``. Returns the gateway the place ran against."""
