@@ -1,6 +1,7 @@
 """A talk-over holds the voice loop's answer, and one decision ends the hold."""
 
 import asyncio
+from functools import partial
 
 import httpx2
 import pytest
@@ -465,9 +466,7 @@ def test_a_round_after_the_one_whose_opening_was_read_says_nothing_in_a_hold_dec
     )
     tools = [a_lookup_tool(place.trace)]
 
-    async def hearing(trace):
-        async for event in the_hold_ends_and_its_tools_settle(trace, voice):
-            yield event
+    hearing = partial(the_hold_ends_and_its_tools_settle, voice=voice)
 
     assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
 
@@ -483,9 +482,7 @@ def test_the_tools_of_a_hold_decision_run_to_their_end_after_its_marker_ended_th
     )
     tools = [a_lookup_tool(place.trace, takes_a_moment=True)]
 
-    async def hearing(trace):
-        async for event in the_hold_ends_and_its_tools_settle(trace, voice):
-            yield event
+    hearing = partial(the_hold_ends_and_its_tools_settle, voice=voice)
 
     assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
 
@@ -505,9 +502,7 @@ def test_the_tools_of_a_hold_decision_finish_after_the_held_turn_failed_followin
     )
     tools = [a_lookup_tool(place.trace, takes_a_moment=True)]
 
-    async def hearing(trace):
-        async for event in the_hold_ends_and_its_tools_settle(trace, voice):
-            yield event
+    hearing = partial(the_hold_ends_and_its_tools_settle, voice=voice)
 
     assert place.run(hearing, gateway, voice=voice, tools=tools) == RETURNED
 
