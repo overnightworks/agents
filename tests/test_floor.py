@@ -287,11 +287,19 @@ def test_a_speak_naming_another_id_is_refused_in_every_state_and_changes_nothing
     assert (member.holding, member.hold_id, member.waiting, member.renders) == before
 
 
-def test_a_speak_without_an_id_is_refused_held_only_while_held() -> None:
-    assert held().speak_refusal(None) is SpeakRefusal.HELD
-    assert stopping().speak_refusal(None) is None
-    assert playing(wire_floor()).speak_refusal(None) is None
-    assert wire_floor().speak_refusal(None) is None
+@pytest.mark.parametrize(
+    ("state", "refusal"),
+    [
+        pytest.param("held", SpeakRefusal.HELD, id="held-refuses"),
+        pytest.param("stopping", None, id="stopping-passes"),
+        pytest.param("playing", None, id="playing-passes"),
+        pytest.param("silent", None, id="silent-passes"),
+    ],
+)
+def test_a_speak_without_an_id_is_refused_held_only_while_held(
+    state: str, refusal: SpeakRefusal | None
+) -> None:
+    assert _states()[state]().speak_refusal(None) is refusal
 
 
 def test_a_speak_naming_the_standing_id_passes() -> None:
@@ -485,8 +493,12 @@ def test_went_on_stays_until_a_later_hold_goes_on() -> None:
 def test_a_line_of_the_talk_over_counts_before_the_turns_end_is_judged() -> None:
     member = _wordless()
     member.hear_finished("ann", "Warte")
+    assert member.nobody_speaks is False
     member.utterance_ended("ann")
     assert (member.wordless, member.may_go_on) == (False, False)
+    assert member.nobody_speaks is True
+    member.hear_finished("zoe", "Hallo")
+    assert member.nobody_speaks is True
 
 
 def test_a_line_after_the_persons_turn_ended_still_counts() -> None:
@@ -565,26 +577,30 @@ def test_no_empty_drop_and_a_finish_drops_only_the_waiting_sentences() -> None:
     member.hear_partials(())
     member.enter(SECOND)
     steps = member.end_hold(HoldEnding.FINISHED)
-    assert sorted(map(repr, steps)) == sorted(
-        map(repr, [Drop(None, (SECOND,), None), PlayOn(FIRST)])
-    )
+    assert steps == (Drop(None, (SECOND,), None), PlayOn(FIRST))
     assert member.end_hold(HoldEnding.CONTINUED) == (PlayOn(FIRST),)
 
 
-def test_a_key_first_heard_through_a_partial_holds_nothing_and_counts_as_speaking() -> None:
-    member = playing(wire_floor())
-    assert member.hear_partial("ann", "Moment") is False
-    assert member.nobody_speaks is False
-    assert member.standing is False
-
-
-def test_a_turn_heard_again_after_its_end_began_before_and_counts_as_speaking() -> None:
-    member = playing(wire_floor())
+def _heard_again_after_its_end(member: Floor[str]) -> None:
     member.utterance_began("ann")
     member.utterance_ended("ann")
+
+
+@pytest.mark.parametrize(
+    "scene",
+    [
+        pytest.param(lambda member: None, id="a-person-speaking-since-before-the-floor-existed"),
+        pytest.param(_heard_again_after_its_end, id="a-turn-heard-again-after-its-end"),
+    ],
+)
+def test_a_voice_whose_utterance_began_before_holds_nothing_and_counts_as_speaking(
+    scene: Callable[[Floor[str]], None],
+) -> None:
+    member = playing(wire_floor())
+    scene(member)
     assert member.hear_partial("ann", "Moment") is False
     assert member.nobody_speaks is False
-    assert member.holding is False
+    assert (member.standing, member.holding) == (False, False)
 
 
 def test_a_span_a_render_opened_stays_open_through_the_step_that_ends_the_ticket() -> None:
