@@ -220,6 +220,14 @@ def _choice_of(
     return HoldEnding.STOPPED if isinstance(opening, StayedSilent) else None
 
 
+def _endings_of(decided: HoldChoice | None) -> tuple[HoldEnding, HoldChoice]:
+    """What the loop reports and what the floor takes for a decision's choice: a failed or
+    unreadable decision is reported as dropped and stops the answer."""
+    if decided is None:
+        return HoldEnding.DROPPED, HoldEnding.STOPPED
+    return decided, decided
+
+
 class _VoiceLoop[Audio]:
     def __init__(
         self,
@@ -414,8 +422,7 @@ class _VoiceLoop[Audio]:
             self._floor.decision_opens()
             decision = self._open_hold(place)
             decided = await decision.ending
-            reported = HoldEnding.DROPPED if decided is None else decided
-            choice = HoldEnding.STOPPED if decided is None else decided
+            reported, choice = _endings_of(decided)
             self._report(HoldEnded(reported))
             self._answer.marker = _RECORDED_ENDINGS[reported]
             steps = self._floor.end_hold(choice)
