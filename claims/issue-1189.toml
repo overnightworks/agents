@@ -1,8 +1,0 @@
-claim_id = "2c567d8b2ce740739b2b48286cb94026"
-agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
-role = "builder"
-base = "a9ab50825d37da69da03e95bd692eea2f0179035"
-branch = "claude/issue-1189-agents-floor-decides-the-member-wire-s-s"
-scope = [".aco/ahead-of-caller.toml", "docs/ARCHITECTURE.md", "docs/connector.md", "docs/hearing.md", "src/agents/floor.py", "src/agents/voice/loop.py", "tests/support/floor_support.py", "tests/test_floor.py"]
-opened_commit = "944a6f51e3e7e96e943b8e2bbdb0f650e5d19a37"
-whole_reason = "One contract: the wire side of agents.floor, the loop's reader of the widened Drop, the tests that prove it and the three documents that state who decides; the fallback cut splits it only past 400 production lines."
