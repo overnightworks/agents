@@ -51,10 +51,13 @@ class TalkOver:
         self.forget_words()
 
     def forget_words(self) -> None:
-        """Count words afresh: the people of the talk-over are those who stand now, and what they
-        have said is what their standing partials say."""
-        self._talkers = {key for key, began in self._began_in_span.items() if began}
-        self._standing = {key: text for key, text in self._standing.items() if key in self._talkers}
+        """Count words afresh: the people of the talk-over are those whose partial stands and whose
+        utterance began in the span, and what they have said is what their partials say. A voice
+        that has not lasted the bound joins with its first partial."""
+        self._standing = {
+            key: text for key, text in self._standing.items() if self._began_in_span.get(key)
+        }
+        self._talkers = set(self._standing)
         self._heard = {
             key: words for key, text in self._standing.items() if (words := words_of(text))
         }

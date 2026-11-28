@@ -13,6 +13,7 @@ from agents.floor import (
     HoldEnding,
     PlayOn,
     Stale,
+    Start,
     ToldTalkOver,
     Wait,
 )
@@ -475,3 +476,29 @@ def test_a_person_whose_new_voice_lasts_the_bound_after_the_choice_played_holds_
     member.enter(REPLY)
 
     assert lasts(member, "ann", "noch mehr") is True
+
+
+def test_a_voice_below_the_bound_holds_nothing_when_a_continue_that_never_waited_goes_on() -> None:
+    member = playing(new_floor(), FIRST, SECOND)
+    assert lasts(member, "ann", "Moment") is True
+    member.sound_stopped_at(place_in(), HOLD)
+    member.utterance_ended("ann")
+    member.utterance_began("ben")
+
+    assert member.continue_speaking(HOLD) == (PlayOn(FIRST),)
+
+    assert member.holding is False
+    member.sentence_ended()
+    assert member.next_start() == Start(SECOND)
+
+
+def test_a_voice_below_the_bound_holds_nothing_when_a_waiting_choice_plays() -> None:
+    member = held_while_speaking(SECOND)
+    assert member.end_hold(HoldEnding.CONTINUED) == (Wait(),)
+    member.utterance_began("ben")
+    member.utterance_ended("ann")
+
+    assert member.play_choice() == (PlayOn(FIRST),)
+
+    assert member.answer_goes_on() is False
+    assert member.holding is False
