@@ -541,10 +541,9 @@ class Floor[Said]:
         held = self._playing if effect.drops_the_held else None
         reply, self._reply = self._reply, []
         self._deciding = False
+        unplayed_reply = reply if effect.reply is _Reply.NOWHERE else []
         dropping = (
-            (*self._waiting, *self._behind, *(reply if effect.reply is _Reply.NOWHERE else ()))
-            if effect.drops_the_waiting
-            else ()
+            (*self._waiting, *self._behind, *unplayed_reply) if effect.drops_the_waiting else ()
         )
         dropped = Drop(held, dropping, None if held is None else cut_line(place))
         if effect.drops_the_waiting:
