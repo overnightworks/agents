@@ -1,0 +1,7 @@
+claim_id = "997a5f49286448aa9d4489b2415a4612"
+agent = "Claude 9257d6c3-27fd-465f-a48d-0c18776478e2"
+role = "builder"
+base = "c0861dd3f82c71d34a7cb63c747b4d7ade84af0e"
+branch = "claude/issue-1190-two-pod-script-load-wait-gawk"
+scope = ["scripts/run_redis_tests.sh"]
+opened_commit = "6e513efa4ff462982cd15e3414cdd92b3947cdd8"
