@@ -454,6 +454,7 @@ def answer_with(content: object) -> Registration:
         body_with(
             {"application/json": {"schema": {"type": "object", "properties": {}, "required": 3}}}
         ),
+        body_with({"application/json": {"schema": {"type": "array", "properties": {}}}}),
         with_document("GET", {"parameters": "q"}),
         with_document("GET", {"parameters": ["q"]}),
         query_with({"name": ["q"]}),
@@ -466,6 +467,9 @@ def answer_with(content: object) -> Registration:
         answer_with(["application/json"]),
         answer_with({"application/json": "x"}),
         answer_with({"application/json": {"schema": "object"}}),
+        body_with({"application/json": {"schema": {"type": "object"}}}),
+        Registration("GET", "/notes", nothing, tool="a", extra={"status_code": 404}),
+        Registration("GET", "/notes/{note_id}", nothing, tool="a"),
     ],
     ids=[
         "header parameter",
@@ -494,6 +498,7 @@ def answer_with(content: object) -> Registration:
         "request body schema not an object",
         "request body properties not an object",
         "request body required names not a list",
+        "request body with properties but no object type",
         "parameters not a list",
         "parameter not an object",
         "parameter name not a string",
@@ -506,6 +511,9 @@ def answer_with(content: object) -> Registration:
         "response content as a list",
         "response media type not an object",
         "response schema not an object",
+        "request body object without properties",
+        "no success response",
+        "template placeholder without its path parameter",
     ],
 )
 def test_a_marked_route_outside_the_profile_is_refused_naming_the_operation(
@@ -713,9 +721,7 @@ def test_an_undecided_operation_is_refused_even_when_a_marked_one_breaches_the_p
     ],
     ids=["empty", "blank", "not a string", "list", "also a mark", "extra key", "empty mapping"],
 )
-def test_an_exclusion_that_not_an_agent_tool_does_not_return_is_refused(
-    extension: Any,
-) -> None:
+def test_an_exclusion_that_not_an_agent_tool_does_not_return_is_refused(extension: Any) -> None:
     app = application(Registration("GET", "/notes", nothing, document={"x-agent-tool": extension}))
 
     assert "GET /notes" in str(refused(app))
@@ -727,9 +733,7 @@ def test_a_put_patch_or_delete_marked_read_only_is_refused_naming_the_operation(
 ) -> None:
     app = application(Registration(method, "/notes", nothing, tool="a"))
 
-    failure = str(refused(app))
-
-    assert f"{method} /notes" in failure
+    assert f"{method} /notes" in str(refused(app))
 
 
 @pytest.mark.parametrize("method", ["PUT", "PATCH", "DELETE"])
@@ -741,11 +745,7 @@ def test_a_marked_put_patch_or_delete_is_called_with_its_path_query_and_body_arg
 
     app = application(
         Registration(
-            method,
-            "/notes/{note_id}",
-            change,
-            tool="change_note",
-            effect=ToolEffect.SIDE_EFFECTING,
+            method, "/notes/{note_id}", change, tool="change_note", effect=ToolEffect.SIDE_EFFECTING
         )
     )
     arguments = {"note_id": "n1", "title": "Dawn", "genre": "pop", "reason": "typo"}

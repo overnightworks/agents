@@ -52,13 +52,12 @@ class CallAnswer:
     on the session can; and the deadline that ends the call when its answer names another
     request."""
 
+    stranding: asyncio.Timeout
     answer: HttpAnswer | None = None
-    stranding: asyncio.Timeout | None = None
 
     def strand(self) -> None:
         """Ends the call now: the app answered, and the answer is for no request of the call."""
-        if self.stranding is not None:
-            self.stranding.reschedule(asyncio.get_running_loop().time())
+        self.stranding.reschedule(asyncio.get_running_loop().time())
 
 
 CALL_ANSWER: Final = contextvars.ContextVar[CallAnswer | None]("call_answer", default=None)

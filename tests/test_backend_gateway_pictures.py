@@ -31,6 +31,7 @@ from agents.turn_events import FinalEvent
 from tests.support.gateway_turn_support import (
     FailingTransport,
     HangingTransport,
+    Streamed,
     a_gateway_config,
     a_person,
     a_picture_request,
@@ -205,6 +206,14 @@ def test_a_body_at_the_read_bound_passes(studio):
 
 def test_a_body_one_byte_over_the_read_bound_is_a_provider_error(studio):
     _, stopped, _ = studio.run(padded_reply(b"PNG", ENVELOPE_BOUND + 1))
+
+    assert ending(stopped) == PROVIDER_ERROR
+
+
+def test_a_picture_reply_that_cannot_be_decoded_is_a_provider_error(studio):
+    undecodable = Streamed((b"not gzip",), headers={"Content-Encoding": "gzip"})
+
+    _, stopped, _ = studio.run(transport=undecodable)
 
     assert ending(stopped) == PROVIDER_ERROR
 

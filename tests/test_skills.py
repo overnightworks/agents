@@ -63,7 +63,7 @@ def test_a_verified_file_becomes_a_skill_keyed_on_the_label_and_uri_with_its_too
     content = skill_markdown(
         front_matter=(
             "name: notes-help\ndescription: Helps with notes\nlicense: MIT\n"
-            "allowed-tools: Bash\nmetadata:\n  tools: lookup save"
+            "allowed-tools: Bash\nmetadata:\n  tools: lookup save\nkeywords: [notes, help]"
         ),
         body="Read first.",
     ).replace(b"\n\nRead", b"\n\n\n\nRead")
@@ -74,6 +74,7 @@ def test_a_verified_file_becomes_a_skill_keyed_on_the_label_and_uri_with_its_too
                 "license": "MIT",
                 "allowed-tools": "Bash",
                 "metadata": {"tools": "lookup save"},
+                "keywords": ["notes", "help"],
             },
         )
     )
@@ -155,6 +156,30 @@ def _with_front_matter(lines: str) -> bytes:
                 frontmatter={"a": {"k": "v"}, "b": {"k": "v"}},
             ),
             id="aliased-mapping",
+        ),
+        pytest.param(
+            *_refused_case(
+                SkillRefusal.FRONTMATTER_MISMATCH,
+                _with_front_matter("x: [a, b]"),
+                frontmatter={"x": ["a", "c"]},
+            ),
+            id="list-item-differs",
+        ),
+        pytest.param(
+            *_refused_case(
+                SkillRefusal.FRONTMATTER_MISMATCH,
+                _with_front_matter("x: [a, b]"),
+                frontmatter={"x": ["a"]},
+            ),
+            id="list-length-differs",
+        ),
+        pytest.param(
+            *_refused_case(
+                SkillRefusal.FRONTMATTER_MISMATCH,
+                _with_front_matter("a: &shared [k]\nb: *shared"),
+                frontmatter={"a": ["k"], "b": ["k"]},
+            ),
+            id="aliased-list",
         ),
         pytest.param(
             *_refused_case(SkillRefusal.FRONTMATTER_MISMATCH, b"---\nname: \xff\n---\n"),

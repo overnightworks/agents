@@ -67,6 +67,7 @@ def test_a_missing_host_fact_fails_loud(missing):
         "gateway.test",
         "ftp://gateway.test",
         "",
+        "http://[1:2]",
     ],
 )
 def test_a_malformed_origin_fails_loud(origin):

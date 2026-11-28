@@ -16,6 +16,7 @@ import pytest
 from mcp_types import (
     HEADER_MISMATCH,
     INVALID_PARAMS,
+    INVALID_REQUEST,
     METHOD_NOT_FOUND,
     PARSE_ERROR,
     UNSUPPORTED_PROTOCOL_VERSION,
@@ -241,8 +242,9 @@ def test_a_body_with_a_repeated_member_or_a_non_json_number_is_refused_before_di
         (rpc_body("tools/list"), (b"mcp-method", b"tools/call"), 400, HEADER_MISMATCH),
         (rpc_body("tools/list", enveloped=False), None, 400, INVALID_PARAMS),
         (rpc_body("no/such/method"), None, 404, METHOD_NOT_FOUND),
+        (b"[]", None, 400, INVALID_REQUEST),
     ],
-    ids=["header mismatch", "missing meta", "unknown method"],
+    ids=["header mismatch", "missing meta", "unknown method", "body that is no object"],
 )
 def test_the_sdk_ladder_answers_a_malformed_request_with_its_standard_error(
     front: McpPersonFront,
@@ -430,19 +432,32 @@ def test_a_handler_rewriting_the_scope_headers_cannot_keep_the_request_bearer_in
     assert (reply.status, reply.body) == (500, b"")
 
 
-def test_a_result_carrying_another_tokens_signature_is_answered_as_usual(
-    front: McpPersonFront, person: Person
+@pytest.mark.parametrize(
+    ("header", "leaked_word"),
+    [
+        pytest.param(
+            b"Bearer head.payload.sigOfTheRequest", "sigOfAnother", id="another bearers signature"
+        ),
+        pytest.param(
+            b"Basic head.payload.sigOfTheRequest",
+            "sigOfTheRequest",
+            id="a credential of another scheme",
+        ),
+    ],
+)
+def test_a_result_carrying_no_credential_of_the_request_is_answered_as_usual(
+    front: McpPersonFront, person: Person, header: bytes, leaked_word: str
 ) -> None:
-    person.outcome = ToolOutcome("debug: head.payload.sigOfAnother", is_error=False)
+    person.outcome = ToolOutcome(f"debug: head.payload.{leaked_word}", is_error=False)
 
     reply = post(
         front,
         rpc_body("tools/call", call_params("read_note")),
-        (b"authorization", b"Bearer head.payload.sigOfTheRequest"),
+        (b"authorization", header),
     )
 
     assert reply.status == 200
-    assert "sigOfAnother" in reply.json()["result"]["content"][0]["text"]
+    assert leaked_word in reply.json()["result"]["content"][0]["text"]
 
 
 def test_an_outcome_that_cannot_be_written_answers_the_failed_result_and_leaks_nothing(

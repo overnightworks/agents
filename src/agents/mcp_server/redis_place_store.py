@@ -260,29 +260,39 @@ _FACTS: Final[TypeAdapter[MemberFacts]] = TypeAdapter(MemberFacts)
 
 
 def _encoded(signal: PlaceSignal) -> str:
-    match signal:
-        case ResourceChange(principal, uri, origin):
-            return json.dumps(["v1", "resource", principal.iss, principal.sub, uri, origin])
-        case ToolsChange(principal, origin):
-            return json.dumps(["v1", "tools", principal.iss, principal.sub, None, origin])
+    if isinstance(signal, ResourceChange):
+        return json.dumps(
+            [
+                "v1",
+                "resource",
+                signal.principal.iss,
+                signal.principal.sub,
+                signal.uri,
+                signal.origin,
+            ]
+        )
+    return json.dumps(
+        ["v1", "tools", signal.principal.iss, signal.principal.sub, None, signal.origin]
+    )
 
 
 def _decoded(address: str) -> PlaceSignal | ListeningTurn | None:
     """The signal or turn an address carries, or ``None`` for a payload no ``["v1", ...]``
     address; a turn's origin is dropped."""
     try:
-        match _ADDRESS.validate_json(address, strict=True):
-            case ("v1", "resource", iss, sub, uri, origin):
-                return ResourceChange(Principal(iss=iss, sub=sub), uri, origin)
-            case ("v1", "tools", iss, sub, None, origin):
-                return ToolsChange(Principal(iss=iss, sub=sub), origin)
-            case ("v1", ("listening-yes" | "listening-no") as direction, iss, sub, uri, _):
-                return ListeningTurn(
-                    Principal(iss=iss, sub=sub), uri, listens=direction == "listening-yes"
-                )
+        validated = _ADDRESS.validate_json(address, strict=True)
     except ValidationError:
         return None
-    return None
+    match validated:
+        case ("v1", "resource", iss, sub, uri, origin):
+            return ResourceChange(Principal(iss=iss, sub=sub), uri, origin)
+        case ("v1", "tools", iss, sub, None, origin):
+            return ToolsChange(Principal(iss=iss, sub=sub), origin)
+        case _:
+            _, direction, iss, sub, uri, _origin = validated
+            return ListeningTurn(
+                Principal(iss=iss, sub=sub), uri, listens=direction == "listening-yes"
+            )
 
 
 def _principal_text(principal: Principal) -> str:

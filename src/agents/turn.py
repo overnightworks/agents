@@ -40,7 +40,6 @@ def base64_length(size: int) -> int:
 
 MAX_EVENT_BYTES: Final = 1_048_576
 MAX_RUN_FILES_BYTES: Final = 33_554_432
-MAX_RUN_FILE_NAME_BYTES: Final = 255
 MAX_TOOL_INPUT_DEPTH: Final = 128
 MAX_AGENT_LENGTH: Final = 64
 MODEL_PART_PATTERN: Final = re.compile(r"[a-z0-9.-]+")
@@ -251,15 +250,6 @@ MarkerTrue = Annotated[StrictBool, AfterValidator(_refuse_false)]
 """A marker field of an answer: exactly the JSON ``true``, so two answers stay distinct as JSON."""
 
 
-def _refuse_non_file_name(name: str) -> str:
-    _refuse_lone_surrogates(name)
-    if not 1 <= len(name.encode("utf-8")) <= MAX_RUN_FILE_NAME_BYTES:
-        raise ValueError(f"must be 1 to {MAX_RUN_FILE_NAME_BYTES} bytes in UTF-8")
-    if "/" in name or "\0" in name or name in (".", ".."):
-        raise ValueError("must be one path component: no /, no NUL, not . or ..")
-    return name
-
-
 def _read_canonical_base64(value: object) -> object:
     # Pydantic's lenient Base64Bytes accepts whitespace, the URL-safe alphabet
     # and missing padding; the wire accepts one spelling of each content.
@@ -289,7 +279,7 @@ Base64Content = Annotated[
 class RunFile(StrictModel):
     """One file a run returns: its name and its bytes, with no media type."""
 
-    name: Annotated[str, AfterValidator(_refuse_non_file_name)]
+    name: str
     content: Base64Content
 
 

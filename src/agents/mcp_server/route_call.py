@@ -163,7 +163,7 @@ class _Response:
         chunk = message.get("body", b"")
         if self.size + len(chunk) > MAX_EVENT_BYTES:
             self.overflowed = True
-        elif not self.overflowed:
+        else:
             self.chunks.append(chunk)
             self.size += len(chunk)
         self.complete = not message.get("more_body", False)

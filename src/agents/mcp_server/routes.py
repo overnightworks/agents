@@ -145,7 +145,7 @@ def _body(
         raise _Breach("a body must be a required application/json object")
     media = _object(content[_JSON], "the request body media type")
     schema = _schema(media.get("schema", {}), components, "the request body schema")
-    if schema.get("type") != "object" or "properties" not in schema:
+    if schema.get("type") != "object":
         raise _Breach("a body must be an object")
     if (schema.keys() - _BODY_KEYWORDS) or schema.get("additionalProperties", False) is not False:
         raise _Breach("a body object may carry only its properties, required names and annotations")

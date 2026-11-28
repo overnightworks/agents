@@ -96,4 +96,4 @@ branch = true
 
 [tool.coverage.report]
 precision = 2
-fail_under = 99.30
+fail_under = 99.98
