@@ -192,7 +192,8 @@ section; tools and MCP handlers are ports. Nothing defaults; a malformed value f
 driven with the SDK's `Client`. Pure rules are called directly; the suite needs no live provider.
 Two processes of a minimal host on real Redis prove the wake, listen record and member lease across
 pods (`scripts/run_redis_tests.sh`). CI measures branch coverage of the default suite and of
-the two pods together, judges the floor once on that sum, and `quality / verdict` holds the import contracts and size and clone ratchets.
+the two pods together, judges the floor once on that sum, and `quality / verdict` holds the
+import contracts and size and clone ratchets.
 
 ## Constraints and reasons
 
