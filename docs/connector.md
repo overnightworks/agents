@@ -761,7 +761,8 @@ declare (accept's `figure`, `voices`, `looks` and `looks[].room`, speak's `style
 told once per session of each `ArgumentLeftOut(tool, argument)`; a required argument is never
 dropped. A `speak` with `keeps_queue` and a `continue_speaking` with `finish` list the app's tools
 first when the session has no list: the first leaves `keeps_queue` out of an app whose `speak`
-declares none, so the queue answers `stopped`; the second sends nothing to an app whose
+declares none, so the queue answers `stopped`, and a `keeps_queue` without `interrupted` raises
+`ValueError` before anything is sent, against every app; the second sends nothing to an app whose
 `continue_speaking` declares no `finish` and answers `Delivery.NOT_SERVED`.
 
 **What leaves a session.** A `CallFailure` (`StatusFailure`, `Unreachable` or `UnusableAnswer` of
