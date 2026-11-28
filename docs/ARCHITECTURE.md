@@ -23,7 +23,7 @@ flowchart TB
     mcp["mcp_server, mcp_wire<br/>the MCP person front"]
     member["member<br/>member records, place window, URIs"]
     calling["calling<br/>the calling and send-away decisions"]
-    floor["floor<br/>the talk-over, its hold and the order of the answer's sentences"]
+    floor["floor<br/>the talk-over, its hold and the order of an agent's sentences,<br/>for the voice loop and the member wire"]
     voice["voice<br/>the voice loop, reply markers, sentences"]
     place_store["redis_place_store<br/>the place store, the leases"]
     gateway["LiteLLM gateway<br/>(external)"]
@@ -72,8 +72,9 @@ flowchart TB
   `member_place` (a place's reference and the URIs of its window and view) and `member_speaking`
   (the records of speaking, stopping, continuing and being held), `calling` (the
   decisions of calling and sending away an agent, pure, on facts the app supplies) and `floor` (who
-  talks over an answer, the hold that puts on it and the order of the answer's sentences, pure and
-  in memory, on the partial speech and sentences the voice loop or an app gives); and
+  talks over an agent, the hold that puts on it, the refusals and answers of the member wire's hold
+  and the order of its sentences, pure and in memory, on the turns, partial speech and sentences the
+  voice loop or an app gives); and
   `member_outcomes`, the failures and codes of a call to an app's member endpoint, pure so that a
   runner's decisions read them without the client.
 - The **`backend` extra** adds `httpx2` for `backend.gateway.GatewayBackend`, the port's one
@@ -241,9 +242,9 @@ import contracts and size and clone ratchets.
   loop does not know.
 - The voice loop reading the member wire's hold (`talked_over`, `interrupted`): that hold
   (HEARING-30, 31) stays the hold a runner outside the app reads, while the loop runs in the app
-  and holds its own answer from the people's partial speech, so the two holds sit on two
-  boundaries and share only `PartialSpeech`. Reopens if a member-wire runner moves into the loop
-  or the loop drives a member over the wire.
+  and holds its own answer from the people's partial speech. The two holds sit on two boundaries and
+  share `floor`, which decides both, each under its own `AfterAnEnding`. Reopens if a member-wire
+  runner moves into the loop or the loop drives a member over the wire.
 - A stated version of the member wire: a second version axis beside MCP's, with a down-converter
   per version whose old branches lose their caller. Reopens if a removal or a new variant must
   reach a reader that cannot move first.
